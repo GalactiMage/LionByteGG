@@ -1,0 +1,33 @@
+# LionByteGG Web Dashboard Requirements
+# Production-ready dependencies for university deployment
+
+# Core Flask Framework
+flask>=2.3.0
+flask-cors>=4.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Production WSGI Server
+gunicorn>=21.0.0
+
+# Windows WSGI Server (for local development)
+waitress>=2.1.0
+
+# Rate Limiting
+flask-limiter>=3.5.0
+
+# Password Hashing
+bcrypt>=4.0.0
+
+# Response Compression
+flask-compress>=1.14.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Excel export
+openpyxl>=3.1.0
+
+# System monitoring
+psutil>=5.9.0

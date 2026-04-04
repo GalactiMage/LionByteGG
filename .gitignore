@@ -1,0 +1,142 @@
+# ================================================================
+# LionByteGG System - .gitignore
+# CRITICAL: This file protects student data from being committed.
+# DO NOT remove or weaken these rules.
+# ================================================================
+
+# ========================
+# Secrets - NEVER commit
+# ========================
+.env
+*.env
+.env.*
+!.env.example
+**/.flask_secret_key
+
+# ========================
+# STUDENT DATA & PERSONAL INFORMATION
+# These files contain Discord IDs, student names, records,
+# and other personally-identifiable information.
+# NEVER commit these to the repository.
+# ========================
+
+# -- Per-user records (Discord ID keyed) --
+**/user_records/
+**/guest_times/
+**/varsity_registrations/
+**/schedule_images/
+
+# -- Member/student data files --
+**/members_cache.json
+**/join_times.json
+**/rosters.json
+**/rosters.json.backup
+**/teams.json
+**/team_announcements.json
+**/watchlist.json
+**/moderation_queue.json
+**/pending_varsity_registrations.json
+**/roster_audit_log.json
+**/match_history.json
+
+# -- Activity & usage logs (contain user IDs) --
+**/activity_log.json
+**/arena_usage_log.json
+**/ticket_log.json
+**/flagged_log.json
+**/shift_logs.json
+
+# -- Shift worker data (contain names/IDs) --
+**/workers_cache.json
+**/trades.json
+**/timeoff_requests.json
+schedules.json
+shift_board.json
+LionShiftGG/schedules.json
+LionShiftGG/shift_board.json
+
+# -- Music bot user data --
+**/play-history.json
+**/music-stats.json
+
+# ========================
+# DATABASES - contain student/auth data
+# ========================
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+
+# ========================
+# Runtime data & caches (no student data but not code)
+# ========================
+**/bot_status.json
+**/bot_activity.json
+**/bot.pid
+**/*_cache.json
+**/*_queue.json
+**/job_progress.json
+**/live_notifications.json
+**/server_analytics.json
+**/arena_hours.json
+**/vc_live_cache.json
+
+# Root-level data directory
+data/
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+venv/
+.venv/
+ENV/
+
+# ========================
+# Temp files from atomic JSON writes
+# ========================
+*.tmp
+
+# ========================
+# IDE
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ========================
+# OS files
+# ========================
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ========================
+# PID files
+# ========================
+*.pid
+
+# ========================
+# Node (LionBeatsGG)
+# ========================
+node_modules/
+
+# ========================
+# Lavalink binaries
+# ========================
+**/*.jar
+**/plugins/*.jar
+
+# ========================
+# Windows shortcuts
+# ========================
+*.lnk

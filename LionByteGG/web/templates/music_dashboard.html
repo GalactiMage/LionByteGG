@@ -1,0 +1,1444 @@
+{% extends "base.html" %}
+
+{% block title %}LionBeatsGG - Music Dashboard{% endblock %}
+
+{% block extra_styles %}
+<style>
+    /* ============ Music Dashboard Redesign ============ */
+    .music-dashboard {
+        padding: 30px;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    /* Hero Header */
+    .music-hero {
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 50%, #16213e 100%);
+        border-radius: 24px;
+        padding: 40px;
+        margin-bottom: 30px;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(88, 101, 242, 0.2);
+    }
+
+    .music-hero::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: 
+            radial-gradient(circle at 20% 20%, rgba(88, 101, 242, 0.15) 0%, transparent 50%),
+            radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+        pointer-events: none;
+    }
+
+    .music-hero-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        z-index: 1;
+    }
+
+    .music-hero-left {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .music-logo {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #5865F2 0%, #7c3aed 100%);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        color: white;
+        box-shadow: 0 10px 40px rgba(88, 101, 242, 0.4);
+    }
+
+    .music-hero-info h1 {
+        font-size: 32px;
+        font-weight: 800;
+        color: white;
+        margin: 0 0 8px 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .music-hero-info p {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 15px;
+        margin: 0;
+    }
+
+    .status-badge-large {
+        padding: 10px 20px;
+        border-radius: 30px;
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .status-badge-large.online {
+        background: rgba(34, 197, 94, 0.2);
+        border: 1px solid rgba(34, 197, 94, 0.4);
+        color: #22c55e;
+    }
+
+    .status-badge-large.offline {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #ef4444;
+    }
+
+    .status-badge-large .pulse-ring {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: currentColor;
+        position: relative;
+    }
+
+    .status-badge-large.online .pulse-ring::after {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid currentColor;
+        animation: pulseRing 2s infinite;
+    }
+
+    @keyframes pulseRing {
+        0% { transform: scale(0.8); opacity: 1; }
+        100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .music-hero-actions {
+        display: flex;
+        gap: 12px;
+    }
+
+    .hero-btn {
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s;
+        border: none;
+    }
+
+    .hero-btn.primary {
+        background: linear-gradient(135deg, #5865F2 0%, #7c3aed 100%);
+        color: white;
+        box-shadow: 0 4px 20px rgba(88, 101, 242, 0.4);
+    }
+
+    .hero-btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 30px rgba(88, 101, 242, 0.5);
+    }
+
+    .hero-btn.secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .hero-btn.secondary:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Stats Grid */
+    .music-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    @media (max-width: 1200px) {
+        .music-stats-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .music-stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    .music-stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .music-stat-card:hover {
+        transform: translateY(-4px);
+        border-color: rgba(88, 101, 242, 0.3);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .music-stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--stat-color, #5865F2), transparent);
+    }
+
+    .music-stat-card.purple { --stat-color: #7c3aed; }
+    .music-stat-card.blue { --stat-color: #3b82f6; }
+    .music-stat-card.green { --stat-color: #22c55e; }
+    .music-stat-card.orange { --stat-color: #f97316; }
+    .music-stat-card.pink { --stat-color: #ec4899; }
+
+    .music-stat-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        margin-bottom: 16px;
+        background: linear-gradient(135deg, rgba(var(--stat-rgb, 88, 101, 242), 0.2) 0%, rgba(var(--stat-rgb, 88, 101, 242), 0.1) 100%);
+        color: var(--stat-color, #5865F2);
+    }
+
+    .music-stat-card.purple .music-stat-icon { --stat-rgb: 124, 58, 237; background: rgba(124, 58, 237, 0.15); color: #7c3aed; }
+    .music-stat-card.blue .music-stat-icon { --stat-rgb: 59, 130, 246; background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+    .music-stat-card.green .music-stat-icon { --stat-rgb: 34, 197, 94; background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .music-stat-card.orange .music-stat-icon { --stat-rgb: 249, 115, 22; background: rgba(249, 115, 22, 0.15); color: #f97316; }
+    .music-stat-card.pink .music-stat-icon { --stat-rgb: 236, 72, 153; background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+
+    .music-stat-value {
+        font-size: 32px;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .music-stat-label {
+        font-size: 13px;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+
+    /* Main Content Grid */
+    .music-content-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 24px;
+    }
+
+    @media (max-width: 1200px) {
+        .music-content-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* Now Playing Section */
+    .now-playing-section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        overflow: hidden;
+    }
+
+    .section-header {
+        padding: 20px 24px;
+        background: linear-gradient(180deg, rgba(88, 101, 242, 0.1) 0%, transparent 100%);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .section-header h2 {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+    }
+
+    .section-header h2 i {
+        color: #5865F2;
+    }
+
+    .refresh-btn {
+        padding: 10px 18px;
+        background: rgba(88, 101, 242, 0.15);
+        border: 1px solid rgba(88, 101, 242, 0.3);
+        color: #5865F2;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+        background: rgba(88, 101, 242, 0.25);
+    }
+
+    .refresh-btn.spinning i {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .players-container {
+        padding: 24px;
+    }
+
+    /* Enhanced Player Card */
+    .player-card {
+        background: linear-gradient(135deg, rgba(88, 101, 242, 0.05) 0%, transparent 100%);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 24px;
+        transition: all 0.3s;
+    }
+
+    .player-card:hover {
+        border-color: rgba(88, 101, 242, 0.4);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
+    }
+
+    .player-card:last-child {
+        margin-bottom: 0;
+    }
+
+    .track-artwork {
+        width: 140px;
+        height: 140px;
+        border-radius: 12px;
+        background: var(--background-tertiary);
+        overflow: hidden;
+        flex-shrink: 0;
+        position: relative;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .track-artwork img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .track-artwork .no-artwork {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        color: var(--text-muted);
+        background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+    }
+
+    .track-artwork .playing-indicator {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        display: flex;
+        gap: 3px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 20px;
+    }
+
+    .playing-indicator .bar {
+        width: 3px;
+        height: 16px;
+        background: #22c55e;
+        border-radius: 2px;
+        animation: soundBars 0.8s ease-in-out infinite;
+    }
+
+    .playing-indicator .bar:nth-child(2) { animation-delay: 0.2s; }
+    .playing-indicator .bar:nth-child(3) { animation-delay: 0.4s; }
+    .playing-indicator .bar:nth-child(4) { animation-delay: 0.6s; }
+
+    @keyframes soundBars {
+        0%, 100% { height: 6px; }
+        50% { height: 16px; }
+    }
+
+    .playing-indicator.paused .bar {
+        animation: none;
+        height: 10px;
+        background: #f59e0b;
+    }
+
+    .track-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    .track-server {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: rgba(88, 101, 242, 0.15);
+        border-radius: 20px;
+        font-size: 12px;
+        color: #5865F2;
+        width: fit-content;
+        margin-bottom: 12px;
+    }
+
+    .track-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 6px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .track-artist {
+        font-size: 15px;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+    }
+
+    .track-meta {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 16px;
+    }
+
+    .track-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .track-meta-item.playing {
+        color: #22c55e;
+        font-weight: 600;
+    }
+
+    .track-meta-item.paused {
+        color: #f59e0b;
+        font-weight: 600;
+    }
+
+    .progress-section {
+        margin-top: auto;
+    }
+
+    .progress-bar-wrapper {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        height: 6px;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #5865F2, #7c3aed);
+        border-radius: 4px;
+        transition: width 0.5s linear;
+    }
+
+    .progress-times {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-muted);
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Queue Preview */
+    .queue-preview {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+    }
+
+    .queue-preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    .queue-preview-header h4 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .queue-badge {
+        background: rgba(88, 101, 242, 0.2);
+        color: #5865F2;
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 10px;
+        font-weight: 600;
+    }
+
+    .queue-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .queue-track {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 10px;
+        transition: all 0.2s;
+    }
+
+    .queue-track:hover {
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    .queue-track-num {
+        width: 24px;
+        height: 24px;
+        background: rgba(88, 101, 242, 0.15);
+        color: #5865F2;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .queue-track-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .queue-track-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .queue-track-artist {
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+
+    .queue-track-duration {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 60px 24px;
+    }
+
+    .empty-state-icon {
+        width: 80px;
+        height: 80px;
+        background: rgba(88, 101, 242, 0.1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        font-size: 32px;
+        color: #5865F2;
+    }
+
+    .empty-state h3 {
+        font-size: 18px;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+    }
+
+    .empty-state p {
+        font-size: 14px;
+        color: var(--text-muted);
+    }
+
+    /* Right Sidebar */
+    .music-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    /* Quick Actions Card */
+    .quick-actions-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 24px;
+    }
+
+    .quick-actions-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .quick-actions-title i {
+        color: #5865F2;
+    }
+
+    .quick-actions-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .quick-action-btn {
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 2px solid var(--border);
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all 0.25s;
+        text-align: center;
+    }
+
+    .quick-action-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .quick-action-btn.play:hover {
+        background: rgba(34, 197, 94, 0.15);
+        border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .quick-action-btn.pause:hover {
+        background: rgba(245, 158, 11, 0.15);
+        border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .quick-action-btn.skip:hover {
+        background: rgba(59, 130, 246, 0.15);
+        border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .quick-action-btn.stop:hover {
+        background: rgba(239, 68, 68, 0.15);
+        border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .quick-action-btn i {
+        font-size: 26px;
+        margin-bottom: 10px;
+        display: block;
+        transition: transform 0.2s;
+    }
+
+    .quick-action-btn:hover i {
+        transform: scale(1.15);
+    }
+
+    .quick-action-btn span {
+        font-size: 12px;
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    .quick-action-btn.play i { color: #22c55e; }
+    .quick-action-btn.pause i { color: #f59e0b; }
+    .quick-action-btn.skip i { color: #3b82f6; }
+    .quick-action-btn.stop i { color: #ef4444; }
+
+    /* Recent Activity Card */
+    .recent-activity-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        overflow: hidden;
+    }
+
+    .recent-activity-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .recent-activity-header h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+    }
+
+    .recent-activity-header h3 i {
+        color: #ec4899;
+    }
+
+    .recent-activity-list {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .activity-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+
+    .activity-icon.play {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .activity-icon.queue {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+
+    .activity-icon.skip {
+        background: rgba(249, 115, 22, 0.15);
+        color: #f97316;
+    }
+
+    .activity-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .activity-text {
+        font-size: 13px;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+    }
+
+    .activity-text strong {
+        color: #5865F2;
+    }
+
+    .activity-time {
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+
+    /* Top Tracks Card */
+    .top-tracks-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        overflow: hidden;
+    }
+
+    .top-tracks-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .top-tracks-header h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+    }
+
+    .top-tracks-header h3 i {
+        color: #f59e0b;
+    }
+
+    .top-tracks-list {
+        padding: 16px;
+    }
+
+    .top-track-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px;
+        border-radius: 12px;
+        transition: all 0.2s;
+        margin-bottom: 8px;
+    }
+
+    .top-track-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .top-track-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .top-track-rank {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 800;
+    }
+
+    .top-track-rank.gold {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: #000;
+    }
+
+    .top-track-rank.silver {
+        background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+        color: #000;
+    }
+
+    .top-track-rank.bronze {
+        background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+        color: #fff;
+    }
+
+    .top-track-rank.default {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-muted);
+    }
+
+    .top-track-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .top-track-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .top-track-artist {
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+
+    .top-track-plays {
+        font-size: 12px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .top-track-plays i {
+        color: #5865F2;
+        font-size: 10px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .music-dashboard {
+            padding: 20px;
+        }
+
+        .music-hero {
+            padding: 24px;
+        }
+
+        .music-hero-content {
+            flex-direction: column;
+            gap: 20px;
+            text-align: center;
+        }
+
+        .music-hero-left {
+            flex-direction: column;
+        }
+
+        .music-hero-actions {
+            width: 100%;
+            flex-direction: column;
+        }
+
+        .hero-btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .player-card {
+            flex-direction: column;
+        }
+
+        .track-artwork {
+            width: 100%;
+            height: 200px;
+        }
+
+        .quick-actions-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="music-dashboard">
+    <!-- Hero Section -->
+    <div class="music-hero">
+        <div class="music-hero-content">
+            <div class="music-hero-left">
+                <div class="music-logo">
+                    <i class="fas fa-headphones"></i>
+                </div>
+                <div class="music-hero-info">
+                    <h1>
+                        LionBeatsGG
+                        <span class="status-badge-large online" id="music-bot-status">
+                            <span class="pulse-ring"></span>
+                            <span id="music-status-text">Checking...</span>
+                        </span>
+                    </h1>
+                    <p>High-quality music streaming for your Discord server</p>
+                </div>
+            </div>
+            <div class="music-hero-actions">
+                <button class="hero-btn primary" onclick="refreshMusicData()">
+                    <i class="fas fa-sync-alt"></i> Refresh Status
+                </button>
+                <a href="/music-features" class="hero-btn secondary">
+                    <i class="fas fa-cog"></i> Settings
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="music-stats-grid">
+        <div class="music-stat-card purple">
+            <div class="music-stat-icon">
+                <i class="fas fa-server"></i>
+            </div>
+            <div class="music-stat-value" id="stat-guilds">-</div>
+            <div class="music-stat-label">Servers Connected</div>
+        </div>
+        <div class="music-stat-card blue">
+            <div class="music-stat-icon">
+                <i class="fas fa-headphones"></i>
+            </div>
+            <div class="music-stat-value" id="stat-players">-</div>
+            <div class="music-stat-label">Active Players</div>
+        </div>
+        <div class="music-stat-card green">
+            <div class="music-stat-icon">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="music-stat-value" id="stat-uptime">-</div>
+            <div class="music-stat-label">Bot Uptime</div>
+        </div>
+        <div class="music-stat-card orange">
+            <div class="music-stat-icon">
+                <i class="fas fa-play-circle"></i>
+            </div>
+            <div class="music-stat-value" id="stat-tracks">-</div>
+            <div class="music-stat-label">Tracks Played Today</div>
+        </div>
+        <div class="music-stat-card pink">
+            <div class="music-stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="music-stat-value" id="stat-listeners">-</div>
+            <div class="music-stat-label">Current Listeners</div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="music-content-grid">
+        <!-- Now Playing Section -->
+        <div class="now-playing-section">
+            <div class="section-header">
+                <h2><i class="fas fa-play-circle"></i> Now Playing</h2>
+                <button class="refresh-btn" onclick="refreshMusicData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            <div class="players-container" id="players-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
+                    <h3>Loading...</h3>
+                    <p>Fetching music bot status</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="music-sidebar">
+            <!-- Quick Actions -->
+            <div class="quick-actions-card">
+                <h3 class="quick-actions-title">
+                    <i class="fas fa-bolt"></i> Quick Actions
+                </h3>
+                <div class="quick-actions-grid">
+                    {% if has_perm('music.player_controls') %}
+                    <button class="quick-action-btn play" onclick="sendMusicCommand('resume')" title="Resume playback">
+                        <i class="fas fa-play"></i>
+                        <span>Resume</span>
+                    </button>
+                    <button class="quick-action-btn pause" onclick="sendMusicCommand('pause')" title="Pause playback">
+                        <i class="fas fa-pause"></i>
+                        <span>Pause</span>
+                    </button>
+                    <button class="quick-action-btn skip" onclick="sendMusicCommand('skip')" title="Skip current track">
+                        <i class="fas fa-forward"></i>
+                        <span>Skip</span>
+                    </button>
+                    <button class="quick-action-btn stop" onclick="sendMusicCommand('stop')" title="Stop playback">
+                        <i class="fas fa-stop"></i>
+                        <span>Stop</span>
+                    </button>
+                    {% else %}
+                    <div style="grid-column: span 4; text-align: center; padding: 10px; color: var(--text-secondary);">
+                        <i class="fas fa-lock"></i> No player control permission
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Top Tracks -->
+            <div class="top-tracks-card">
+                <div class="top-tracks-header">
+                    <h3><i class="fas fa-trophy"></i> Top Tracks</h3>
+                </div>
+                <div class="top-tracks-list" id="top-tracks-list">
+                    <div class="top-track-item">
+                        <div class="top-track-rank gold">1</div>
+                        <div class="top-track-info">
+                            <div class="top-track-title">Loading...</div>
+                            <div class="top-track-artist">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="recent-activity-card">
+                <div class="recent-activity-header">
+                    <h3><i class="fas fa-history"></i> Recent Activity</h3>
+                </div>
+                <div class="recent-activity-list" id="recent-activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon play">
+                            <i class="fas fa-play"></i>
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-text">Loading activity...</div>
+                            <div class="activity-time">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let refreshInterval;
+    let isRefreshing = false;
+
+    function formatDuration(ms) {
+        const seconds = Math.floor((ms / 1000) % 60);
+        const minutes = Math.floor((ms / (1000 * 60)) % 60);
+        const hours = Math.floor(ms / (1000 * 60 * 60));
+        
+        if (hours > 0) {
+            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function formatUptime(seconds) {
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        
+        if (days > 0) {
+            return `${days}d ${hours}h`;
+        }
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        }
+        return `${minutes}m`;
+    }
+
+    async function refreshMusicData() {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        
+        const refreshBtn = document.querySelector('.refresh-btn');
+        if (refreshBtn) refreshBtn.classList.add('spinning');
+        
+        try {
+            const response = await fetch('/api/music/status');
+            const data = await response.json();
+            
+            if (data.error) {
+                showOfflineState(data.error);
+                return;
+            }
+            
+            updateStatus(data);
+            renderPlayers(data.players || []);
+            loadTopTracks();
+            loadRecentActivity();
+        } catch (error) {
+            console.error('Failed to fetch music status:', error);
+            showOfflineState('Unable to connect to music bot');
+        } finally {
+            isRefreshing = false;
+            if (refreshBtn) refreshBtn.classList.remove('spinning');
+        }
+    }
+
+    function updateStatus(data) {
+        const statusBadge = document.getElementById('music-bot-status');
+        const statusText = document.getElementById('music-status-text');
+        
+        if (data.status === 'online') {
+            statusBadge.className = 'status-badge-large online';
+            statusText.textContent = 'Online';
+        } else {
+            statusBadge.className = 'status-badge-large offline';
+            statusText.textContent = 'Offline';
+        }
+        
+        document.getElementById('stat-guilds').textContent = data.guilds || 0;
+        document.getElementById('stat-players').textContent = data.activePlayers || 0;
+        document.getElementById('stat-uptime').textContent = data.uptime ? formatUptime(data.uptime) : '-';
+        document.getElementById('stat-tracks').textContent = data.tracksToday || 0;
+        document.getElementById('stat-listeners').textContent = data.totalListeners || 0;
+    }
+
+    function showOfflineState(message) {
+        const statusBadge = document.getElementById('music-bot-status');
+        const statusText = document.getElementById('music-status-text');
+        
+        statusBadge.className = 'status-badge-large offline';
+        statusText.textContent = 'Offline';
+        
+        document.getElementById('stat-guilds').textContent = '-';
+        document.getElementById('stat-players').textContent = '-';
+        document.getElementById('stat-uptime').textContent = '-';
+        document.getElementById('stat-tracks').textContent = '-';
+        document.getElementById('stat-listeners').textContent = '-';
+        
+        const container = document.getElementById('players-container');
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fas fa-exclamation-circle"></i>
+                </div>
+                <h3>Music Bot Offline</h3>
+                <p>${message}</p>
+            </div>
+        `;
+    }
+
+    function renderPlayers(players) {
+        const container = document.getElementById('players-container');
+        
+        if (players.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-music"></i>
+                    </div>
+                    <h3>No Active Players</h3>
+                    <p>No music is currently playing in any server</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = players.map(player => {
+            const track = player.currentTrack;
+            const progress = track ? (player.position / track.duration) * 100 : 0;
+            const isPaused = player.paused;
+            
+            let queueHtml = '';
+            if (player.queue && player.queue.length > 0) {
+                queueHtml = `
+                    <div class="queue-preview">
+                        <div class="queue-preview-header">
+                            <h4><i class="fas fa-list"></i> Up Next</h4>
+                            <span class="queue-badge">${player.queueLength} tracks</span>
+                        </div>
+                        <div class="queue-list">
+                            ${player.queue.slice(0, 3).map((q, i) => `
+                                <div class="queue-track">
+                                    <div class="queue-track-num">${i + 1}</div>
+                                    <div class="queue-track-info">
+                                        <div class="queue-track-title">${q.title}</div>
+                                        <div class="queue-track-artist">${q.author || 'Unknown'}</div>
+                                    </div>
+                                    <div class="queue-track-duration">${formatDuration(q.duration)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (!track) {
+                return `
+                    <div class="player-card">
+                        <div class="track-artwork">
+                            <div class="no-artwork"><i class="fas fa-music"></i></div>
+                        </div>
+                        <div class="track-info">
+                            <div class="track-server"><i class="fas fa-server"></i> ${player.guildName}</div>
+                            <div class="track-title">No track playing</div>
+                            <div class="track-artist">Waiting for music...</div>
+                            <div class="track-meta">
+                                <div class="track-meta-item">
+                                    <i class="fas fa-headphones"></i> ${player.voiceChannel || 'Unknown'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="player-card">
+                    <div class="track-artwork">
+                        ${track.artworkUrl ? 
+                            `<img src="${track.artworkUrl}" alt="Artwork" onerror="this.parentElement.innerHTML='<div class=\\'no-artwork\\'><i class=\\'fas fa-music\\'></i></div>'">` :
+                            `<div class="no-artwork"><i class="fas fa-music"></i></div>`
+                        }
+                        <div class="playing-indicator ${isPaused ? 'paused' : ''}">
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                            <div class="bar"></div>
+                        </div>
+                    </div>
+                    <div class="track-info">
+                        <div class="track-server"><i class="fas fa-server"></i> ${player.guildName}</div>
+                        <div class="track-title">${track.title}</div>
+                        <div class="track-artist">${track.author}</div>
+                        <div class="track-meta">
+                            <div class="track-meta-item ${isPaused ? 'paused' : 'playing'}">
+                                <i class="fas ${isPaused ? 'fa-pause' : 'fa-play'}"></i> ${isPaused ? 'Paused' : 'Playing'}
+                            </div>
+                            <div class="track-meta-item">
+                                <i class="fas fa-headphones"></i> ${player.voiceChannel || 'Unknown'}
+                            </div>
+                            ${track.requester ? `
+                                <div class="track-meta-item">
+                                    <i class="fas fa-user"></i> ${track.requester.username}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="progress-section">
+                            <div class="progress-bar-wrapper">
+                                <div class="progress-bar-fill" style="width: ${progress}%"></div>
+                            </div>
+                            <div class="progress-times">
+                                <span>${formatDuration(player.position)}</span>
+                                <span>${formatDuration(track.duration)}</span>
+                            </div>
+                        </div>
+                        ${queueHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadTopTracks() {
+        try {
+            const response = await fetch('/api/music/top-tracks');
+            const data = await response.json();
+            
+            const container = document.getElementById('top-tracks-list');
+            if (!data.tracks || data.tracks.length === 0) {
+                container.innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                        No tracks played yet
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = data.tracks.slice(0, 5).map((track, i) => {
+                const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'default';
+                return `
+                    <div class="top-track-item">
+                        <div class="top-track-rank ${rankClass}">${i + 1}</div>
+                        <div class="top-track-info">
+                            <div class="top-track-title">${track.title}</div>
+                            <div class="top-track-artist">${track.artist || 'Unknown'}</div>
+                        </div>
+                        <div class="top-track-plays">
+                            <i class="fas fa-play"></i> ${track.plays}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.log('Failed to load top tracks');
+        }
+    }
+
+    async function loadRecentActivity() {
+        try {
+            const response = await fetch('/api/music/recent-activity');
+            const data = await response.json();
+            
+            const container = document.getElementById('recent-activity-list');
+            if (!data.activities || data.activities.length === 0) {
+                container.innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                        No recent activity
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = data.activities.slice(0, 10).map(activity => {
+                const iconMap = {
+                    'play': 'fa-play',
+                    'queue': 'fa-list',
+                    'skip': 'fa-forward',
+                    'stop': 'fa-stop'
+                };
+                return `
+                    <div class="activity-item">
+                        <div class="activity-icon ${activity.type}">
+                            <i class="fas ${iconMap[activity.type] || 'fa-music'}"></i>
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-text"><strong>${activity.user}</strong> ${activity.action}</div>
+                            <div class="activity-time">${activity.time}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.log('Failed to load recent activity');
+        }
+    }
+
+    async function sendMusicCommand(command) {
+        try {
+            const response = await fetch(`/api/music/command/${command}`, { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`Command '${command}' sent successfully`, 'success');
+                setTimeout(refreshMusicData, 1000);
+            } else {
+                showToast(data.error || 'Failed to send command', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to send command', 'error');
+        }
+    }
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshMusicData();
+        // Auto-refresh every 5 seconds
+        refreshInterval = setInterval(refreshMusicData, 5000);
+    });
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
+    });
+</script>
+{% endblock %}

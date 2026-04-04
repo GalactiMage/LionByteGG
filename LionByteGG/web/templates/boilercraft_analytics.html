@@ -1,0 +1,745 @@
+{% extends "base.html" %}
+
+{% block title %}MC Server Analytics{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <h1 class="page-title">
+            <i class="fas fa-chart-line"></i>
+            Server Analytics
+        </h1>
+        <p class="page-description">Track player count over time, peak hours, and trends for BoilerCraftGG</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <div class="live-indicator" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: rgba(16, 185, 129, 0.1); border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);">
+            <span class="live-dot" style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; animation: livePulse 2s ease-in-out infinite;"></span>
+            <span style="color: #10b981; font-size: 12px; font-weight: 500;">LIVE DATA</span>
+            <span id="lastUpdated" style="color: var(--text-secondary); font-size: 11px; margin-left: 8px;">Updated just now</span>
+        </div>
+        <button id="exportExcelBtn" class="btn btn-primary" onclick="downloadExcel()">
+            <i class="fas fa-file-excel"></i> Export Excel
+        </button>
+    </div>
+</div>
+
+<style>
+@keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.analytics-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.stat-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border);
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: white;
+}
+
+.stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.chart-card {
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.chart-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.chart-card .card-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chart-card .card-body {
+    padding: 20px;
+    position: relative;
+}
+
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 350px;
+}
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.date-filter {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.date-filter input[type="date"] {
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.date-filter label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.range-btns {
+    display: flex;
+    gap: 6px;
+}
+
+.range-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-light);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.range-btn:hover, .range-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.players-table-wrapper {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.players-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.players-table th {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+}
+
+.players-table td {
+    padding: 10px 16px;
+    font-size: 14px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+}
+
+.players-table tr:hover td {
+    background: var(--surface-light);
+}
+
+.no-data-msg {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+}
+
+.no-data-msg i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+}
+
+.no-data-msg p {
+    font-size: 16px;
+    margin: 0;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: white;
+}
+
+.btn-primary:hover {
+    filter: brightness(1.15);
+    transform: translateY(-1px);
+}
+
+@media (max-width: 1100px) {
+    .charts-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 480px) {
+    .stats-row { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="analytics-container">
+    <!-- Date Range Filter -->
+    <div class="chart-card">
+        <div class="card-header">
+            <h3><i class="fas fa-calendar-alt"></i> Date Range</h3>
+            <div class="range-btns">
+                <button class="range-btn active" onclick="setRange('24h')">24 Hours</button>
+                <button class="range-btn" onclick="setRange('7d')">7 Days</button>
+                <button class="range-btn" onclick="setRange('14d')">14 Days</button>
+                <button class="range-btn" onclick="setRange('30d')">30 Days</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-1);">
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="currentPlayers">--</span>
+                <span class="stat-label">Current Players</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-3);">
+                <i class="fas fa-arrow-up"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="peakPlayers">--</span>
+                <span class="stat-label">Peak Players</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-2);">
+                <i class="fas fa-chart-bar"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="avgPlayers">--</span>
+                <span class="stat-label">Avg. Players</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%);">
+                <i class="fas fa-signal"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="uptimePercent">--</span>
+                <span class="stat-label">Uptime %</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Count Over Time Chart -->
+    <div class="chart-card">
+        <div class="card-header">
+            <h3><i class="fas fa-chart-line"></i> Player Count Over Time</h3>
+        </div>
+        <div class="card-body">
+            <div class="chart-wrapper">
+                <canvas id="playerCountChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Peak Hours + Daily Summary -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div class="card-header">
+                <h3><i class="fas fa-clock"></i> Peak Hours (Avg. Players by Hour)</h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="peakHoursChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="chart-card">
+            <div class="card-header">
+                <h3><i class="fas fa-calendar-day"></i> Daily Player Summary</h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="dailySummaryChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity Log -->
+    <div class="chart-card">
+        <div class="card-header">
+            <h3><i class="fas fa-list"></i> Recent Activity Log</h3>
+            <span id="activityLogCount" style="font-size: 13px; color: var(--text-secondary);"></span>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <div class="players-table-wrapper">
+                <table class="players-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Status</th>
+                            <th>Players Online</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activityLogBody">
+                        <tr><td colspan="4" class="no-data-msg"><p>Loading...</p></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<script>
+let analyticsData = [];
+let currentRange = '24h';
+let playerCountChart = null;
+let peakHoursChart = null;
+let dailySummaryChart = null;
+
+// ── Helpers ──────────────────────────────────────────
+function getRangeMs() {
+    const map = { '24h': 24*3600000, '7d': 7*86400000, '14d': 14*86400000, '30d': 30*86400000 };
+    return map[currentRange] || 24*3600000;
+}
+
+function filterByRange(data) {
+    const cutoff = Date.now() - getRangeMs();
+    return data.filter(d => new Date(d.timestamp).getTime() >= cutoff);
+}
+
+function setRange(range) {
+    currentRange = range;
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    renderAll();
+}
+
+// ── Fetch Data ───────────────────────────────────────
+async function fetchAnalytics() {
+    try {
+        const resp = await fetch('/api/boilercraft/analytics');
+        if (!resp.ok) throw new Error('API error');
+        const json = await resp.json();
+        analyticsData = json.data || [];
+        renderAll();
+        document.getElementById('lastUpdated').textContent = 'Updated just now';
+    } catch(e) {
+        console.error('Failed to fetch analytics:', e);
+    }
+}
+
+// ── Render Everything ────────────────────────────────
+function renderAll() {
+    const filtered = filterByRange(analyticsData);
+    renderStats(filtered);
+    renderPlayerCountChart(filtered);
+    renderPeakHoursChart(filtered);
+    renderDailySummaryChart(filtered);
+    renderActivityLog(filtered);
+}
+
+// ── Summary Stats ────────────────────────────────────
+function renderStats(data) {
+    if (!data.length) {
+        ['currentPlayers','peakPlayers','avgPlayers','uptimePercent'].forEach(id => {
+            document.getElementById(id).textContent = '--';
+        });
+        return;
+    }
+
+    const latest = data[data.length - 1];
+    const current = latest.online ? latest.players_online : 0;
+    const peak = Math.max(...data.map(d => d.players_online || 0));
+    const avg = (data.reduce((s,d) => s + (d.players_online || 0), 0) / data.length).toFixed(1);
+
+    const onlineCount = data.filter(d => d.online).length;
+    const uptimePct = ((onlineCount / data.length) * 100).toFixed(1);
+
+    document.getElementById('currentPlayers').textContent = current;
+    document.getElementById('peakPlayers').textContent = peak;
+    document.getElementById('avgPlayers').textContent = avg;
+    document.getElementById('uptimePercent').textContent = uptimePct + '%';
+}
+
+// ── Player Count Line Chart ──────────────────────────
+function renderPlayerCountChart(data) {
+    const ctx = document.getElementById('playerCountChart').getContext('2d');
+    if (playerCountChart) playerCountChart.destroy();
+
+    if (!data.length) {
+        playerCountChart = null;
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        return;
+    }
+
+    const labels = data.map(d => new Date(d.timestamp));
+    const counts = data.map(d => d.players_online || 0);
+
+    playerCountChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Players Online',
+                data: counts,
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: currentRange === '24h' ? 2 : 0,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => new Date(items[0].label).toLocaleString(),
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: currentRange === '24h' ? 'hour'
+                            : currentRange === '7d' ? 'day'
+                            : 'day',
+                        tooltipFormat: 'MMM d, h:mm a',
+                        displayFormats: { hour: 'h a', day: 'MMM d' }
+                    },
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: 'rgba(255,255,255,0.5)', maxTicksLimit: 12 }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: {
+                        color: 'rgba(255,255,255,0.5)',
+                        stepSize: 1,
+                        callback: v => Number.isInteger(v) ? v : null
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ── Peak Hours Bar Chart ─────────────────────────────
+function renderPeakHoursChart(data) {
+    const ctx = document.getElementById('peakHoursChart').getContext('2d');
+    if (peakHoursChart) peakHoursChart.destroy();
+
+    if (!data.length) {
+        peakHoursChart = null;
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        return;
+    }
+
+    // Aggregate by hour-of-day (local time)
+    const hourBuckets = Array(24).fill(null).map(() => []);
+    data.forEach(d => {
+        const hour = new Date(d.timestamp).getHours();
+        hourBuckets[hour].push(d.players_online || 0);
+    });
+    const hourAvgs = hourBuckets.map(arr => arr.length ? arr.reduce((s,v) => s+v, 0) / arr.length : 0);
+
+    const labels = Array.from({length: 24}, (_, i) => {
+        const h = i % 12 || 12;
+        return `${h}${i < 12 ? 'a' : 'p'}`;
+    });
+
+    const maxVal = Math.max(...hourAvgs);
+    const barColors = hourAvgs.map(v => v === maxVal && v > 0 ? 'rgba(245, 158, 11, 0.8)' : 'rgba(99, 102, 241, 0.6)');
+
+    peakHoursChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Avg. Players',
+                data: hourAvgs.map(v => +v.toFixed(2)),
+                backgroundColor: barColors,
+                borderRadius: 4,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => {
+                            const i = items[0].dataIndex;
+                            const h = i % 12 || 12;
+                            const ampm = i < 12 ? 'AM' : 'PM';
+                            return `${h}:00 ${ampm}`;
+                        },
+                        label: item => `Avg: ${item.raw} players`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: 'rgba(255,255,255,0.5)', font: { size: 11 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: {
+                        color: 'rgba(255,255,255,0.5)',
+                        stepSize: 1,
+                        callback: v => Number.isInteger(v) ? v : null
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ── Daily Summary Chart ──────────────────────────────
+function renderDailySummaryChart(data) {
+    const ctx = document.getElementById('dailySummaryChart').getContext('2d');
+    if (dailySummaryChart) dailySummaryChart.destroy();
+
+    if (!data.length) {
+        dailySummaryChart = null;
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        return;
+    }
+
+    // Group by date string
+    const dayMap = {};
+    data.forEach(d => {
+        const day = new Date(d.timestamp).toLocaleDateString('en-CA'); // YYYY-MM-DD
+        if (!dayMap[day]) dayMap[day] = [];
+        dayMap[day].push(d.players_online || 0);
+    });
+
+    const sortedDays = Object.keys(dayMap).sort();
+    const peakPerDay = sortedDays.map(day => Math.max(...dayMap[day]));
+    const avgPerDay = sortedDays.map(day => +(dayMap[day].reduce((s,v)=>s+v,0) / dayMap[day].length).toFixed(2));
+
+    dailySummaryChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedDays.map(d => {
+                const dt = new Date(d + 'T12:00:00');
+                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }),
+            datasets: [
+                {
+                    label: 'Peak',
+                    data: peakPerDay,
+                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                    borderRadius: 4,
+                    borderSkipped: false,
+                },
+                {
+                    label: 'Avg',
+                    data: avgPerDay,
+                    backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: 'rgba(255,255,255,0.6)', usePointStyle: true, pointStyle: 'rectRounded', padding: 16 }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: 'rgba(255,255,255,0.5)', font: { size: 11 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: {
+                        color: 'rgba(255,255,255,0.5)',
+                        stepSize: 1,
+                        callback: v => Number.isInteger(v) ? v : null
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ── Recent Activity Log ──────────────────────────────
+function renderActivityLog(data) {
+    const tbody = document.getElementById('activityLogBody');
+    const countEl = document.getElementById('activityLogCount');
+
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="4"><div class="no-data-msg"><i class="fas fa-database"></i><p>No analytics data yet. The bot collects data every 5 minutes.</p></div></td></tr>';
+        countEl.textContent = '';
+        return;
+    }
+
+    // Show the most recent 50 entries in reverse order
+    const recent = data.slice(-50).reverse();
+    countEl.textContent = `Showing latest ${recent.length} of ${data.length} entries`;
+
+    tbody.innerHTML = recent.map((entry, idx) => {
+        const time = new Date(entry.timestamp);
+        const timeStr = time.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+        const players = entry.players_online || 0;
+        const isOnline = entry.online;
+
+        // Calculate change from previous entry
+        const prevIdx = data.length - 1 - idx;
+        let changeHtml = '<span style="color: var(--text-secondary);">—</span>';
+        if (prevIdx > 0) {
+            const prev = data[prevIdx - 1];
+            const diff = players - (prev.players_online || 0);
+            if (diff > 0) changeHtml = `<span style="color: #10b981;">+${diff} <i class="fas fa-arrow-up" style="font-size: 10px;"></i></span>`;
+            else if (diff < 0) changeHtml = `<span style="color: #ef4444;">${diff} <i class="fas fa-arrow-down" style="font-size: 10px;"></i></span>`;
+            else changeHtml = '<span style="color: var(--text-secondary);">0</span>';
+        }
+
+        const statusBadge = isOnline
+            ? '<span style="color: #10b981; font-weight: 600;"><i class="fas fa-circle" style="font-size: 8px; margin-right: 6px;"></i>Online</span>'
+            : '<span style="color: #ef4444; font-weight: 600;"><i class="fas fa-circle" style="font-size: 8px; margin-right: 6px;"></i>Offline</span>';
+
+        return `<tr>
+            <td title="${time.toLocaleString()}">${timeStr}</td>
+            <td>${statusBadge}</td>
+            <td><strong>${players}</strong> / ${entry.players_max || '?'}</td>
+            <td>${changeHtml}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Excel Download ───────────────────────────────────
+function downloadExcel() {
+    const btn = document.getElementById('exportExcelBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+    const range = currentRange;
+    window.location.href = `/api/boilercraft/analytics/export?range=${range}`;
+
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-excel"></i> Export Excel';
+    }, 3000);
+}
+
+// ── Utility ──────────────────────────────────────────
+function escapeHtml(text) {
+    const el = document.createElement('span');
+    el.textContent = text;
+    return el.innerHTML;
+}
+
+function timeSince(date) {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;
+    return `${Math.floor(seconds/86400)}d ago`;
+}
+
+// ── Init ─────────────────────────────────────────────
+fetchAnalytics();
+setInterval(fetchAnalytics, 5 * 60 * 1000); // Refresh every 5 minutes
+</script>
+{% endblock %}

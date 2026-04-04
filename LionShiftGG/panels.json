@@ -1,0 +1,11 @@
+{
+  "offer_shift_messages": [],
+  "request_timeoff_messages": [],
+  "clockpanel_messages": [
+    {
+      "guild_id": 944996290343886868,
+      "channel_id": 1403788867424747620,
+      "message_id": 1429893450811314257
+    }
+  ]
+}

@@ -1,0 +1,2913 @@
+{% extends "base.html" %}
+
+{% block title %}Varsity Registrations{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="fas fa-trophy"></i>
+        Varsity Registrations
+    </h1>
+    <p class="page-description">View and manage all varsity team registrations</p>
+</div>
+
+<div class="varsity-container">
+    <!-- Stats Row -->
+    <div class="stats-row mb-4">
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-1);">
+                <i class="fas fa-clipboard-list"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="totalRegistrations">0</span>
+                <span class="stat-label">Total Registrations</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-2);">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="pendingCount">0</span>
+                <span class="stat-label">Pending Review</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-3);">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="approvedCount">0</span>
+                <span class="stat-label">Approved</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-4);">
+                <i class="fas fa-times-circle"></i>
+            </div>
+            <div class="stat-info">
+                <span class="stat-value" id="deniedCount">0</span>
+                <span class="stat-label">Denied</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h3><i class="fas fa-filter"></i> Filters</h3>
+        </div>
+        <div class="card-body">
+            <div class="filters-row">
+                <div class="filter-group">
+                    <label>Search</label>
+                    <input type="text" id="searchInput" class="form-input" placeholder="Search by name, email, or game...">
+                </div>
+                <div class="filter-group">
+                    <label>Status</label>
+                    <select id="statusFilter" class="form-select">
+                        <option value="">All Statuses</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Denied">Denied</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Player Type</label>
+                    <select id="typeFilter" class="form-select">
+                        <option value="">All Types</option>
+                        <option value="varsity">Varsity</option>
+                        <option value="jv">JV</option>
+                        <option value="sub_varsity">Substitute Varsity</option>
+                        <option value="sub_jv">Substitute JV</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Game</label>
+                    <select id="gameFilter" class="form-select">
+                        <option value="">All Games</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registrations List -->
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="fas fa-list"></i> Registrations</h3>
+            <span class="badge" id="filteredCount">0 registrations</span>
+        </div>
+        <div class="card-body">
+            <div class="registrations-list" id="registrationsList">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading registrations...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Registration Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3><i class="fas fa-user-graduate"></i> Registration Details</h3>
+            <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="detailModalContent">
+            <!-- Content loaded dynamically -->
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal - Professional Design -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal-content modal-delete-professional">
+        <button class="modal-close-floating delete-close" onclick="closeDeleteModal()">
+            <i class="fas fa-times"></i>
+        </button>
+        
+        <!-- Gradient Hero Header -->
+        <div class="delete-modal-hero">
+            <div class="delete-hero-pattern"></div>
+            <div class="delete-hero-content">
+                <div class="delete-hero-icon">
+                    <i class="fas fa-trash-alt"></i>
+                </div>
+                <div class="delete-hero-text">
+                    <h2>Delete Registration</h2>
+                    <p>This action cannot be undone</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Content -->
+        <div class="delete-modal-body">
+            <div class="delete-player-card">
+                <div class="delete-player-avatar" id="deletePlayerAvatar">?</div>
+                <div class="delete-player-info">
+                    <span class="delete-player-name" id="deletePlayerName">Player Name</span>
+                    <span class="delete-player-id" id="deletePlayerId">
+                        <i class="fas fa-fingerprint"></i> User ID
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Warning Notice -->
+            <div class="delete-warning-notice">
+                <div class="delete-warning-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="delete-warning-content">
+                    <strong>Permanent Deletion</strong>
+                    <p>This will permanently delete the registration from the database. All data including uploads and submission details will be removed. This action cannot be reversed.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Footer -->
+        <div class="delete-modal-footer">
+            <button type="button" class="delete-btn-cancel" onclick="closeDeleteModal()">
+                <i class="fas fa-arrow-left"></i> Cancel
+            </button>
+            <button type="button" class="delete-btn-confirm" id="confirmDeleteBtn" onclick="confirmDelete()">
+                <i class="fas fa-trash-alt"></i> Delete Permanently
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Approve Confirmation Modal - Professional Design -->
+<div class="modal-overlay" id="approveModal">
+    <div class="modal-content modal-approve-professional">
+        <button class="modal-close-floating approve-close" onclick="closeApproveModal()">
+            <i class="fas fa-times"></i>
+        </button>
+        
+        <!-- Gradient Hero Header -->
+        <div class="approve-modal-hero">
+            <div class="approve-hero-pattern"></div>
+            <div class="approve-hero-content">
+                <div class="approve-hero-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div class="approve-hero-text">
+                    <h2>Approve Registration</h2>
+                    <p>Confirm approval for this varsity registration</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Player Info Card -->
+        <div class="approve-modal-body">
+            <div class="approve-player-card">
+                <div class="approve-player-avatar" id="approvePlayerAvatar">?</div>
+                <div class="approve-player-info">
+                    <span class="approve-player-name" id="approvePlayerName">Player Name</span>
+                    <span class="approve-player-meta" id="approvePlayerGame">
+                        <i class="fas fa-gamepad"></i> Game Title
+                    </span>
+                </div>
+                <div class="approve-player-badge">
+                    <i class="fas fa-clock"></i> Pending Review
+                </div>
+            </div>
+            
+            <!-- Approval Info -->
+            <div class="approve-info-section">
+                <div class="approve-info-item">
+                    <div class="info-icon success">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <div class="info-content">
+                        <strong>Discord Notification</strong>
+                        <p>The user will receive a DM confirming their approval</p>
+                    </div>
+                </div>
+                <div class="approve-info-item">
+                    <div class="info-icon primary">
+                        <i class="fas fa-user-check"></i>
+                    </div>
+                    <div class="info-content">
+                        <strong>Status Change</strong>
+                        <p>Registration status will be updated to Approved</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Success Notice -->
+            <div class="approve-success-notice">
+                <div class="success-icon">
+                    <i class="fas fa-trophy"></i>
+                </div>
+                <div class="success-content">
+                    <strong>Ready to Approve</strong>
+                    <p>This action will approve the player's varsity registration. They will be notified immediately via Discord DM.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Footer -->
+        <div class="approve-modal-footer">
+            <button type="button" class="approve-btn-cancel" onclick="closeApproveModal()">
+                <i class="fas fa-arrow-left"></i> Cancel
+            </button>
+            <button type="button" class="approve-btn-confirm" id="confirmApproveBtn" onclick="confirmApprove()">
+                <i class="fas fa-check-circle"></i> Approve Registration
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Deny Reason Modal - Professional Design -->
+<div class="modal-overlay" id="denyModal">
+    <div class="modal-content modal-deny-professional">
+        <button class="modal-close-floating" onclick="closeDenyModal()">
+            <i class="fas fa-times"></i>
+        </button>
+        
+        <!-- Gradient Hero Header -->
+        <div class="deny-modal-hero">
+            <div class="deny-hero-pattern"></div>
+            <div class="deny-hero-content">
+                <div class="deny-hero-icon">
+                    <i class="fas fa-times-circle"></i>
+                </div>
+                <div class="deny-hero-text">
+                    <h2>Deny Registration</h2>
+                    <p>Please review and provide a reason for denial</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Player Info Card -->
+        <div class="deny-modal-body">
+            <div class="deny-player-card">
+                <div class="deny-player-avatar" id="denyPlayerAvatar">?</div>
+                <div class="deny-player-info">
+                    <span class="deny-player-name" id="denyPlayerName">Player Name</span>
+                    <span class="deny-player-meta" id="denyPlayerGame">
+                        <i class="fas fa-gamepad"></i> Game Title
+                    </span>
+                </div>
+                <div class="deny-player-badge">
+                    <i class="fas fa-clock"></i> Pending Review
+                </div>
+            </div>
+            
+            <!-- Reason Section -->
+            <div class="deny-reason-section">
+                <div class="deny-section-header">
+                    <i class="fas fa-comment-alt"></i>
+                    <span>Denial Reason</span>
+                    <span class="required-badge">Required</span>
+                </div>
+                
+                <!-- Quick Reason Chips -->
+                <div class="deny-quick-reasons">
+                    <span class="quick-reasons-label">Quick select:</span>
+                    <div class="quick-reason-chips">
+                        <button type="button" class="quick-chip" onclick="setDenyReason('Incomplete or incorrect information provided')">
+                            <i class="fas fa-exclamation-circle"></i> Incomplete Info
+                        </button>
+                        <button type="button" class="quick-chip" onclick="setDenyReason('Does not meet eligibility requirements')">
+                            <i class="fas fa-user-slash"></i> Not Eligible
+                        </button>
+                        <button type="button" class="quick-chip" onclick="setDenyReason('Duplicate registration - already registered')">
+                            <i class="fas fa-copy"></i> Duplicate
+                        </button>
+                        <button type="button" class="quick-chip" onclick="setDenyReason('Invalid rank or tracker verification failed')">
+                            <i class="fas fa-chart-line"></i> Invalid Rank
+                        </button>
+                        <button type="button" class="quick-chip" onclick="setDenyReason('Schedule/availability conflicts with team requirements')">
+                            <i class="fas fa-calendar-times"></i> Schedule Conflict
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Textarea -->
+                <div class="deny-textarea-wrapper">
+                    <textarea id="denyReason" class="deny-reason-textarea" rows="4" placeholder="Enter a detailed reason for denial. This message will be sent to the user via Discord DM..." required></textarea>
+                    <div class="deny-textarea-footer">
+                        <span class="char-count"><span id="denyCharCount">0</span> characters</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Warning Notice -->
+            <div class="deny-warning-notice">
+                <div class="warning-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="warning-content">
+                    <strong>Important Notice</strong>
+                    <p>The user will receive a Discord DM with your denial reason. Please ensure your message is clear, professional, and constructive.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Footer -->
+        <div class="deny-modal-footer">
+            <button type="button" class="deny-btn-cancel" onclick="closeDenyModal()">
+                <i class="fas fa-arrow-left"></i> Cancel
+            </button>
+            <button type="button" class="deny-btn-confirm" id="confirmDenyBtn" onclick="confirmDeny()">
+                <i class="fas fa-times-circle"></i> Deny Registration
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+.varsity-container {
+    max-width: 1400px;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.stat-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border);
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: white;
+}
+
+.stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.filters-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 16px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.registrations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.registration-card {
+    background: var(--surface-light);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.registration-card:hover {
+    background: var(--surface-hover);
+    box-shadow: var(--shadow-md);
+}
+
+.registration-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--gradient-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+}
+
+.registration-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.registration-name {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.registration-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.registration-details span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.registration-details i {
+    color: var(--text-muted);
+}
+
+.registration-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.registration-status {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.registration-status.pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--warning);
+}
+
+.registration-status.approved {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.registration-status.denied {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.registration-date {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.registration-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.registration-actions button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.btn-view {
+    background: rgba(124, 58, 237, 0.2);
+    color: var(--primary-light);
+}
+
+.btn-view:hover {
+    background: rgba(124, 58, 237, 0.3);
+}
+
+.btn-delete {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.btn-delete:hover {
+    background: rgba(239, 68, 68, 0.3);
+}
+
+/* Modal Styles */
+.modal-large {
+    max-width: 900px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-large .modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0;
+}
+
+/* Detail View Styles */
+.detail-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-hero {
+    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 50%, #c084fc 100%);
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+}
+
+.detail-hero::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.5;
+}
+
+.detail-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.detail-hero-avatar {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 42px;
+    font-weight: 700;
+    color: white;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.detail-hero-info {
+    flex: 1;
+    color: white;
+}
+
+.detail-hero-info h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.detail-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.detail-hero-meta span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.detail-hero-meta i {
+    font-size: 12px;
+}
+
+.detail-hero-badge {
+    padding: 8px 20px;
+    border-radius: 25px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-hero-badge.pending {
+    background: rgba(245, 158, 11, 0.9);
+    color: #1a1a2e;
+}
+
+.detail-hero-badge.approved {
+    background: rgba(16, 185, 129, 0.9);
+    color: white;
+}
+
+.detail-hero-badge.denied {
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+}
+
+.detail-body {
+    padding: 24px 32px 32px;
+    background: var(--background);
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.detail-card {
+    background: var(--surface);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.detail-card-header {
+    background: linear-gradient(90deg, rgba(124, 58, 237, 0.1), transparent);
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.detail-card-header i {
+    color: var(--primary-light);
+    font-size: 16px;
+}
+
+.detail-card-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-card-body {
+    padding: 20px;
+}
+
+.detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-field:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.detail-field:first-child {
+    padding-top: 0;
+}
+
+.detail-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-field-value {
+    font-size: 15px;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.detail-field-value a {
+    color: var(--primary-light);
+    text-decoration: none;
+}
+
+.detail-field-value a:hover {
+    text-decoration: underline;
+}
+
+.detail-card.full-width {
+    grid-column: span 2;
+}
+
+.detail-notes {
+    background: rgba(124, 58, 237, 0.05);
+    border-radius: 12px;
+    padding: 16px 20px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-style: italic;
+}
+
+/* Attachments Section */
+.detail-attachments {
+    margin-top: 24px;
+}
+
+.attachments-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.attachments-header i {
+    color: var(--primary-light);
+    font-size: 18px;
+}
+
+.attachments-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.attachments-count {
+    background: var(--primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+}
+
+.attachments-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.attachment-card {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.attachment-card:hover {
+    border-color: var(--primary);
+    transform: scale(1.02);
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
+}
+
+.attachment-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.attachment-card:hover img {
+    transform: scale(1.05);
+}
+
+.attachment-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+}
+
+.attachment-card:hover .attachment-overlay {
+    opacity: 1;
+}
+
+.attachment-overlay span {
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Moderation Section */
+.detail-moderation {
+    margin-top: 24px;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.detail-moderation.approved {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.detail-moderation.denied {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.moderation-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.moderation-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.moderation-title i {
+    font-size: 16px;
+}
+
+.detail-moderation.approved .moderation-title i {
+    color: var(--success);
+}
+
+.detail-moderation.denied .moderation-title i {
+    color: var(--danger);
+}
+
+.moderation-date {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.moderation-reason {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-style: italic;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* Action Buttons */
+.detail-footer {
+    padding: 20px 32px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.detail-footer-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.detail-footer .btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-footer .btn-success {
+    background: var(--success);
+    color: white;
+}
+
+.detail-footer .btn-success:hover {
+    background: #059669;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .detail-card.full-width {
+        grid-column: span 1;
+    }
+    
+    .detail-hero-content {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .detail-hero-meta {
+        justify-content: center;
+    }
+    
+    .detail-footer {
+        flex-direction: column;
+    }
+    
+    .detail-footer-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .detail-footer .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Approve/Deny Modal Styles */
+.approve-header {
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), transparent);
+    border-bottom: 2px solid var(--success);
+}
+
+/* ========== Professional Deny Modal Styles ========== */
+.modal-deny-professional {
+    max-width: 580px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(239, 68, 68, 0.2);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-close-floating {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    z-index: 10;
+    transition: all 0.2s;
+}
+
+.modal-close-floating:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(90deg);
+}
+
+.deny-modal-hero {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 40%, #f87171 100%);
+    padding: 32px 28px;
+    position: relative;
+    overflow: hidden;
+}
+
+.deny-hero-pattern {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.06'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3Ccircle cx='10' cy='10' r='2'/%3E%3Ccircle cx='50' cy='50' r='2'/%3E%3Ccircle cx='50' cy='10' r='2'/%3E%3Ccircle cx='10' cy='50' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.8;
+}
+
+.deny-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.deny-hero-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.deny-hero-text h2 {
+    color: white;
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.deny-hero-text p {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 14px;
+    margin: 0;
+}
+
+.deny-modal-body {
+    padding: 24px;
+    background: var(--background);
+}
+
+.deny-player-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+}
+
+.deny-player-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.deny-player-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.deny-player-name {
+    display: block;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.deny-player-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.deny-player-meta i {
+    color: var(--text-muted);
+}
+
+.deny-player-badge {
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.deny-reason-section {
+    margin-bottom: 20px;
+}
+
+.deny-section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.deny-section-header i {
+    color: #ef4444;
+    font-size: 16px;
+}
+
+.deny-section-header span {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.required-badge {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.deny-quick-reasons {
+    margin-bottom: 16px;
+}
+
+.quick-reasons-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.quick-reason-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.quick-chip {
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.quick-chip:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #ef4444;
+    transform: translateY(-1px);
+}
+
+.quick-chip i {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.quick-chip:hover i {
+    opacity: 1;
+}
+
+.deny-textarea-wrapper {
+    position: relative;
+}
+
+.deny-reason-textarea {
+    width: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    min-height: 100px;
+    transition: all 0.2s;
+}
+
+.deny-reason-textarea:focus {
+    outline: none;
+    border-color: #ef4444;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+}
+
+.deny-reason-textarea::placeholder {
+    color: var(--text-muted);
+}
+
+.deny-textarea-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.char-count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.deny-warning-notice {
+    display: flex;
+    gap: 14px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+    border-radius: 12px;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.warning-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f59e0b;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.warning-content strong {
+    display: block;
+    font-size: 13px;
+    color: #f59e0b;
+    margin-bottom: 4px;
+}
+
+.warning-content p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+.deny-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 20px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+}
+
+.deny-btn-cancel {
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.deny-btn-cancel:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+    background: var(--surface-light);
+}
+
+.deny-btn-confirm {
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.35);
+}
+
+.deny-btn-confirm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+}
+
+.deny-btn-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ========== End Professional Deny Modal Styles ========== */
+
+/* ========== Professional Approve Modal Styles ========== */
+.modal-approve-professional {
+    max-width: 540px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(16, 185, 129, 0.2);
+    animation: modalSlideIn 0.3s ease;
+}
+
+.modal-close-floating.approve-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.approve-modal-hero {
+    background: linear-gradient(135deg, #059669 0%, #10b981 40%, #34d399 100%);
+    padding: 32px 28px;
+    position: relative;
+    overflow: hidden;
+}
+
+.approve-hero-pattern {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.06'%3E%3Cpath d='M30 25l5 5-5 5-5-5 5-5zm0-20l5 5-5 5-5-5 5-5zm0 40l5 5-5 5-5-5 5-5zm20-20l5 5-5 5-5-5 5-5zm-40 0l5 5-5 5-5-5 5-5z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.8;
+}
+
+.approve-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.approve-hero-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.approve-hero-text h2 {
+    color: white;
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.approve-hero-text p {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 14px;
+    margin: 0;
+}
+
+.approve-modal-body {
+    padding: 24px;
+    background: var(--background);
+}
+
+.approve-player-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+}
+
+.approve-player-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.approve-player-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.approve-player-name {
+    display: block;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.approve-player-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.approve-player-meta i {
+    color: var(--text-muted);
+}
+
+.approve-player-badge {
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.approve-info-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.approve-info-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.info-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.info-icon.success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.info-icon.primary {
+    background: rgba(124, 58, 237, 0.15);
+    color: var(--primary-light);
+}
+
+.info-content strong {
+    display: block;
+    font-size: 13px;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.info-content p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.approve-success-notice {
+    display: flex;
+    gap: 14px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+    border-radius: 12px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.success-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(16, 185, 129, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #10b981;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.success-content strong {
+    display: block;
+    font-size: 13px;
+    color: #10b981;
+    margin-bottom: 4px;
+}
+
+.success-content p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+.approve-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 20px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+}
+
+.approve-btn-cancel {
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.approve-btn-cancel:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+    background: var(--surface-light);
+}
+
+.approve-btn-confirm {
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+}
+
+.approve-btn-confirm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+}
+
+.approve-btn-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ========== End Professional Approve Modal Styles ========== */
+
+/* ========== Professional Delete Modal Styles ========== */
+.modal-delete-professional {
+    max-width: 480px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(139, 92, 246, 0.2);
+    animation: modalSlideIn 0.3s ease;
+}
+
+.modal-close-floating.delete-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.delete-modal-hero {
+    background: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 40%, #a78bfa 100%);
+    padding: 28px 24px;
+    position: relative;
+    overflow: hidden;
+}
+
+.delete-hero-pattern {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.06'%3E%3Crect x='24' y='24' width='12' height='12' rx='2'/%3E%3Crect x='4' y='4' width='8' height='8' rx='1'/%3E%3Crect x='48' y='48' width='8' height='8' rx='1'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.8;
+}
+
+.delete-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.delete-hero-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.delete-hero-text h2 {
+    color: white;
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+}
+
+.delete-hero-text p {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    margin: 0;
+}
+
+.delete-modal-body {
+    padding: 24px;
+    background: var(--background);
+}
+
+.delete-player-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+}
+
+.delete-player-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+}
+
+.delete-player-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.delete-player-name {
+    display: block;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.delete-player-id {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: monospace;
+}
+
+.delete-warning-notice {
+    display: flex;
+    gap: 14px;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+    border-radius: 12px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.delete-warning-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ef4444;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.delete-warning-content strong {
+    display: block;
+    font-size: 14px;
+    color: #ef4444;
+    margin-bottom: 6px;
+}
+
+.delete-warning-content p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.6;
+}
+
+.delete-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+}
+
+.delete-btn-cancel {
+    padding: 11px 22px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.delete-btn-cancel:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+    background: var(--surface-light);
+}
+
+.delete-btn-confirm {
+    padding: 11px 24px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    background: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.35);
+}
+
+.delete-btn-confirm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+}
+
+.delete-btn-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ========== End Professional Delete Modal Styles ========== */
+
+.approve-info, .deny-info {
+    background: var(--surface);
+    padding: 16px;
+    border-radius: 8px;
+    margin: 16px 0;
+}
+
+.approve-note, .deny-note {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 16px 0;
+}
+
+.approve-note i, .deny-note i {
+    margin-right: 6px;
+    color: var(--info);
+}
+
+.form-group {
+    margin: 16px 0;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.form-group .required {
+    color: var(--danger);
+}
+
+.form-textarea {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 80px;
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+}
+
+.preset-reasons {
+    margin: 16px 0;
+}
+
+.preset-reasons label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.preset-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.preset-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-btn:hover {
+    background: var(--surface-light);
+    border-color: var(--primary-light);
+    color: var(--primary-light);
+}
+
+/* Registration Actions - Add approve/deny buttons */
+.btn-approve {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.btn-approve:hover {
+    background: rgba(16, 185, 129, 0.3);
+}
+
+.btn-deny {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.btn-deny:hover {
+    background: rgba(239, 68, 68, 0.3);
+}
+
+/* Detail Actions Enhancement */
+.detail-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.detail-actions .action-group {
+    display: flex;
+    gap: 8px;
+}
+
+/* Toast Notification Styles */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    contain: layout style paint;
+    max-width: 400px;
+}
+
+.toast {
+    padding: 16px 20px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 300px;
+    max-width: 400px;
+    animation: slideIn 0.3s ease;
+    pointer-events: auto;
+}
+
+.toast.success {
+    border-left: 4px solid var(--success);
+}
+
+.toast.error {
+    border-left: 4px solid var(--danger);
+}
+
+.toast.warning {
+    border-left: 4px solid var(--warning);
+}
+
+.toast.info {
+    border-left: 4px solid var(--info);
+}
+
+.toast i {
+    font-size: 20px;
+}
+
+.toast.success i { color: var(--success); }
+.toast.error i { color: var(--danger); }
+.toast.warning i { color: var(--warning); }
+.toast.info i { color: var(--info); }
+
+.toast-message {
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.toast-close:hover {
+    color: var(--text-primary);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateX(50px);
+    }
+}
+
+.loading-spinner {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.loading-spinner i {
+    font-size: 32px;
+    margin-bottom: 12px;
+    display: block;
+}
+
+.loading-spinner p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+}
+
+.empty-state i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+@media (max-width: 768px) {
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .filters-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .registration-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .registration-meta {
+        flex-direction: row;
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .info-grid.three-col {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<script>
+let allRegistrations = [];
+let filteredRegistrations = [];
+let deleteTarget = null;
+let approveTarget = null;
+let denyTarget = null;
+
+// Escape string for use in JavaScript onclick attributes
+function escapeJsString(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Create toast container if it doesn't exist (main.js normally creates one)
+    if (!document.querySelector('.toast-container')) {
+        const container = document.createElement('div');
+        container.className = 'toast-container';
+        container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;pointer-events:none;contain:layout style paint;max-width:400px;';
+        document.body.appendChild(container);
+    }
+    
+    loadRegistrations();
+    
+    // Filter events
+    document.getElementById('searchInput').addEventListener('input', filterRegistrations);
+    document.getElementById('statusFilter').addEventListener('change', filterRegistrations);
+    document.getElementById('typeFilter').addEventListener('change', filterRegistrations);
+    document.getElementById('gameFilter').addEventListener('change', filterRegistrations);
+});
+
+async function loadRegistrations() {
+    try {
+        const response = await fetch('/api/varsity-registrations');
+        if (!response.ok) throw new Error('Failed to load registrations');
+        
+        allRegistrations = await response.json();
+        
+        // Update stats
+        document.getElementById('totalRegistrations').textContent = allRegistrations.length;
+        document.getElementById('pendingCount').textContent = allRegistrations.filter(r => r.status === 'Pending' || !r.status).length;
+        document.getElementById('approvedCount').textContent = allRegistrations.filter(r => r.status === 'Approved').length;
+        document.getElementById('deniedCount').textContent = allRegistrations.filter(r => r.status === 'Denied').length;
+        
+        // Populate game filter
+        const games = new Set();
+        allRegistrations.forEach(r => {
+            if (r.data && r.data['Primary Game Title']) {
+                games.add(r.data['Primary Game Title']);
+            }
+        });
+        
+        const gameFilter = document.getElementById('gameFilter');
+        games.forEach(game => {
+            const option = document.createElement('option');
+            option.value = game;
+            option.textContent = game;
+            gameFilter.appendChild(option);
+        });
+        
+        filterRegistrations();
+    } catch (error) {
+        console.error('Error loading registrations:', error);
+        document.getElementById('registrationsList').innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h3>Failed to Load Registrations</h3>
+                <p>Please try again later.</p>
+            </div>
+        `;
+    }
+}
+
+function filterRegistrations() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value;
+    const type = document.getElementById('typeFilter').value;
+    const game = document.getElementById('gameFilter').value;
+    
+    filteredRegistrations = allRegistrations.filter(reg => {
+        // Search filter
+        if (search) {
+            const data = reg.data || {};
+            const matchName = data['Full Name']?.toLowerCase().includes(search);
+            const matchEmail = data['Purdue Email']?.toLowerCase().includes(search);
+            const matchGame = data['Primary Game Title']?.toLowerCase().includes(search);
+            const matchIGN = data['IGN']?.toLowerCase().includes(search);
+            if (!matchName && !matchEmail && !matchGame && !matchIGN) return false;
+        }
+        
+        // Status filter
+        if (status) {
+            const regStatus = reg.status || 'Pending';
+            if (regStatus !== status) return false;
+        }
+        
+        // Type filter
+        if (type) {
+            const playerType = reg.data?.player_type;
+            if (playerType !== type) return false;
+        }
+        
+        // Game filter
+        if (game) {
+            const regGame = reg.data?.['Primary Game Title'];
+            if (regGame !== game) return false;
+        }
+        
+        return true;
+    });
+    
+    document.getElementById('filteredCount').textContent = `${filteredRegistrations.length} registrations`;
+    renderRegistrations();
+}
+
+function renderRegistrations() {
+    const list = document.getElementById('registrationsList');
+    
+    if (filteredRegistrations.length === 0) {
+        list.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-clipboard-list"></i>
+                <h3>No Registrations Found</h3>
+                <p>No varsity registrations match your filters.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    list.innerHTML = filteredRegistrations.map(reg => {
+        const data = reg.data || {};
+        const name = data['Full Name'] || 'Unknown';
+        const game = data['Primary Game Title'] || 'Not specified';
+        const playerType = formatPlayerType(data.player_type);
+        const status = reg.status || 'Pending';
+        const timestamp = reg.timestamp ? new Date(reg.timestamp).toLocaleDateString() : 'Unknown';
+        const isPending = status === 'Pending' || !reg.status;
+        
+        return `
+            <div class="registration-card">
+                <div class="registration-avatar">
+                    ${name.charAt(0).toUpperCase()}
+                </div>
+                <div class="registration-info">
+                    <div class="registration-name">${escapeHtml(name)}</div>
+                    <div class="registration-details">
+                        <span><i class="fas fa-gamepad"></i> ${escapeHtml(game)}</span>
+                        <span><i class="fas fa-medal"></i> ${escapeHtml(playerType)}</span>
+                        <span><i class="fas fa-user"></i> ${escapeHtml(data['IGN'] || 'No IGN')}</span>
+                    </div>
+                </div>
+                <div class="registration-meta">
+                    <span class="registration-status ${status.toLowerCase()}">${status}</span>
+                    <span class="registration-date">${timestamp}</span>
+                </div>
+                <div class="registration-actions">
+                    ${isPending ? `
+                        <button class="btn-approve" onclick="openApproveModal('${escapeJsString(reg.user_id)}', ${reg.index}, '${escapeJsString(name)}', '${escapeJsString(game)}')" title="Approve">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn-deny" onclick="openDenyModal('${escapeJsString(reg.user_id)}', ${reg.index}, '${escapeJsString(name)}', '${escapeJsString(game)}')" title="Deny">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    ` : ''}
+                    <button class="btn-view" onclick="viewRegistration('${escapeJsString(reg.user_id)}', ${reg.index})">
+                        <i class="fas fa-eye"></i> View
+                    </button>
+                    <button class="btn-delete" onclick="openDeleteModal('${escapeJsString(reg.user_id)}', ${reg.index}, '${escapeJsString(name)}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function formatPlayerType(type) {
+    const types = {
+        'varsity': 'Varsity',
+        'jv': 'JV',
+        'sub_varsity': 'Substitute Varsity',
+        'sub_jv': 'Substitute JV'
+    };
+    return types[type] || type || 'Unknown';
+}
+
+async function viewRegistration(userId, index) {
+    const modal = document.getElementById('detailModal');
+    const content = document.getElementById('detailModalContent');
+    
+    content.innerHTML = `
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading registration details...</p>
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    
+    // Find registration in local data
+    const reg = allRegistrations.find(r => r.user_id === userId && r.index === index);
+    
+    if (!reg) {
+        content.innerHTML = '<p>Registration not found</p>';
+        return;
+    }
+    
+    const data = reg.data || {};
+    const status = reg.status || 'Pending';
+    const timestamp = reg.timestamp ? new Date(reg.timestamp).toLocaleString() : 'Unknown';
+    const isPending = status === 'Pending' || !reg.status;
+    const name = data['Full Name'] || 'Unknown';
+    const game = data['Primary Game Title'] || 'Not specified';
+    
+    content.innerHTML = `
+        <div class="detail-container">
+            <!-- Hero Section -->
+            <div class="detail-hero">
+                <div class="detail-hero-content">
+                    <div class="detail-hero-avatar">
+                        ${name.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="detail-hero-info">
+                        <h2>${escapeHtml(name)}</h2>
+                        <div class="detail-hero-meta">
+                            <span><i class="fas fa-gamepad"></i> ${escapeHtml(game)}</span>
+                            <span><i class="fas fa-medal"></i> ${escapeHtml(formatPlayerType(data.player_type))}</span>
+                            <span><i class="fas fa-calendar"></i> ${timestamp}</span>
+                        </div>
+                    </div>
+                    <div class="detail-hero-badge ${status.toLowerCase()}">${status}</div>
+                </div>
+            </div>
+            
+            <!-- Body Content -->
+            <div class="detail-body">
+                <div class="detail-grid">
+                    <!-- Personal Information Card -->
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <i class="fas fa-user"></i>
+                            <h4>Personal Information</h4>
+                        </div>
+                        <div class="detail-card-body">
+                            <div class="detail-field">
+                                <span class="detail-field-label">Full Name</span>
+                                <span class="detail-field-value">${escapeHtml(data['Full Name'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Phone Number</span>
+                                <span class="detail-field-value">${escapeHtml(data['Phone Number'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Home Town</span>
+                                <span class="detail-field-value">${escapeHtml(data['Home Town/City (State)'] || 'Not provided')}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Contact Information Card -->
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <i class="fas fa-envelope"></i>
+                            <h4>Contact Information</h4>
+                        </div>
+                        <div class="detail-card-body">
+                            <div class="detail-field">
+                                <span class="detail-field-label">Purdue Email</span>
+                                <span class="detail-field-value">${escapeHtml(data['Purdue Email'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Personal Email</span>
+                                <span class="detail-field-value">${escapeHtml(data['Personal Email'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">PUID</span>
+                                <span class="detail-field-value">${escapeHtml(data['PUID'] || 'Not provided')}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Academic Information Card -->
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <i class="fas fa-graduation-cap"></i>
+                            <h4>Academic Information</h4>
+                        </div>
+                        <div class="detail-card-body">
+                            <div class="detail-field">
+                                <span class="detail-field-label">Year in School</span>
+                                <span class="detail-field-value">${escapeHtml(data['Year in School'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Major</span>
+                                <span class="detail-field-value">${escapeHtml(data['Major'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">GPA</span>
+                                <span class="detail-field-value">${escapeHtml(data['GPA'] || 'Not provided')}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Gaming Information Card -->
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <i class="fas fa-gamepad"></i>
+                            <h4>Gaming Information</h4>
+                        </div>
+                        <div class="detail-card-body">
+                            <div class="detail-field">
+                                <span class="detail-field-label">In-Game Name (IGN)</span>
+                                <span class="detail-field-value">${escapeHtml(data['IGN'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Primary Game</span>
+                                <span class="detail-field-value">${escapeHtml(data['Primary Game Title'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Current Rank</span>
+                                <span class="detail-field-value">${escapeHtml(data['Current Rank in Game'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Primary Role</span>
+                                <span class="detail-field-value">${escapeHtml(data['Primary Role'] || 'Not provided')}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stats & Details Card -->
+                    <div class="detail-card full-width">
+                        <div class="detail-card-header">
+                            <i class="fas fa-chart-line"></i>
+                            <h4>Additional Details</h4>
+                        </div>
+                        <div class="detail-card-body" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                            <div class="detail-field">
+                                <span class="detail-field-label">Jersey Details</span>
+                                <span class="detail-field-value">${escapeHtml(data['Jersey Details'] || 'Not provided')}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Player Type</span>
+                                <span class="detail-field-value">${escapeHtml(formatPlayerType(data.player_type))}</span>
+                            </div>
+                            <div class="detail-field">
+                                <span class="detail-field-label">Tracker Link</span>
+                                <span class="detail-field-value">
+                                    ${data['Tracker Link'] 
+                                        ? `<a href="${escapeHtml(data['Tracker Link'])}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt"></i> View Stats</a>`
+                                        : 'Not provided'
+                                    }
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                ${data['Anything Else'] ? `
+                <!-- Additional Notes -->
+                <div class="detail-card full-width" style="margin-bottom: 24px;">
+                    <div class="detail-card-header">
+                        <i class="fas fa-comment-alt"></i>
+                        <h4>Additional Notes from Player</h4>
+                    </div>
+                    <div class="detail-card-body">
+                        <div class="detail-notes">
+                            "${escapeHtml(data['Anything Else'])}"
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${data.attachments && data.attachments.length > 0 ? `
+                <!-- Attachments Section -->
+                <div class="detail-attachments">
+                    <div class="attachments-header">
+                        <i class="fas fa-images"></i>
+                        <h4>Schedule & Attachments</h4>
+                        <span class="attachments-count">${data.attachments.length} file${data.attachments.length > 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="attachments-gallery">
+                        ${data.attachments.map((url, idx) => `
+                            <div class="attachment-card" onclick="window.open('${escapeHtml(url)}', '_blank')">
+                                <img src="${escapeHtml(url)}" alt="Attachment ${idx + 1}" loading="lazy">
+                                <div class="attachment-overlay">
+                                    <span><i class="fas fa-expand"></i> Click to view full size</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : `
+                <div class="detail-attachments">
+                    <div class="attachments-header">
+                        <i class="fas fa-images"></i>
+                        <h4>Schedule & Attachments</h4>
+                    </div>
+                    <div class="detail-notes" style="text-align: center; padding: 24px;">
+                        <i class="fas fa-image" style="font-size: 32px; color: var(--text-muted); margin-bottom: 12px; display: block;"></i>
+                        No attachments uploaded
+                    </div>
+                </div>
+                `}
+                
+                ${reg.moderated_by ? `
+                <!-- Moderation Section -->
+                <div class="detail-moderation ${status.toLowerCase()}">
+                    <div class="moderation-header">
+                        <div class="moderation-title">
+                            <i class="fas ${status === 'Approved' ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                            <span>${status === 'Approved' ? 'Approved' : 'Denied'} by ${escapeHtml(reg.moderated_by.name || 'Admin')}</span>
+                        </div>
+                        <span class="moderation-date">${reg.moderated_at ? new Date(reg.moderated_at).toLocaleString() : ''}</span>
+                    </div>
+                    ${reg.moderation_note ? `
+                        <div class="moderation-reason">
+                            <strong>Reason:</strong> "${escapeHtml(reg.moderation_note)}"
+                        </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+            </div>
+            
+            <!-- Footer Actions -->
+            <div class="detail-footer">
+                <button class="btn btn-danger" onclick="openDeleteModal('${escapeJsString(userId)}', ${index}, '${escapeJsString(name)}'); closeDetailModal();">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+                <div class="detail-footer-actions">
+                    ${isPending ? `
+                        <button class="btn btn-success" onclick="openApproveModal('${escapeJsString(userId)}', ${index}, '${escapeJsString(name)}', '${escapeJsString(game)}'); closeDetailModal();">
+                            <i class="fas fa-check"></i> Approve
+                        </button>
+                        <button class="btn btn-danger" onclick="openDenyModal('${escapeJsString(userId)}', ${index}, '${escapeJsString(name)}', '${escapeJsString(game)}'); closeDetailModal();">
+                            <i class="fas fa-times"></i> Deny
+                        </button>
+                    ` : ''}
+                    <button class="btn btn-secondary" onclick="closeDetailModal()">
+                        <i class="fas fa-times"></i> Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function closeDetailModal() {
+    closeModalWithAnimation(document.getElementById('detailModal'));
+}
+
+function openDeleteModal(userId, index, name) {
+    // Ensure userId is valid
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        showNotification('Invalid user ID. Please refresh and try again.', 'error');
+        return;
+    }
+    
+    deleteTarget = { userId: String(userId), index: parseInt(index) };
+    
+    // Update player card in the professional modal
+    document.getElementById('deletePlayerAvatar').textContent = name ? name.charAt(0).toUpperCase() : '?';
+    document.getElementById('deletePlayerName').textContent = name || 'Unknown';
+    document.getElementById('deletePlayerId').innerHTML = `<i class="fas fa-fingerprint"></i> ${userId}`;
+    
+    document.getElementById('deleteModal').classList.add('active');
+}
+
+function closeDeleteModal() {
+    closeModalWithAnimation(document.getElementById('deleteModal'), () => {
+        deleteTarget = null;
+    });
+}
+
+async function confirmDelete() {
+    if (!deleteTarget) return;
+    
+    const btn = document.getElementById('confirmDeleteBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+    
+    try {
+        const response = await fetch(`/api/varsity-registrations/${deleteTarget.userId}/entry/${deleteTarget.index}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('Registration deleted successfully', 'success');
+            closeDeleteModal();
+            loadRegistrations();
+        } else {
+            showNotification(result.message || 'Failed to delete', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting registration:', error);
+        showNotification('Failed to delete registration', 'error');
+    }    finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-trash"></i> Delete Registration';
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showNotification(message, type = 'info') {
+    // Use the global showToast from base.html for consistent behavior
+    if (typeof showToast === 'function') {
+        showToast(message, type);
+        return;
+    }
+    // Fallback to local toast system
+    const container = document.querySelector('.toast-container');
+    if (!container) return;
+    
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info: 'fa-info-circle'
+    };
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+        <i class="fas ${icons[type] || icons.info}"></i>
+        <span class="toast-message">${escapeHtml(message)}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 5000);
+}
+
+// ========== Approve Functions ==========
+
+function openApproveModal(userId, index, name, game) {
+    // Ensure userId is valid
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        showNotification('Invalid user ID. Please refresh and try again.', 'error');
+        return;
+    }
+    
+    approveTarget = { userId: String(userId), index: parseInt(index) };
+    
+    // Update player card in the professional modal
+    document.getElementById('approvePlayerAvatar').textContent = name ? name.charAt(0).toUpperCase() : '?';
+    document.getElementById('approvePlayerName').textContent = name || 'Unknown';
+    document.getElementById('approvePlayerGame').innerHTML = `<i class="fas fa-gamepad"></i> ${escapeHtml(game || 'Unknown')}`;
+    
+    document.getElementById('approveModal').classList.add('active');
+}
+
+function closeApproveModal() {
+    closeModalWithAnimation(document.getElementById('approveModal'), () => {
+        approveTarget = null;
+    });
+}
+
+async function confirmApprove() {
+    if (!approveTarget || !approveTarget.userId) {
+        showNotification('No registration selected. Please click the approve button again.', 'error');
+        closeApproveModal();
+        return;
+    }
+    
+    // Validate userId
+    if (approveTarget.userId === 'undefined' || approveTarget.userId === 'null') {
+        showNotification('Invalid user ID. Please refresh the page and try again.', 'error');
+        closeApproveModal();
+        return;
+    }
+    
+    const btn = document.getElementById('confirmApproveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Approving...';
+    
+    try {
+        const response = await fetch(`/api/varsity-registrations/${approveTarget.userId}/entry/${approveTarget.index}/approve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('Registration approved successfully! User will be notified via Discord.', 'success');
+            approveTarget = null;  // Clear before closing
+            closeApproveModal();
+            loadRegistrations();
+        } else {
+            showNotification(result.message || 'Failed to approve registration', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving registration:', error);
+        showNotification('Failed to approve registration', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> Approve Registration';
+    }
+}
+
+// ========== Deny Functions ==========
+
+function openDenyModal(userId, index, name, game) {
+    // Ensure userId is valid
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        showNotification('Invalid user ID. Please refresh and try again.', 'error');
+        return;
+    }
+    
+    denyTarget = { userId: String(userId), index: parseInt(index) };
+    
+    // Update player card in the professional modal
+    document.getElementById('denyPlayerAvatar').textContent = name ? name.charAt(0).toUpperCase() : '?';
+    document.getElementById('denyPlayerName').textContent = name || 'Unknown';
+    document.getElementById('denyPlayerGame').innerHTML = `<i class="fas fa-gamepad"></i> ${escapeHtml(game || 'Unknown')}`;
+    
+    // Clear previous reason and reset char count
+    document.getElementById('denyReason').value = '';
+    document.getElementById('denyCharCount').textContent = '0';
+    
+    document.getElementById('denyModal').classList.add('active');
+    
+    // Focus on the textarea
+    setTimeout(() => {
+        document.getElementById('denyReason').focus();
+    }, 300);
+}
+
+// Character counter for deny reason
+document.addEventListener('DOMContentLoaded', function() {
+    const denyReasonTextarea = document.getElementById('denyReason');
+    if (denyReasonTextarea) {
+        denyReasonTextarea.addEventListener('input', function() {
+            const charCount = document.getElementById('denyCharCount');
+            if (charCount) {
+                charCount.textContent = this.value.length;
+            }
+        });
+    }
+});
+
+function closeDenyModal() {
+    closeModalWithAnimation(document.getElementById('denyModal'), () => {
+        denyTarget = null;
+    });
+}
+
+function setDenyReason(reason) {
+    document.getElementById('denyReason').value = reason;
+}
+
+async function confirmDeny() {
+    if (!denyTarget || !denyTarget.userId) {
+        showNotification('No registration selected. Please click the deny button again.', 'error');
+        closeDenyModal();
+        return;
+    }
+    
+    // Validate userId
+    if (denyTarget.userId === 'undefined' || denyTarget.userId === 'null') {
+        showNotification('Invalid user ID. Please refresh the page and try again.', 'error');
+        closeDenyModal();
+        return;
+    }
+    
+    const reason = document.getElementById('denyReason').value.trim();
+    if (!reason) {
+        showNotification('Please provide a reason for denial', 'warning');
+        document.getElementById('denyReason').focus();
+        return;
+    }
+    
+    const btn = document.getElementById('confirmDenyBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Denying...';
+    
+    try {
+        const response = await fetch(`/api/varsity-registrations/${denyTarget.userId}/entry/${denyTarget.index}/deny`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason: reason })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('Registration denied. User will be notified via Discord with your reason.', 'success');
+            denyTarget = null;  // Clear before closing
+            closeDenyModal();
+            loadRegistrations();
+        } else {
+            showNotification(result.message || 'Failed to deny registration', 'error');
+        }
+    } catch (error) {
+        console.error('Error denying registration:', error);
+        showNotification('Failed to deny registration', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-times"></i> Deny Registration';
+    }
+}
+
+// Close modals on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeDetailModal();
+        closeDeleteModal();
+        closeApproveModal();
+        closeDenyModal();
+    }
+});
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.classList.remove('active');
+        }
+    });
+});
+</script>
+{% endblock %}

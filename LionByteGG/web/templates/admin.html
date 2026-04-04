@@ -1,0 +1,1286 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Panel{% endblock %}
+{% block page_title %}Admin Panel{% endblock %}
+
+{% block content %}
+<style>
+    .admin-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 24px;
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 4px;
+        width: fit-content;
+    }
+    .admin-tab {
+        padding: 10px 24px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .admin-tab:hover { background: var(--surface-light); color: var(--text-primary); }
+    .admin-tab.active { background: var(--primary); color: white; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Cards */
+    .admin-card {
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+    .admin-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+    }
+    .admin-card-header h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .admin-card-header h3 i { color: var(--primary-light); }
+
+    /* Table */
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .admin-table th {
+        text-align: left;
+        padding: 14px 24px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: var(--background-secondary);
+        border-bottom: 1px solid var(--border);
+    }
+    .admin-table td {
+        padding: 14px 24px;
+        font-size: 14px;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+    }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .admin-table tr:hover td { background: rgba(124, 58, 237, 0.03); }
+
+    /* Badges */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .badge-admin { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
+    .badge-active { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .badge-inactive { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .badge-group { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+
+    /* Buttons */
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        font-family: 'Inter', sans-serif;
+        font-weight: 500;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .btn-create {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: 'Inter', sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s;
+    }
+    .btn-create:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    .btn-edit { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .btn-edit:hover { background: rgba(59, 130, 246, 0.25); }
+    .btn-delete { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .btn-delete:hover { background: rgba(239, 68, 68, 0.25); }
+    .btn-reset { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    .btn-reset:hover { background: rgba(245, 158, 11, 0.25); }
+    .action-btns { display: flex; gap: 6px; }
+
+    /* Modal */
+    .admin-modal-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+        z-index: 10000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .admin-modal-overlay.active { display: flex; }
+    .admin-modal {
+        background: var(--surface);
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        width: 100%;
+        max-width: 560px;
+        max-height: 85vh;
+        overflow-y: auto;
+        animation: modalIn 0.2s ease;
+    }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .admin-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+    }
+    .admin-modal-header h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .admin-modal-header h3 i { color: var(--primary-light); }
+    .admin-modal-close {
+        background: var(--surface-light);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+    .admin-modal-close:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .admin-modal-body { padding: 24px; }
+    .admin-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 16px 24px;
+        border-top: 1px solid var(--border);
+    }
+    .modal-btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .modal-btn-cancel { background: var(--surface-light); color: var(--text-primary); border: 1px solid var(--border); }
+    .modal-btn-cancel:hover { background: var(--border); }
+    .modal-btn-save { background: var(--primary); color: white; }
+    .modal-btn-save:hover { background: var(--primary-dark); }
+    .modal-btn-danger { background: #ef4444; color: white; }
+    .modal-btn-danger:hover { background: #dc2626; }
+
+    /* Form */
+    .form-field { margin-bottom: 18px; }
+    .form-field label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 6px;
+    }
+    .form-field input,
+    .form-field select,
+    .form-field textarea {
+        width: 100%;
+        padding: 10px 14px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 14px;
+        font-family: 'Inter', sans-serif;
+        transition: border-color 0.2s;
+    }
+    .form-field input:focus,
+    .form-field select:focus {
+        outline: none;
+        border-color: var(--primary);
+    }
+    .form-field .hint {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 4px;
+    }
+    .form-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+    }
+    .form-check input[type="checkbox"] {
+        width: 18px; height: 18px;
+        accent-color: var(--primary);
+        cursor: pointer;
+    }
+    .form-check label {
+        font-size: 14px;
+        color: var(--text-primary);
+        cursor: pointer;
+        margin-bottom: 0;
+    }
+
+    /* Permission groups in modal */
+    .perm-section {
+        margin-bottom: 16px;
+        background: var(--background);
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+    .perm-section-title {
+        padding: 12px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        background: var(--surface-light);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        user-select: none;
+    }
+    .perm-section-title i { color: var(--primary-light); font-size: 12px; }
+    .perm-section-body { padding: 8px 16px 12px; }
+    .perm-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 0;
+    }
+    .perm-item input[type="checkbox"] {
+        width: 16px; height: 16px;
+        accent-color: var(--primary);
+    }
+    .perm-item label {
+        font-size: 13px;
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+
+    /* Groups card */
+    .group-card {
+        background: var(--background);
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        margin-bottom: 12px;
+        overflow: hidden;
+    }
+    .group-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        cursor: pointer;
+    }
+    .group-card-header h4 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .group-card-body {
+        padding: 0 20px 16px;
+        border-top: 1px solid var(--border);
+    }
+    .group-perms-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-top: 12px;
+    }
+    .perm-chip {
+        padding: 4px 10px;
+        background: rgba(124, 58, 237, 0.1);
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--primary-light);
+    }
+    .no-perms { 
+        color: var(--text-secondary); 
+        font-size: 13px; 
+        font-style: italic;
+        padding-top: 12px;
+    }
+    .group-desc {
+        font-size: 13px;
+        color: var(--text-secondary);
+        padding-top: 8px;
+    }
+    .group-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    .empty-state {
+        text-align: center;
+        padding: 48px 24px;
+        color: var(--text-secondary);
+    }
+    .empty-state i { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+    .empty-state p { font-size: 15px; }
+
+    /* Password display */
+    .password-display {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        color: var(--text-primary);
+    }
+    .password-display .copy-btn {
+        margin-left: auto;
+        background: none;
+        border: none;
+        color: var(--primary-light);
+        cursor: pointer;
+        padding: 4px;
+    }
+
+    /* Toast notifications */
+    .admin-toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+    }
+    .admin-toast {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        min-width: 300px;
+        max-width: 420px;
+        animation: toastIn 0.3s ease;
+        transition: all 0.3s ease;
+    }
+    .admin-toast.removing {
+        animation: toastOut 0.3s ease forwards;
+    }
+    .admin-toast-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+    .admin-toast-icon.success { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .admin-toast-icon.error { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .admin-toast-text h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 2px; }
+    .admin-toast-text p { font-size: 13px; color: var(--text-secondary); margin: 0; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(40px); } }
+
+    /* Loading overlay for cards */
+    .admin-card { position: relative; }
+    .admin-loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(var(--surface-rgb, 30, 30, 46), 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 12px;
+        transition: opacity 0.3s ease;
+    }
+    .admin-loading-overlay.fade-out {
+        opacity: 0;
+        pointer-events: none;
+    }
+    .admin-spinner {
+        width: 36px;
+        height: 36px;
+        border: 3px solid var(--border);
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: adminSpin 0.8s linear infinite;
+    }
+    @keyframes adminSpin { to { transform: rotate(360deg); } }
+
+    /* Row entrance animation */
+    .admin-table tbody tr {
+        animation: rowFadeIn 0.3s ease;
+    }
+    @keyframes rowFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .group-card {
+        animation: rowFadeIn 0.3s ease;
+    }
+
+    /* Button loading state */
+    .modal-btn-save.loading {
+        opacity: 0.7;
+        pointer-events: none;
+    }
+    .modal-btn-save.loading::after {
+        content: '';
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: adminSpin 0.6s linear infinite;
+        display: inline-block;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+</style>
+
+<!-- Tabs -->
+<div class="admin-tabs">
+    <button class="admin-tab active" onclick="switchAdminTab('users')">
+        <i class="fas fa-users"></i> Users
+    </button>
+    <button class="admin-tab" onclick="switchAdminTab('groups')">
+        <i class="fas fa-layer-group"></i> Groups
+    </button>
+    <button class="admin-tab" onclick="switchAdminTab('audit')">
+        <i class="fas fa-clipboard-list"></i> Audit Log
+    </button>
+</div>
+
+<!-- ============ USERS TAB ============ -->
+<div class="tab-panel active" id="panel-users">
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-users"></i> Dashboard Users</h3>
+            <button class="btn-create" onclick="openCreateUserModal()">
+                <i class="fas fa-plus"></i> Create User
+            </button>
+        </div>
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Display Name</th>
+                    <th>Group</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last Login</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="users-tbody">
+                <tr><td colspan="7" class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading users...</p></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ============ GROUPS TAB ============ -->
+<div class="tab-panel" id="panel-groups">
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-layer-group"></i> Permission Groups</h3>
+            <button class="btn-create" onclick="openCreateGroupModal()">
+                <i class="fas fa-plus"></i> Create Group
+            </button>
+        </div>
+        <div style="padding: 20px;" id="groups-container">
+            <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading groups...</p></div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ AUDIT LOG TAB ============ -->
+<div class="tab-panel" id="panel-audit">
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-clipboard-list"></i> Admin Audit Log</h3>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <select id="audit-filter" onchange="loadAuditLog()" style="background:var(--card-bg); color:var(--text-primary); border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:13px;">
+                    <option value="">All Actions</option>
+                    <option value="create_user">Created Users</option>
+                    <option value="update_user">Updated Users</option>
+                    <option value="delete_user">Deleted Users</option>
+                    <option value="reset_password">Password Resets</option>
+                    <option value="create_group">Created Groups</option>
+                    <option value="update_group">Updated Groups</option>
+                    <option value="delete_group">Deleted Groups</option>
+                </select>
+                <button class="btn-create" onclick="loadAuditLog()" style="padding: 6px 14px;">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th style="width:160px;">Timestamp</th>
+                    <th style="width:140px;">User</th>
+                    <th style="width:140px;">Action</th>
+                    <th>Details</th>
+                    <th style="width:120px;">Target</th>
+                </tr>
+            </thead>
+            <tbody id="audit-tbody">
+                <tr><td colspan="5" class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading audit log...</p></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ============ CREATE/EDIT USER MODAL ============ -->
+<div class="admin-modal-overlay" id="user-modal">
+    <div class="admin-modal">
+        <div class="admin-modal-header">
+            <h3 id="user-modal-title"><i class="fas fa-user-plus"></i> Create User</h3>
+            <button class="admin-modal-close" onclick="closeModal('user-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="admin-modal-body">
+            <input type="hidden" id="user-edit-id" value="">
+            <div class="form-field">
+                <label>Username</label>
+                <input type="text" id="user-username" placeholder="e.g. jsmith" autocomplete="off">
+                <p class="hint">Used to log in. Cannot be changed after creation.</p>
+            </div>
+            <div class="form-field" id="password-field">
+                <label>Password</label>
+                <input type="password" id="user-password" placeholder="Min 6 characters" autocomplete="new-password">
+                <p class="hint">Minimum 6 characters.</p>
+            </div>
+            <div class="form-field">
+                <label>Display Name</label>
+                <input type="text" id="user-display-name" placeholder="e.g. John Smith">
+            </div>
+            <div class="form-field">
+                <label>Group</label>
+                <select id="user-group">
+                    <option value="">No Group</option>
+                </select>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="user-is-admin">
+                <label for="user-is-admin">Admin — Full access to all sections and the Admin panel</label>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="user-is-active" checked>
+                <label for="user-is-active">Active — User can log in</label>
+            </div>
+        </div>
+        <div class="admin-modal-footer">
+            <button class="modal-btn modal-btn-cancel" onclick="closeModal('user-modal')">Cancel</button>
+            <button class="modal-btn modal-btn-save" id="user-save-btn" onclick="saveUser()">Create User</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ RESET PASSWORD MODAL ============ -->
+<div class="admin-modal-overlay" id="password-modal">
+    <div class="admin-modal">
+        <div class="admin-modal-header">
+            <h3><i class="fas fa-key"></i> Reset Password</h3>
+            <button class="admin-modal-close" onclick="closeModal('password-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="admin-modal-body">
+            <input type="hidden" id="pw-user-id" value="">
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">Set a new password for <strong id="pw-username" style="color: var(--text-primary);"></strong></p>
+            <div class="form-field">
+                <label>New Password</label>
+                <input type="password" id="new-password" placeholder="Min 6 characters" autocomplete="new-password">
+            </div>
+            <div class="form-field">
+                <label>Confirm Password</label>
+                <input type="password" id="confirm-password" placeholder="Re-enter password" autocomplete="new-password">
+            </div>
+        </div>
+        <div class="admin-modal-footer">
+            <button class="modal-btn modal-btn-cancel" onclick="closeModal('password-modal')">Cancel</button>
+            <button class="modal-btn modal-btn-save" onclick="resetPassword()">Reset Password</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ CREATE/EDIT GROUP MODAL ============ -->
+<div class="admin-modal-overlay" id="group-modal">
+    <div class="admin-modal">
+        <div class="admin-modal-header">
+            <h3 id="group-modal-title"><i class="fas fa-layer-group"></i> Create Group</h3>
+            <button class="admin-modal-close" onclick="closeModal('group-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="admin-modal-body">
+            <input type="hidden" id="group-edit-id" value="">
+            <div class="form-field">
+                <label>Group Name</label>
+                <input type="text" id="group-name" placeholder="e.g. Student Workers">
+            </div>
+            <div class="form-field">
+                <label>Description</label>
+                <input type="text" id="group-description" placeholder="Optional description">
+            </div>
+
+            <label style="display:block; font-size:14px; font-weight:600; color:var(--text-primary); margin: 20px 0 12px;">Permissions</label>
+
+            <!-- LionByteGG Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-robot"></i> LionByteGG</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-section.lionbyte" data-perm="section.lionbyte"><label for="perm-section.lionbyte"><strong>Access LionByteGG Section</strong></label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Dashboard</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.dashboard" data-perm="page.dashboard"><label for="perm-page.dashboard">View Dashboard</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-dashboard.bot_controls" data-perm="dashboard.bot_controls"><label for="perm-dashboard.bot_controls">Bot Controls (Activity / Restart / Stop)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Analytics</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.analytics" data-perm="page.analytics"><label for="perm-page.analytics">View Analytics</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Server Members</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.members" data-perm="page.members"><label for="perm-page.members">View Members</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-members.moderate" data-perm="members.moderate"><label for="perm-members.moderate">Moderate Members (Warn / Timeout / Kick / Ban)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-members.communicate" data-perm="members.communicate"><label for="perm-members.communicate">Send DMs & Add Notes</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Guest Management</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.users" data-perm="page.users"><label for="perm-page.users">View Guests</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-users.manage" data-perm="users.manage"><label for="perm-users.manage">Manage Guests (Reset / Remove)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Varsity</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.varsity" data-perm="page.varsity"><label for="perm-page.varsity">View Registrations</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-varsity.manage" data-perm="varsity.manage"><label for="perm-varsity.manage">Manage Registrations (Approve / Deny / Delete)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Team Rosters</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.rosters" data-perm="page.rosters"><label for="perm-page.rosters">View Rosters</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-rosters.manage" data-perm="rosters.manage"><label for="perm-rosters.manage">Manage Players, Teams & Matches</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-rosters.admin" data-perm="rosters.admin"><label for="perm-rosters.admin">Roster Admin (Bulk Actions / Sync Roles / Import-Export / Announce / DM)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Moderation</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.moderation" data-perm="page.moderation"><label for="perm-page.moderation">View Moderation</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-moderation.manage" data-perm="moderation.manage"><label for="perm-moderation.manage">Manage Moderation (Words / Records / Watchlist / Templates)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Activity Logs</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.logs" data-perm="page.logs"><label for="perm-page.logs">View & Export Logs</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Tickets</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.tickets" data-perm="page.tickets"><label for="perm-page.tickets">View Tickets</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-tickets.manage" data-perm="tickets.manage"><label for="perm-tickets.manage">Manage Tickets (Close / Reply / Assign)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-tickets.admin" data-perm="tickets.admin"><label for="perm-tickets.admin">Ticket Admin (Delete Closed / Blacklist)</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Reaction Roles</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.reaction_roles" data-perm="page.reaction_roles"><label for="perm-page.reaction_roles">View Reaction Roles</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-reaction_roles.manage" data-perm="reaction_roles.manage"><label for="perm-reaction_roles.manage">Manage Reaction Role Panels</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> VC Generators</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.vc_system" data-perm="page.vc_system"><label for="perm-page.vc_system">View VC System</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-vc.manage" data-perm="vc.manage"><label for="perm-vc.manage">Manage VCs (Kick / Move / Lock / Rename / Delete)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-vc.generators" data-perm="vc.generators"><label for="perm-vc.generators">Add / Remove Generators</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> GGLeap</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.ggleap" data-perm="page.ggleap"><label for="perm-page.ggleap">View GGLeap Arena</label></div>
+
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Settings</div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.settings" data-perm="page.settings"><label for="perm-page.settings">View Settings</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-settings.manage" data-perm="settings.manage"><label for="perm-settings.manage">Manage Settings (Games / Team Roles / Arena Hours)</label></div>
+                </div>
+            </div>
+
+            <!-- Worker On Duty Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-hard-hat"></i> Worker On Duty</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-section.onduty" data-perm="section.onduty"><label for="perm-section.onduty"><strong>Access On Duty Section</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.onduty_dashboard" data-perm="page.onduty_dashboard"><label for="perm-page.onduty_dashboard">View Dashboard</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.onduty_equipment" data-perm="page.onduty_equipment"><label for="perm-page.onduty_equipment">View Equipment</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-equipment.use" data-perm="equipment.use"><label for="perm-equipment.use">Check Out / Check In Equipment</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-equipment.manage" data-perm="equipment.manage"><label for="perm-equipment.manage">Manage Equipment (Add / Edit / Delete / Reports / Export)</label></div>
+                </div>
+            </div>
+
+            <!-- LionShiftGG Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-clock"></i> LionShiftGG</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-section.lionshift" data-perm="section.lionshift"><label for="perm-section.lionshift"><strong>Access LionShiftGG Section</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_dashboard" data-perm="page.shift_dashboard"><label for="perm-page.shift_dashboard">Dashboard</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_schedules" data-perm="page.shift_schedules"><label for="perm-page.shift_schedules">Schedules</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_offers" data-perm="page.shift_offers"><label for="perm-page.shift_offers">Shift Offers</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_trades" data-perm="page.shift_trades"><label for="perm-page.shift_trades">Trade Requests</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_timeoff" data-perm="page.shift_timeoff"><label for="perm-page.shift_timeoff">Time Off Requests</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_logs" data-perm="page.shift_logs"><label for="perm-page.shift_logs">Shift Logs</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_workers" data-perm="page.shift_workers"><label for="perm-page.shift_workers">Workers</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.shift_settings" data-perm="page.shift_settings"><label for="perm-page.shift_settings">Shift Settings</label></div>
+                </div>
+            </div>
+
+            <!-- LionBeatsGG Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-music"></i> LionBeatsGG</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-section.lionbeats" data-perm="section.lionbeats"><label for="perm-section.lionbeats"><strong>Access LionBeatsGG Section</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.music_dashboard" data-perm="page.music_dashboard"><label for="perm-page.music_dashboard">View Dashboard</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.music_features" data-perm="page.music_features"><label for="perm-page.music_features">View Features</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-music.controls" data-perm="music.controls"><label for="perm-music.controls">Player Controls (Play / Pause / Skip / Queue / Commands)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-music.manage" data-perm="music.manage"><label for="perm-music.manage">Manage Music (Quiz / History / Stats / Panels / Settings)</label></div>
+                </div>
+            </div>
+
+            <!-- BoilerCraftGG Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-cube"></i> BoilerCraftGG</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-section.boilercraft" data-perm="section.boilercraft"><label for="perm-section.boilercraft"><strong>Access BoilerCraftGG Section</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.boilercraft" data-perm="page.boilercraft"><label for="perm-page.boilercraft">View Dashboard</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-boilercraft.tickets" data-perm="boilercraft.tickets"><label for="perm-boilercraft.tickets">Manage Tickets (Close / Send Messages)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-boilercraft.admin" data-perm="boilercraft.admin"><label for="perm-boilercraft.admin">Admin (Delete Closed / Blacklist / Settings / Deploy Panel)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.boilercraft_faq" data-perm="page.boilercraft_faq"><label for="perm-page.boilercraft_faq">View FAQ Page</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-boilercraft.faq_manage" data-perm="boilercraft.faq_manage"><label for="perm-boilercraft.faq_manage">Manage FAQs (Add / Edit / Delete)</label></div>
+                </div>
+            </div>
+
+            <!-- Admin Section -->
+            <div class="perm-section">
+                <div class="perm-section-title"><i class="fas fa-shield-alt"></i> Administration</div>
+                <div class="perm-section-body">
+                    <div class="perm-item"><input type="checkbox" id="perm-admin.panel" data-perm="admin.panel"><label for="perm-admin.panel"><strong>Access Admin Panel</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-admin.manage" data-perm="admin.manage"><label for="perm-admin.manage">Manage Users, Groups & Passwords</label></div>
+                </div>
+            </div>
+        </div>
+        <div class="admin-modal-footer">
+            <button class="modal-btn modal-btn-cancel" onclick="closeModal('group-modal')">Cancel</button>
+            <button class="modal-btn modal-btn-save" id="group-save-btn" onclick="saveGroup()">Create Group</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ DELETE CONFIRMATION MODAL ============ -->
+<div class="admin-modal-overlay" id="delete-modal">
+    <div class="admin-modal" style="max-width: 420px;">
+        <div class="admin-modal-header">
+            <h3><i class="fas fa-trash-alt" style="color: #ef4444;"></i> Confirm Delete</h3>
+            <button class="admin-modal-close" onclick="closeModal('delete-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="admin-modal-body">
+            <p id="delete-message" style="color: var(--text-secondary);"></p>
+            <input type="hidden" id="delete-id" value="">
+            <input type="hidden" id="delete-type" value="">
+        </div>
+        <div class="admin-modal-footer">
+            <button class="modal-btn modal-btn-cancel" onclick="closeModal('delete-modal')">Cancel</button>
+            <button class="modal-btn modal-btn-danger" onclick="confirmDelete()">Delete</button>
+        </div>
+    </div>
+</div>
+
+<div class="admin-toast-container" id="toast-container"></div>
+
+<script>
+// ============ Toast System ============
+function showToast(type, title, message) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'admin-toast';
+    toast.innerHTML = `
+        <div class="admin-toast-icon ${type}">
+            <i class="fas ${type === 'success' ? 'fa-check' : 'fa-exclamation-triangle'}"></i>
+        </div>
+        <div class="admin-toast-text">
+            <h4>${title}</h4>
+            <p>${message}</p>
+        </div>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+// ============ State ============
+let allUsers = [];
+let allGroups = [];
+
+// ============ Tab Switching ============
+function switchAdminTab(tab) {
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    const tabs = document.querySelectorAll('.admin-tab');
+    const idx = tab === 'users' ? 0 : tab === 'groups' ? 1 : 2;
+    tabs[idx].classList.add('active');
+    document.getElementById(`panel-${tab}`).classList.add('active');
+    if (tab === 'audit' && !window._auditLoaded) { loadAuditLog(); window._auditLoaded = true; }
+}
+
+// ============ Loading Helpers ============
+function showCardLoading(cardEl) {
+    // Remove existing overlay if any
+    const existing = cardEl.querySelector('.admin-loading-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'admin-loading-overlay';
+    overlay.innerHTML = '<div class="admin-spinner"></div>';
+    cardEl.appendChild(overlay);
+}
+
+function hideCardLoading(cardEl) {
+    const overlay = cardEl.querySelector('.admin-loading-overlay');
+    if (overlay) {
+        overlay.classList.add('fade-out');
+        setTimeout(() => overlay.remove(), 300);
+    }
+}
+
+function setBtnLoading(btn, loading) {
+    if (loading) {
+        btn.classList.add('loading');
+        btn._origText = btn.textContent;
+        btn.textContent = btn.textContent.includes('Create') ? 'Creating...' : 'Saving...';
+    } else {
+        btn.classList.remove('loading');
+        if (btn._origText) btn.textContent = btn._origText;
+    }
+}
+
+// ============ Data Loading ============
+async function loadUsers() {
+    const card = document.querySelector('#panel-users .admin-card');
+    showCardLoading(card);
+    try {
+        const res = await fetch('/api/admin/users');
+        if (!res.ok) throw new Error('Failed to load users');
+        const data = await res.json();
+        allUsers = Array.isArray(data) ? data : (data.users || []);
+        renderUsers();
+    } catch (e) {
+        console.error('Failed to load users:', e);
+        document.getElementById('users-tbody').innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i><p>Failed to load users</p></div></td></tr>';
+    } finally {
+        hideCardLoading(card);
+    }
+}
+
+async function loadGroups() {
+    const card = document.querySelector('#panel-groups .admin-card');
+    showCardLoading(card);
+    try {
+        const res = await fetch('/api/admin/groups');
+        if (!res.ok) throw new Error('Failed to load groups');
+        const data = await res.json();
+        allGroups = Array.isArray(data) ? data : (data.groups || []);
+        renderGroups();
+        populateGroupDropdown();
+    } catch (e) {
+        console.error('Failed to load groups:', e);
+        document.getElementById('groups-container').innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i><p>Failed to load groups</p></div>';
+    } finally {
+        hideCardLoading(card);
+    }
+}
+
+// ============ Render Users ============
+function renderUsers() {
+    const tbody = document.getElementById('users-tbody');
+    if (!allUsers.length) {
+        tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-users"></i><p>No users found</p></div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = allUsers.map((u, i) => `
+        <tr style="animation-delay: ${i * 0.04}s">
+            <td><strong>${escHtml(u.username)}</strong></td>
+            <td>${escHtml(u.display_name)}</td>
+            <td>${u.group_name ? `<span class="badge badge-group">${escHtml(u.group_name)}</span>` : '<span style="color:var(--text-secondary)">—</span>'}</td>
+            <td>${u.is_admin ? '<span class="badge badge-admin"><i class="fas fa-crown"></i> Admin</span>' : '<span style="color:var(--text-secondary)">User</span>'}</td>
+            <td>${u.is_active ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
+            <td style="font-size:12px; color:var(--text-secondary);">${u.last_login ? timeAgo(u.last_login) : 'Never'}</td>
+            <td>
+                <div class="action-btns">
+                    <button class="btn-sm btn-edit" onclick="openEditUserModal(${u.id})" title="Edit"><i class="fas fa-pen"></i></button>
+                    <button class="btn-sm btn-reset" onclick="openResetPasswordModal(${u.id}, '${escAttr(u.username)}')" title="Reset Password"><i class="fas fa-key"></i></button>
+                    <button class="btn-sm btn-delete" onclick="openDeleteModal('user', ${u.id}, '${escAttr(u.username)}')" title="Delete"><i class="fas fa-trash"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// ============ Render Groups ============
+function renderGroups() {
+    const container = document.getElementById('groups-container');
+    if (!allGroups.length) {
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-layer-group"></i><p>No groups created yet</p></div>';
+        return;
+    }
+    container.innerHTML = allGroups.map((g, i) => `
+        <div class="group-card" style="animation-delay: ${i * 0.05}s">
+            <div class="group-card-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <h4><i class="fas fa-layer-group" style="color:var(--primary-light);"></i> ${escHtml(g.name)} <span class="group-meta">(${g.permissions.length} permissions)</span></h4>
+                <div class="action-btns">
+                    <button class="btn-sm btn-edit" onclick="event.stopPropagation(); openEditGroupModal(${g.id})" title="Edit"><i class="fas fa-pen"></i></button>
+                    <button class="btn-sm btn-delete" onclick="event.stopPropagation(); openDeleteModal('group', ${g.id}, '${escAttr(g.name)}')" title="Delete"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <div class="group-card-body">
+                ${g.description ? `<p class="group-desc">${escHtml(g.description)}</p>` : ''}
+                ${g.permissions.length
+                    ? `<div class="group-perms-list">${g.permissions.map(p => `<span class="perm-chip">${escHtml(p)}</span>`).join('')}</div>`
+                    : '<p class="no-perms">No permissions assigned</p>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function populateGroupDropdown() {
+    const sel = document.getElementById('user-group');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">No Group</option>' + allGroups.map(g =>
+        `<option value="${g.id}">${escHtml(g.name)}</option>`
+    ).join('');
+    sel.value = current;
+}
+
+// ============ User Modals ============
+function openCreateUserModal() {
+    document.getElementById('user-modal-title').innerHTML = '<i class="fas fa-user-plus"></i> Create User';
+    document.getElementById('user-save-btn').textContent = 'Create User';
+    document.getElementById('user-edit-id').value = '';
+    document.getElementById('user-username').value = '';
+    document.getElementById('user-username').disabled = false;
+    document.getElementById('user-password').value = '';
+    document.getElementById('password-field').style.display = '';
+    document.getElementById('user-display-name').value = '';
+    document.getElementById('user-group').value = '';
+    document.getElementById('user-is-admin').checked = false;
+    document.getElementById('user-is-active').checked = true;
+    populateGroupDropdown();
+    openModal('user-modal');
+}
+
+function openEditUserModal(userId) {
+    const u = allUsers.find(x => x.id === userId);
+    if (!u) return;
+    document.getElementById('user-modal-title').innerHTML = '<i class="fas fa-user-edit"></i> Edit User';
+    document.getElementById('user-save-btn').textContent = 'Save Changes';
+    document.getElementById('user-edit-id').value = u.id;
+    document.getElementById('user-username').value = u.username;
+    document.getElementById('user-username').disabled = true;
+    document.getElementById('user-password').value = '';
+    document.getElementById('password-field').style.display = 'none';
+    document.getElementById('user-display-name').value = u.display_name;
+    populateGroupDropdown();
+    document.getElementById('user-group').value = u.group_id || '';
+    document.getElementById('user-is-admin').checked = u.is_admin;
+    document.getElementById('user-is-active').checked = u.is_active;
+    openModal('user-modal');
+}
+
+async function saveUser() {
+    const saveBtn = document.getElementById('user-save-btn');
+    const editId = document.getElementById('user-edit-id').value;
+    const username = document.getElementById('user-username').value.trim();
+    const password = document.getElementById('user-password').value;
+    const displayName = document.getElementById('user-display-name').value.trim();
+    const groupId = document.getElementById('user-group').value;
+    const isAdmin = document.getElementById('user-is-admin').checked;
+    const isActive = document.getElementById('user-is-active').checked;
+
+    if (!editId) {
+        // Creating
+        if (!username || username.length < 3) { showToast('error', 'Validation Error', 'Username must be at least 3 characters.'); return; }
+        if (!password || password.length < 6) { showToast('error', 'Validation Error', 'Password must be at least 6 characters.'); return; }
+        if (!displayName) { showToast('error', 'Validation Error', 'Display name is required.'); return; }
+
+        setBtnLoading(saveBtn, true);
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, display_name: displayName, group_id: groupId ? parseInt(groupId) : null, is_admin: isAdmin })
+            });
+            const data = await res.json();
+            if (!res.ok) { showToast('error', 'Error', data.error || 'Failed to create user'); return; }
+            closeModal('user-modal');
+            showToast('success', 'User Created', `${displayName} has been created successfully.`);
+            await loadUsers();
+        } catch (e) { showToast('error', 'Error', 'Network error creating user.'); } finally { setBtnLoading(saveBtn, false); }
+    } else {
+        // Editing
+        if (!displayName) { showToast('error', 'Validation Error', 'Display name is required.'); return; }
+        setBtnLoading(saveBtn, true);
+        try {
+            const res = await fetch(`/api/admin/users/${editId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ display_name: displayName, group_id: groupId ? parseInt(groupId) : null, is_admin: isAdmin, is_active: isActive })
+            });
+            const data = await res.json();
+            if (!res.ok) { showToast('error', 'Error', data.error || 'Failed to update user'); return; }
+            closeModal('user-modal');
+            showToast('success', 'User Updated', `${displayName} has been updated.`);
+            await loadUsers();
+        } catch (e) { showToast('error', 'Error', 'Network error updating user.'); } finally { setBtnLoading(saveBtn, false); }
+    }
+}
+
+// ============ Password Reset ============
+function openResetPasswordModal(userId, username) {
+    document.getElementById('pw-user-id').value = userId;
+    document.getElementById('pw-username').textContent = username;
+    document.getElementById('new-password').value = '';
+    document.getElementById('confirm-password').value = '';
+    openModal('password-modal');
+}
+
+async function resetPassword() {
+    const userId = document.getElementById('pw-user-id').value;
+    const pw = document.getElementById('new-password').value;
+    const confirm = document.getElementById('confirm-password').value;
+
+    if (!pw || pw.length < 6) { showToast('error', 'Validation Error', 'Password must be at least 6 characters.'); return; }
+    if (pw !== confirm) { showToast('error', 'Validation Error', 'Passwords do not match.'); return; }
+
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast('error', 'Error', data.error || 'Failed to reset password'); return; }
+        closeModal('password-modal');
+        showToast('success', 'Password Reset', 'Password has been changed successfully.');
+    } catch (e) { showToast('error', 'Error', 'Network error resetting password.'); }
+}
+
+// ============ Group Modals ============
+function openCreateGroupModal() {
+    document.getElementById('group-modal-title').innerHTML = '<i class="fas fa-layer-group"></i> Create Group';
+    document.getElementById('group-save-btn').textContent = 'Create Group';
+    document.getElementById('group-edit-id').value = '';
+    document.getElementById('group-name').value = '';
+    document.getElementById('group-description').value = '';
+    clearAllPermCheckboxes();
+    openModal('group-modal');
+}
+
+function openEditGroupModal(groupId) {
+    const g = allGroups.find(x => x.id === groupId);
+    if (!g) return;
+    document.getElementById('group-modal-title').innerHTML = '<i class="fas fa-layer-group"></i> Edit Group';
+    document.getElementById('group-save-btn').textContent = 'Save Changes';
+    document.getElementById('group-edit-id').value = g.id;
+    document.getElementById('group-name').value = g.name;
+    document.getElementById('group-description').value = g.description || '';
+    clearAllPermCheckboxes();
+    g.permissions.forEach(p => {
+        const cb = document.getElementById(`perm-${p}`);
+        if (cb) cb.checked = true;
+    });
+    openModal('group-modal');
+}
+
+async function saveGroup() {
+    const saveBtn = document.getElementById('group-save-btn');
+    const editId = document.getElementById('group-edit-id').value;
+    const name = document.getElementById('group-name').value.trim();
+    const description = document.getElementById('group-description').value.trim();
+    const permissions = getSelectedPermissions();
+
+    if (!name) { showToast('error', 'Validation Error', 'Group name is required.'); return; }
+
+    const body = { name, description, permissions };
+    const url = editId ? `/api/admin/groups/${editId}` : '/api/admin/groups';
+    const method = editId ? 'PUT' : 'POST';
+
+    setBtnLoading(saveBtn, true);
+    try {
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) { showToast('error', 'Error', data.error || 'Failed to save group'); return; }
+        closeModal('group-modal');
+        showToast('success', editId ? 'Group Updated' : 'Group Created', `${name} has been saved.`);
+        await loadGroups();
+        await loadUsers(); // Refresh in case group names changed
+    } catch (e) { showToast('error', 'Error', 'Network error saving group.'); } finally { setBtnLoading(saveBtn, false); }
+}
+
+// ============ Delete ============
+function openDeleteModal(type, id, name) {
+    document.getElementById('delete-type').value = type;
+    document.getElementById('delete-id').value = id;
+    document.getElementById('delete-message').innerHTML = `Are you sure you want to delete <strong style="color:var(--text-primary);">${escHtml(name)}</strong>? This action cannot be undone.`;
+    openModal('delete-modal');
+}
+
+async function confirmDelete() {
+    const type = document.getElementById('delete-type').value;
+    const id = document.getElementById('delete-id').value;
+    const url = type === 'user' ? `/api/admin/users/${id}` : `/api/admin/groups/${id}`;
+
+    try {
+        const res = await fetch(url, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) { showToast('error', 'Error', data.error || 'Failed to delete'); return; }
+        closeModal('delete-modal');
+        showToast('success', 'Deleted', `${type === 'user' ? 'User' : 'Group'} has been deleted.`);
+        if (type === 'user') await loadUsers();
+        else { await loadGroups(); await loadUsers(); }
+    } catch (e) { showToast('error', 'Error', 'Network error deleting.'); }
+}
+
+// ============ Helpers ============
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function getSelectedPermissions() {
+    const perms = [];
+    document.querySelectorAll('#group-modal [data-perm]').forEach(cb => {
+        if (cb.checked) perms.push(cb.dataset.perm);
+    });
+    return perms;
+}
+
+function clearAllPermCheckboxes() {
+    document.querySelectorAll('#group-modal [data-perm]').forEach(cb => cb.checked = false);
+}
+
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+
+function escAttr(str) {
+    return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function timeAgo(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return d.toLocaleDateString();
+}
+
+// Close modals on escape / backdrop click
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.admin-modal-overlay.active').forEach(m => m.classList.remove('active'));
+});
+document.querySelectorAll('.admin-modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('active'); });
+});
+
+// ============ Audit Log ============
+const AUDIT_ACTION_LABELS = {
+    create_user: 'Created User',
+    update_user: 'Updated User',
+    delete_user: 'Deleted User',
+    reset_password: 'Password Reset',
+    create_group: 'Created Group',
+    update_group: 'Updated Group',
+    delete_group: 'Deleted Group',
+    login: 'Login',
+    login_failed: 'Failed Login',
+    logout: 'Logout',
+};
+const AUDIT_ACTION_COLORS = {
+    create_user: '#22c55e', update_user: '#3b82f6', delete_user: '#ef4444',
+    reset_password: '#f59e0b', create_group: '#22c55e', update_group: '#3b82f6',
+    delete_group: '#ef4444', login: '#8b5cf6', login_failed: '#ef4444', logout: '#6b7280',
+};
+
+async function loadAuditLog() {
+    const tbody = document.getElementById('audit-tbody');
+    const filter = document.getElementById('audit-filter').value;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading...</p></td></tr>';
+    try {
+        let url = '/api/activity-log?category=admin&limit=200';
+        if (filter) url += `&action=${filter}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const logs = data.logs || [];
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-clipboard-list" style="font-size:24px;display:block;margin-bottom:8px;"></i><p>No audit log entries found</p></td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(log => {
+            const ts = log.timestamp ? new Date(log.timestamp).toLocaleString() : '—';
+            const user = log.user ? (log.user.name || 'System') : 'System';
+            const action = log.action || '';
+            const label = AUDIT_ACTION_LABELS[action] || action.replace(/_/g, ' ');
+            const color = AUDIT_ACTION_COLORS[action] || '#6b7280';
+            const details = log.details || '';
+            const target = log.target_name || '—';
+            return `<tr>
+                <td style="font-size:12px; color:var(--text-secondary); white-space:nowrap;">${ts}</td>
+                <td><strong>${user}</strong></td>
+                <td><span style="background:${color}22; color:${color}; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600;">${label}</span></td>
+                <td style="font-size:13px; color:var(--text-secondary); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${details}">${details}</td>
+                <td style="font-size:13px;">${target}</td>
+            </tr>`;
+        }).join('');
+    } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state" style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i><p>Failed to load audit log</p></td></tr>';
+    }
+}
+
+// ============ Init ============
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadGroups();
+    await loadUsers();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}FAQ Management{% endblock %}
+{% block page_title %}FAQ Management{% endblock %}
+
+{% block extra_head %}
+<style>
+    .faq-table { width: 100%; border-collapse: collapse; }
+    .faq-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+    .faq-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .faq-table tr:hover { background: var(--hover); }
+    .action-btn { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+    .action-btn-view { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .action-btn-view:hover { background: rgba(59, 130, 246, 0.3); }
+    .action-btn-delete { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .action-btn-delete:hover { background: rgba(239, 68, 68, 0.3); }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+    .empty-state p { margin: 4px 0; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal-overlay.active { display: flex; }
+    .modal { background: var(--surface); border-radius: 16px; width: 90%; max-width: 600px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid var(--border); }
+    .modal-header { padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h3 { margin: 0; font-size: 18px; }
+    .modal-body { padding: 20px 24px; max-height: 60vh; overflow-y: auto; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+    .modal-close { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 4px; }
+    .modal-close:hover { color: var(--text-primary); }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-primary); font-size: 14px; }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stats -->
+<div class="stats-grid mb-3">
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(207,185,145,0.08) 0%, rgba(207,185,145,0.02) 100%); border: 1px solid rgba(207,185,145,0.15);">
+        <div class="stat-header">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #CFB991, #b8a07a); color: #000;">
+                <i class="fas fa-question-circle"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-faq-count" style="color: #CFB991;">--</div>
+        <div class="stat-label">Total FAQs</div>
+    </div>
+</div>
+
+<!-- FAQ Channel Config -->
+<div class="card mb-3">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0;"><i class="fas fa-question-circle" style="color: #CFB991; margin-right: 8px;"></i>FAQ Management</h3>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="cfg-faq-channel-id" placeholder="FAQ Channel ID" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13px; width: 220px;">
+            <button onclick="saveFaqChannel()" style="padding: 8px 16px; border-radius: 8px; background: #CFB991; color: #000; border: none; font-weight: 600; cursor: pointer; font-size: 13px;">
+                <i class="fas fa-save"></i> Save Channel
+            </button>
+            <button onclick="openAddFaqModal()" style="padding: 8px 16px; border-radius: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border: none; font-weight: 600; cursor: pointer; font-size: 13px;">
+                <i class="fas fa-plus"></i> Add FAQ
+            </button>
+        </div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        <table class="faq-table">
+            <thead>
+                <tr><th style="width: 50px;">#</th><th>Question</th><th>Answer</th><th style="width: 120px;">Actions</th></tr>
+            </thead>
+            <tbody id="faq-body">
+                <tr><td colspan="4" class="empty-state"><div><i class="fas fa-question-circle"></i><p>No FAQs yet</p><p style="font-size: 12px;">Click "Add FAQ" to get started</p></div></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add/Edit FAQ Modal -->
+<div id="faq-modal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="faq-modal-title"><i class="fas fa-plus" style="color: #CFB991; margin-right: 8px;"></i>Add FAQ</h3>
+            <button class="modal-close" onclick="closeModal('faq-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="faq-edit-index" value="">
+            <div class="form-group">
+                <label>Question</label>
+                <input type="text" id="faq-question" placeholder="e.g. How do I join the Minecraft server?">
+            </div>
+            <div class="form-group">
+                <label>Answer</label>
+                <textarea id="faq-answer" rows="5" placeholder="Type the answer here. You can use Discord markdown like **bold** and *italic*."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal('faq-modal')" style="padding: 10px 20px; border-radius: 8px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer;">Cancel</button>
+            <button onclick="submitFaq()" style="padding: 10px 20px; border-radius: 8px; background: #CFB991; color: #000; border: none; font-weight: 600; cursor: pointer;">
+                <i class="fas fa-save"></i> <span id="faq-submit-label">Add FAQ</span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let faqList = [];
+let botConfig = {};
+
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active')); });
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/boilercraft/settings');
+        if (response.status === 401) return;
+        botConfig = await response.json();
+        document.getElementById('cfg-faq-channel-id').value = botConfig.faq_channel_id || '';
+    } catch (err) {
+        console.error('Failed to load settings:', err);
+    }
+}
+
+async function loadFaqs() {
+    try {
+        const response = await fetch('/api/boilercraft/faqs');
+        if (response.status === 401) return;
+        faqList = await response.json();
+        document.getElementById('stat-faq-count').textContent = faqList.length;
+        renderFaqs();
+    } catch (err) {
+        console.error('Failed to load FAQs:', err);
+    }
+}
+
+function renderFaqs() {
+    const tbody = document.getElementById('faq-body');
+    if (!faqList.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><div><i class="fas fa-question-circle"></i><p>No FAQs yet</p><p style="font-size: 12px;">Click "Add FAQ" to get started</p></div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = faqList.map((faq, i) => `
+        <tr>
+            <td style="font-weight: 700; color: #CFB991;">${i + 1}</td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(faq.question)}</td>
+            <td style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary);">${escapeHtml(faq.answer)}</td>
+            <td>
+                <button onclick="openEditFaqModal(${i})" class="action-btn action-btn-view" title="Edit"><i class="fas fa-edit"></i></button>
+                <button onclick="deleteFaq(${i})" class="action-btn action-btn-delete" title="Delete"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openAddFaqModal() {
+    document.getElementById('faq-modal-title').innerHTML = '<i class="fas fa-plus" style="color: #CFB991; margin-right: 8px;"></i>Add FAQ';
+    document.getElementById('faq-submit-label').textContent = 'Add FAQ';
+    document.getElementById('faq-edit-index').value = '';
+    document.getElementById('faq-question').value = '';
+    document.getElementById('faq-answer').value = '';
+    openModal('faq-modal');
+}
+
+function openEditFaqModal(index) {
+    const faq = faqList[index];
+    document.getElementById('faq-modal-title').innerHTML = '<i class="fas fa-edit" style="color: #CFB991; margin-right: 8px;"></i>Edit FAQ #' + (index + 1);
+    document.getElementById('faq-submit-label').textContent = 'Save Changes';
+    document.getElementById('faq-edit-index').value = index;
+    document.getElementById('faq-question').value = faq.question;
+    document.getElementById('faq-answer').value = faq.answer;
+    openModal('faq-modal');
+}
+
+async function submitFaq() {
+    const question = document.getElementById('faq-question').value.trim();
+    const answer = document.getElementById('faq-answer').value.trim();
+    const editIndex = document.getElementById('faq-edit-index').value;
+
+    if (!question || !answer) {
+        showToast('Please fill in both the question and answer.', 'error');
+        return;
+    }
+
+    const isEdit = editIndex !== '';
+    const url = isEdit ? `/api/boilercraft/faqs/${editIndex}` : '/api/boilercraft/faqs';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, answer })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(isEdit ? 'FAQ updated! The bot will edit the embed shortly.' : 'FAQ added! The bot will post it shortly.', 'success');
+            closeModal('faq-modal');
+            loadFaqs();
+        } else {
+            showToast(result.error || 'Failed to save FAQ', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to save FAQ', 'error');
+    }
+}
+
+async function deleteFaq(index) {
+    if (!confirm(`Delete FAQ #${index + 1}? This will also remove the embed from Discord.`)) return;
+    try {
+        const response = await fetch(`/api/boilercraft/faqs/${index}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('FAQ deleted! The bot will remove the embed shortly.', 'success');
+            loadFaqs();
+        } else {
+            showToast(result.error || 'Failed to delete FAQ', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to delete FAQ', 'error');
+    }
+}
+
+async function saveFaqChannel() {
+    const channelId = document.getElementById('cfg-faq-channel-id').value.trim() || null;
+    try {
+        const response = await fetch('/api/boilercraft/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ faq_channel_id: channelId })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('FAQ channel saved!', 'success');
+            loadSettings();
+        } else {
+            showToast(result.error || 'Failed to save FAQ channel', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to save FAQ channel', 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadSettings();
+    loadFaqs();
+});
+</script>
+{% endblock %}

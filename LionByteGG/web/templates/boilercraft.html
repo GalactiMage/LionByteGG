@@ -1,0 +1,1118 @@
+{% extends "base.html" %}
+{% block title %}BoilerCraftGG Dashboard{% endblock %}
+{% block page_title %}BoilerCraftGG Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ticket-tab-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .ticket-tab-btn { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+    .ticket-tab-btn:hover { background: var(--hover); color: var(--text-primary); }
+    .ticket-tab-btn.active { background: rgba(207, 185, 145, 0.15); color: #CFB991; }
+    .ticket-tab-badge { background: var(--surface-2); color: var(--text-secondary); padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+    .ticket-tab-btn.active .ticket-tab-badge { background: rgba(207, 185, 145, 0.2); color: #CFB991; }
+    .ticket-tab-content { display: none; }
+    .ticket-tab-content.active { display: block; }
+    .ticket-table { width: 100%; border-collapse: collapse; }
+    .ticket-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+    .ticket-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .ticket-table tr:hover { background: var(--hover); }
+    .type-badge { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .type-connection { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .type-griefing { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .type-build { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .type-plugin { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+    .type-whitelist { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .type-other { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+    .staff-badge { padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+    .staff-assigned { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .staff-unassigned { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .action-btn { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+    .action-btn-view { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .action-btn-view:hover { background: rgba(59, 130, 246, 0.3); }
+    .action-btn-close { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .action-btn-close:hover { background: rgba(239, 68, 68, 0.3); }
+    .action-btn-delete { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .action-btn-delete:hover { background: rgba(239, 68, 68, 0.3); }
+    .action-btn-remove { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .action-btn-remove:hover { background: rgba(34, 197, 94, 0.3); }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+    .empty-state p { margin: 4px 0; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal-overlay.active { display: flex; }
+    .modal { background: var(--surface); border-radius: 16px; width: 90%; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid var(--border); }
+    .modal-header { padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h3 { margin: 0; font-size: 18px; }
+    .modal-body { padding: 20px 24px; max-height: 60vh; overflow-y: auto; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+    .modal-close { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 4px; }
+    .modal-close:hover { color: var(--text-primary); }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-primary); font-size: 14px; }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .detail-item label { font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 4px; display: block; }
+    .detail-item span { font-size: 14px; color: var(--text-primary); }
+    .transcript-message { padding: 8px 12px; border-left: 3px solid var(--border); margin-bottom: 8px; background: var(--surface-2); border-radius: 0 8px 8px 0; }
+    .transcript-message .author { font-weight: 600; color: #CFB991; font-size: 13px; }
+    .transcript-message .time { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
+    .transcript-message .content { margin-top: 4px; font-size: 14px; color: var(--text-primary); }
+    .server-info-card { background: linear-gradient(135deg, rgba(207,185,145,0.1) 0%, rgba(0,0,0,0.1) 100%); border: 1px solid rgba(207,185,145,0.2); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .server-info-card h4 { color: #CFB991; margin: 0 0 8px 0; }
+    .server-info-card .server-ip { font-family: monospace; background: var(--surface-2); padding: 8px 14px; border-radius: 6px; display: inline-block; font-size: 15px; color: var(--text-primary); }
+
+    /* ═══════ MC SERVER STATUS ═══════ */
+    .mc-server-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 24px; overflow: hidden; }
+    .mc-server-header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, rgba(207,185,145,0.06) 0%, transparent 100%); }
+    .mc-server-icon { width: 64px; height: 64px; border-radius: 12px; border: 2px solid rgba(207,185,145,0.3); image-rendering: pixelated; background: var(--surface-2); }
+    .mc-server-title { flex: 1; }
+    .mc-server-title h3 { margin: 0 0 4px 0; font-size: 18px; color: var(--text-primary); display: flex; align-items: center; gap: 10px; }
+    .mc-server-title .mc-motd { font-size: 13px; color: var(--text-secondary); margin: 0; }
+    .mc-status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .mc-status-dot.online { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .mc-status-dot.offline { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+    .mc-server-body { padding: 20px 24px; }
+    .mc-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .mc-stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; text-align: center; }
+    .mc-stat-value { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+    .mc-stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .mc-player-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
+    .mc-player-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #22c55e, #4ade80); transition: width 0.5s ease; }
+    .mc-player-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mc-player-tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text-primary); }
+    .mc-player-tag img { width: 18px; height: 18px; border-radius: 3px; image-rendering: pixelated; }
+    .mc-server-footer { padding: 12px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); }
+    .mc-ip-badge { font-family: 'Courier New', monospace; background: rgba(207,185,145,0.1); border: 1px solid rgba(207,185,145,0.25); padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #CFB991; cursor: pointer; transition: all 0.2s; }
+    .mc-ip-badge:hover { background: rgba(207,185,145,0.2); }
+    .mc-offline-msg { text-align: center; padding: 30px; color: var(--text-secondary); }
+    .mc-offline-msg i { font-size: 36px; opacity: 0.3; margin-bottom: 10px; display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Minecraft Server Status -->
+<div class="mc-server-panel" id="mc-server-panel">
+    <div class="mc-server-header">
+        <img id="mc-server-icon" class="mc-server-icon" src="" alt="Server Icon" style="display: none;">
+        <div class="mc-server-title">
+            <h3>
+                <span class="mc-status-dot" id="mc-status-dot"></span>
+                <span id="mc-server-name">Purdue MC Network</span>
+                <span id="mc-status-text" style="font-size: 13px; font-weight: 500;"></span>
+            </h3>
+            <p class="mc-motd" id="mc-motd">Loading server status...</p>
+        </div>
+        <button onclick="loadServerStatus()" style="background: none; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text-secondary); cursor: pointer; font-size: 13px;" title="Refresh">
+            <i class="fas fa-sync-alt" id="mc-refresh-icon"></i>
+        </button>
+        <a href="https://mc.esports.purdue.edu/" target="_blank" rel="noopener noreferrer" style="background: none; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text-secondary); cursor: pointer; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Open Pterodactyl Panel">
+            <i class="fas fa-server"></i> Panel
+        </a>
+    </div>
+    <div class="mc-server-body" id="mc-server-body">
+        <div style="text-align: center; padding: 20px; color: var(--text-secondary);"><i class="fas fa-spinner fa-spin"></i> Checking server...</div>
+    </div>
+    <div class="mc-server-footer">
+        <div>
+            <span class="mc-ip-badge" onclick="copyIP()" title="Click to copy">
+                <i class="fas fa-cube" style="margin-right: 4px;"></i> mc.esports.purdue.edu
+            </span>
+        </div>
+        <div id="mc-version-info"></div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid mb-3">
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(207,185,145,0.08) 0%, rgba(207,185,145,0.02) 100%); border: 1px solid rgba(207,185,145,0.15);">
+        <div class="stat-header">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #CFB991, #b8a07a); color: #000;">
+                <i class="fas fa-inbox"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-open" style="color: #CFB991;">--</div>
+        <div class="stat-label">Open Tickets</div>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.02) 100%); border: 1px solid rgba(34,197,94,0.15);">
+        <div class="stat-header">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff;">
+                <i class="fas fa-check-circle"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-closed" style="color: #4ade80;">--</div>
+        <div class="stat-label">Resolved</div>
+    </div>
+    {% if 'boilercraft.blacklist' in bc_perms %}
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(239,68,68,0.02) 100%); border: 1px solid rgba(239,68,68,0.15);">
+        <div class="stat-header">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff;">
+                <i class="fas fa-ban"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-blacklist" style="color: #f87171;">--</div>
+        <div class="stat-label">Blacklisted</div>
+    </div>
+    {% endif %}
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(59,130,246,0.02) 100%); border: 1px solid rgba(59,130,246,0.15);">
+        <div class="stat-header">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff;">
+                <i class="fas fa-cube"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-total" style="color: #60a5fa;">--</div>
+        <div class="stat-label">All Time</div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="ticket-tab-nav">
+            <button class="ticket-tab-btn active" data-tab="open-tickets-tab">
+                <i class="fas fa-inbox"></i><span>Open</span>
+                <span class="ticket-tab-badge" id="open-badge">0</span>
+            </button>
+            <button class="ticket-tab-btn" data-tab="closed-tickets-tab">
+                <i class="fas fa-check-circle"></i><span>Closed</span>
+                <span class="ticket-tab-badge" id="closed-badge">0</span>
+            </button>
+            {% if 'boilercraft.blacklist' in bc_perms %}
+            <button class="ticket-tab-btn" data-tab="blacklist-tab">
+                <i class="fas fa-ban"></i><span>Blacklist</span>
+                <span class="ticket-tab-badge" id="blacklist-badge">0</span>
+            </button>
+            {% endif %}
+            {% if 'boilercraft.settings' in bc_perms %}
+            <button class="ticket-tab-btn" data-tab="settings-tab">
+                <i class="fas fa-cog"></i><span>Settings</span>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Open Tickets Tab -->
+<div id="open-tickets-tab" class="ticket-tab-content active">
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;"><i class="fas fa-inbox" style="color: #CFB991; margin-right: 8px;"></i>Open Tickets</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="open-filter" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13px;">
+                    <option value="all">All Types</option>
+                    <!-- Populated dynamically from settings -->
+                </select>
+                <button onclick="loadTicketData()" class="btn btn-sm" style="padding: 6px 12px; border-radius: 6px; background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer;">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <table class="ticket-table">
+                <thead>
+                    <tr><th>Ticket</th><th>User</th><th>Type</th><th>Staff</th><th>Created</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="open-tickets-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Closed Tickets Tab -->
+<div id="closed-tickets-tab" class="ticket-tab-content">
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;"><i class="fas fa-check-circle" style="color: #4ade80; margin-right: 8px;"></i>Closed Tickets</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="closed-search" placeholder="Search closed tickets..." style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13px; width: 200px;">
+                <button onclick="deleteAllClosed()" class="action-btn action-btn-delete" title="Clear All Closed">
+                    <i class="fas fa-trash-alt"></i> Clear All
+                </button>
+            </div>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <table class="ticket-table">
+                <thead>
+                    <tr><th>Ticket</th><th>User</th><th>Type</th><th>Closed By</th><th>Closed At</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="closed-tickets-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if 'boilercraft.blacklist' in bc_perms %}
+<!-- Blacklist Tab -->
+<div id="blacklist-tab" class="ticket-tab-content">
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;"><i class="fas fa-ban" style="color: #f87171; margin-right: 8px;"></i>Ticket Blacklist</h3>
+            <button onclick="openModal('blacklist-modal')" class="btn btn-primary btn-sm" style="padding: 6px 14px; border-radius: 6px; font-size: 13px;">
+                <i class="fas fa-plus"></i> Add User
+            </button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <table class="ticket-table">
+                <thead>
+                    <tr><th>User</th><th>User ID</th><th>Reason</th><th>Added By</th><th>Added At</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="blacklist-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Ticket Detail Modal -->
+<div id="ticket-detail-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #CFB991, #b8a07a); color: #000;">
+            <div>
+                <h3 style="margin: 0;"><i class="fas fa-cube"></i> Ticket Details</h3>
+                <small id="detail-ticket-id" style="opacity: 0.7;"></small>
+            </div>
+            <button class="modal-close" onclick="closeModal('ticket-detail-modal')" style="color: #000;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="detail-grid" id="ticket-detail-content"></div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal('ticket-detail-modal')" class="btn btn-sm" style="background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Close</button>
+            <button id="detail-send-msg-btn" onclick="showSendMessageModal()" class="btn btn-sm" style="background: rgba(59,130,246,0.2); color: #60a5fa; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;"><i class="fas fa-paper-plane"></i> Send Message</button>
+            <button id="detail-close-btn" onclick="promptCloseTicket()" class="btn btn-sm" style="background: rgba(239,68,68,0.2); color: #f87171; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;"><i class="fas fa-times-circle"></i> Close Ticket</button>
+        </div>
+    </div>
+</div>
+
+<!-- Send Message Modal -->
+<div id="send-message-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff;">
+            <h3 style="margin: 0;"><i class="fas fa-paper-plane"></i> Send Message</h3>
+            <button class="modal-close" onclick="closeModal('send-message-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Message</label>
+                <textarea id="send-message-text" placeholder="Type a message to send in the ticket channel..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal('send-message-modal')" class="btn btn-sm" style="background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Cancel</button>
+            <button onclick="confirmSendMessage()" class="btn btn-sm" style="background: #3b82f6; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Close Reason Modal -->
+<div id="close-reason-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff;">
+            <h3 style="margin: 0;"><i class="fas fa-times-circle"></i> Close Ticket</h3>
+            <button class="modal-close" onclick="closeModal('close-reason-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Reason for Closing</label>
+                <textarea id="close-reason-text" placeholder="Enter the reason for closing this ticket..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal('close-reason-modal')" class="btn btn-sm" style="background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Cancel</button>
+            <button onclick="confirmCloseTicket()" class="btn btn-sm" style="background: #ef4444; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Close Ticket</button>
+        </div>
+    </div>
+</div>
+
+<!-- Transcript Modal -->
+<div id="transcript-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 700px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff;">
+            <div>
+                <h3 style="margin: 0;"><i class="fas fa-scroll"></i> Ticket Transcript</h3>
+                <small id="transcript-ticket-id" style="opacity: 0.7;"></small>
+            </div>
+            <button class="modal-close" onclick="closeModal('transcript-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body" id="transcript-content"></div>
+        <div class="modal-footer">
+            <button onclick="closeModal('transcript-modal')" class="btn btn-sm" style="background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Close</button>
+        </div>
+    </div>
+</div>
+
+{% if 'boilercraft.blacklist' in bc_perms %}
+<!-- Blacklist Add Modal -->
+<div id="blacklist-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff;">
+            <h3 style="margin: 0;"><i class="fas fa-ban"></i> Add to Blacklist</h3>
+            <button class="modal-close" onclick="closeModal('blacklist-modal')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Discord User ID</label>
+                <input type="text" id="blacklist-user-id" placeholder="e.g. 123456789012345678">
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="blacklist-username" placeholder="e.g. Player#1234">
+            </div>
+            <div class="form-group">
+                <label>Reason</label>
+                <textarea id="blacklist-reason" placeholder="Reason for blacklisting..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal('blacklist-modal')" class="btn btn-sm" style="background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Cancel</button>
+            <button onclick="confirmAddBlacklist()" class="btn btn-sm" style="background: #ef4444; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Blacklist User</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if 'boilercraft.settings' in bc_perms %}
+<!-- Settings Tab -->
+<div id="settings-tab" class="ticket-tab-content">
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 style="margin: 0;"><i class="fas fa-cog" style="color: #CFB991; margin-right: 8px;"></i>Bot Configuration</h3>
+        </div>
+        <div class="card-body">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Staff Role ID</label>
+                    <input type="text" id="cfg-staff-role-id" placeholder="e.g. 1234567890123456789" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Discord role ID for ticket staff members</small>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Ticket Panel Channel ID</label>
+                    <input type="text" id="cfg-panel-channel-id" placeholder="e.g. 1234567890123456789" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Channel where the support panel will be posted</small>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Ticket Category Name</label>
+                    <input type="text" id="cfg-category-name" placeholder="e.g. MC Tickets" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Discord category name for ticket channels</small>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Ticket Channel Prefix</label>
+                    <input type="text" id="cfg-channel-prefix" placeholder="e.g. mc-ticket-" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Prefix for new ticket channel names</small>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Announce Channel ID</label>
+                    <input type="text" id="cfg-announce-channel-id" placeholder="e.g. 1234567890123456789" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Channel where maintenance announcements are posted</small>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Minecraft Role ID</label>
+                    <input type="text" id="cfg-minecraft-role-id" placeholder="e.g. 1234567890123456789" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 14px;">
+                    <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Discord role ID pinged for Minecraft announcements</small>
+                </div>
+            </div>
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+                <button onclick="saveSettings()" style="padding: 10px 24px; border-radius: 8px; background: #CFB991; color: #000; border: none; font-weight: 600; cursor: pointer; font-size: 14px;">
+                    <i class="fas fa-save"></i> Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Support Categories -->
+    <div class="card mb-3">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;"><i class="fas fa-list" style="color: #CFB991; margin-right: 8px;"></i>Support Categories</h3>
+            <button onclick="addCategory()" class="btn btn-primary btn-sm" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #CFB991; color: #000; border: none; cursor: pointer;">
+                <i class="fas fa-plus"></i> Add Category
+            </button>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <table class="ticket-table">
+                <thead>
+                    <tr><th>Emoji</th><th>Label</th><th>Description</th><th style="width: 100px;">Actions</th></tr>
+                </thead>
+                <tbody id="categories-body"></tbody>
+            </table>
+        </div>
+        <div style="padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end;">
+            <button onclick="saveCategories()" style="padding: 10px 24px; border-radius: 8px; background: #CFB991; color: #000; border: none; font-weight: 600; cursor: pointer; font-size: 14px;">
+                <i class="fas fa-save"></i> Save Categories
+            </button>
+        </div>
+    </div>
+
+    <!-- Deploy Panel -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 style="margin: 0;"><i class="fas fa-rocket" style="color: #CFB991; margin-right: 8px;"></i>Panel Deployment</h3>
+        </div>
+        <div class="card-body">
+            <p style="color: var(--text-secondary); margin: 0 0 16px 0;">
+                Deploy or refresh the "Welcome to the BoilerCraftGG Support System" panel in your configured channel.
+                This sends the support embed with the Contact Support button.
+            </p>
+            <div style="display: flex; gap: 8px;">
+                <button onclick="deployPanel()" style="padding: 10px 24px; border-radius: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border: none; font-weight: 600; cursor: pointer; font-size: 14px;">
+                    <i class="fas fa-paper-plane"></i> Deploy Panel
+                </button>
+                <button onclick="refreshPanel()" style="padding: 10px 24px; border-radius: 8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border: none; font-weight: 600; cursor: pointer; font-size: 14px;">
+                    <i class="fas fa-sync-alt"></i> Refresh Panel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ticketsData = { open: [], closed: [], blacklist: [] };
+let currentTicketId = null;
+let currentTicketIndex = null;
+let botConfig = {};
+let editingCategories = [];
+
+// Tab switching
+document.querySelectorAll('.ticket-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.ticket-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.ticket-tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+    });
+});
+
+// Modal helpers
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active')); });
+
+// Type helpers
+function getTypeClass(type) {
+    // Dynamic — any type falls back to 'type-other'
+    const map = {
+        'Player Support': 'type-connection',
+        'Server Bugs': 'type-plugin',
+        'Report a Player': 'type-griefing',
+        'Whitelist Request': 'type-whitelist',
+        'Build Request': 'type-build',
+        'Appeal / Unban': 'type-connection',
+        'General Question': 'type-other',
+        'Connection Issues': 'type-connection',
+        'Griefing Report': 'type-griefing',
+        'Plugin / Command Bug': 'type-plugin',
+        'Other': 'type-other'
+    };
+    return map[type] || 'type-other';
+}
+
+function getTypeIcon(type) {
+    const map = {
+        'Player Support': 'fa-gamepad',
+        'Server Bugs': 'fa-bug',
+        'Report a Player': 'fa-shield-alt',
+        'Whitelist Request': 'fa-clipboard-list',
+        'Build Request': 'fa-hard-hat',
+        'Appeal / Unban': 'fa-balance-scale',
+        'General Question': 'fa-question-circle',
+        'Connection Issues': 'fa-plug',
+        'Griefing Report': 'fa-shield-alt',
+        'Plugin / Command Bug': 'fa-bug',
+        'Other': 'fa-question-circle'
+    };
+    return map[type] || 'fa-question-circle';
+}
+
+function formatTimeAgo(dateStr) {
+    if (!dateStr) return 'Unknown';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return date.toLocaleDateString();
+}
+
+// Load all data
+async function loadTicketData() {
+    try {
+        const response = await fetch('/api/boilercraft/tickets');
+        if (response.status === 401) { window.location.href = '/login'; return; }
+        ticketsData = await response.json();
+
+        const openCount = (ticketsData.open || []).length;
+        const closedCount = (ticketsData.closed || []).length;
+        const blacklistCount = (ticketsData.blacklist || []).length;
+
+        document.getElementById('stat-open').textContent = openCount;
+        document.getElementById('stat-closed').textContent = closedCount;
+        const statBlacklist = document.getElementById('stat-blacklist');
+        if (statBlacklist) statBlacklist.textContent = blacklistCount;
+        document.getElementById('stat-total').textContent = openCount + closedCount;
+        document.getElementById('open-badge').textContent = openCount;
+        document.getElementById('closed-badge').textContent = closedCount;
+        const blacklistBadge = document.getElementById('blacklist-badge');
+        if (blacklistBadge) blacklistBadge.textContent = blacklistCount;
+
+        renderOpenTickets();
+        renderClosedTickets();
+        renderBlacklist();
+    } catch (err) {
+        console.error('Failed to load ticket data:', err);
+    }
+}
+
+// Render open tickets table
+function renderOpenTickets() {
+    const filter = document.getElementById('open-filter').value;
+    let tickets = ticketsData.open || [];
+    if (filter !== 'all') tickets = tickets.filter(t => t.type === filter);
+
+    const tbody = document.getElementById('open-tickets-body');
+    if (tickets.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-inbox"></i><p>No open tickets</p></div></td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = tickets.map((t, i) => `
+        <tr>
+            <td><strong style="color: #CFB991;">mc-ticket-${String(t.id).padStart(4, '0')}</strong></td>
+            <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span>${t.minecraft_username || t.first_name || t.user || 'Unknown'}</span>
+                </div>
+            </td>
+            <td><span class="type-badge ${getTypeClass(t.type)}"><i class="fas ${getTypeIcon(t.type)}"></i> ${t.type || 'Unknown'}</span></td>
+            <td>${t.staff_assisting ? `<span class="staff-badge staff-assigned"><i class="fas fa-user-check"></i> ${t.staff_assisting.split(' (')[0]}</span>` : `<span class="staff-badge staff-unassigned">Unassigned</span>`}</td>
+            <td style="color: var(--text-secondary);">${formatTimeAgo(t.created_at)}</td>
+            <td>
+                <div style="display: flex; gap: 4px;">
+                    <button onclick="viewTicket(${i})" class="action-btn action-btn-view" title="View"><i class="fas fa-eye"></i></button>
+                    <button onclick="promptCloseFromList(${i})" class="action-btn action-btn-close" title="Close"><i class="fas fa-times"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Render closed tickets table
+function renderClosedTickets() {
+    const search = (document.getElementById('closed-search').value || '').toLowerCase();
+    let tickets = ticketsData.closed || [];
+    if (search) tickets = tickets.filter(t => 
+        (t.channel_name || '').toLowerCase().includes(search) ||
+        (t.user || '').toLowerCase().includes(search) ||
+        (t.type || '').toLowerCase().includes(search)
+    );
+
+    const tbody = document.getElementById('closed-tickets-body');
+    if (tickets.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-check-circle"></i><p>No closed tickets</p></div></td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = tickets.map((t, i) => `
+        <tr>
+            <td><strong style="color: var(--text-secondary);">${t.channel_name || 'mc-ticket-' + String(t.id).padStart(4, '0')}</strong></td>
+            <td>${t.minecraft_username || t.first_name || t.user || 'Unknown'}</td>
+            <td><span class="type-badge ${getTypeClass(t.type)}"><i class="fas ${getTypeIcon(t.type)}"></i> ${t.type || 'Unknown'}</span></td>
+            <td>${t.closed_by || 'Unknown'}</td>
+            <td style="color: var(--text-secondary);">${formatTimeAgo(t.closed_at)}</td>
+            <td>
+                <div style="display: flex; gap: 4px;">
+                    <button onclick="viewTranscript(${i})" class="action-btn action-btn-view" title="Transcript"><i class="fas fa-scroll"></i></button>
+                    <button onclick="deleteClosed(${i})" class="action-btn action-btn-delete" title="Delete"><i class="fas fa-trash"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Render blacklist table
+function renderBlacklist() {
+    const entries = ticketsData.blacklist || [];
+    const tbody = document.getElementById('blacklist-body');
+    if (!tbody) return;
+    if (entries.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-shield-alt"></i><p>No blacklisted users</p></div></td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = entries.map((entry, i) => `
+        <tr>
+            <td><strong>${entry.username || 'Unknown'}</strong></td>
+            <td style="font-family: monospace; color: var(--text-secondary);">${entry.user_id}</td>
+            <td>${entry.reason || 'No reason'}</td>
+            <td>${entry.blacklisted_by || 'Unknown'}</td>
+            <td style="color: var(--text-secondary);">${formatTimeAgo(entry.blacklisted_at)}</td>
+            <td><button onclick="removeBlacklist('${entry.user_id}')" class="action-btn action-btn-remove" title="Remove"><i class="fas fa-user-check"></i></button></td>
+        </tr>
+    `).join('');
+}
+
+// View open ticket detail
+function viewTicket(index) {
+    const ticket = ticketsData.open[index];
+    if (!ticket) return;
+    currentTicketId = ticket.id;
+    currentTicketIndex = index;
+
+    document.getElementById('detail-ticket-id').textContent = `mc-ticket-${String(ticket.id).padStart(4, '0')}`;
+    document.getElementById('ticket-detail-content').innerHTML = `
+        <div class="detail-item"><label>Minecraft Username</label><span>${ticket.minecraft_username || ticket.first_name || 'N/A'}</span></div>
+        <div class="detail-item"><label>Purdue Email</label><span>${ticket.email || 'N/A'}</span></div>
+        <div class="detail-item"><label>Issue Type</label><span class="type-badge ${getTypeClass(ticket.type)}"><i class="fas ${getTypeIcon(ticket.type)}"></i> ${ticket.type}</span></div>
+        <div class="detail-item"><label>Discord User</label><span>${ticket.user || 'Unknown'}</span></div>
+        <div class="detail-item"><label>Staff Assisting</label><span>${ticket.staff_assisting || 'Unassigned'}</span></div>
+        <div class="detail-item"><label>Created</label><span>${ticket.created_at ? new Date(ticket.created_at).toLocaleString() : 'Unknown'}</span></div>
+        <div class="detail-item" style="grid-column: 1 / -1;"><label>Description</label><span>${ticket.explanation || 'No description'}</span></div>
+    `;
+    openModal('ticket-detail-modal');
+}
+
+// Prompt close from list
+function promptCloseFromList(index) {
+    currentTicketId = ticketsData.open[index].id;
+    currentTicketIndex = index;
+    promptCloseTicket();
+}
+
+function promptCloseTicket() {
+    document.getElementById('close-reason-text').value = '';
+    openModal('close-reason-modal');
+}
+
+async function confirmCloseTicket() {
+    const reason = document.getElementById('close-reason-text').value.trim();
+    if (!reason) { showToast('Please enter a reason', 'error'); return; }
+    try {
+        const response = await fetch(`/api/boilercraft/tickets/${currentTicketId}/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason, index: currentTicketIndex })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Ticket closed successfully', 'success');
+            closeModal('close-reason-modal');
+            closeModal('ticket-detail-modal');
+            loadTicketData();
+        } else { showToast(result.error || 'Failed to close ticket', 'error'); }
+    } catch (err) { showToast('Failed to close ticket', 'error'); }
+}
+
+// Send message
+function showSendMessageModal() {
+    document.getElementById('send-message-text').value = '';
+    openModal('send-message-modal');
+}
+
+async function confirmSendMessage() {
+    const message = document.getElementById('send-message-text').value.trim();
+    if (!message) { showToast('Please enter a message', 'error'); return; }
+    try {
+        const response = await fetch(`/api/boilercraft/tickets/${currentTicketId}/message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Message queued for delivery', 'success');
+            closeModal('send-message-modal');
+        } else { showToast(result.error || 'Failed to send', 'error'); }
+    } catch (err) { showToast('Failed to send message', 'error'); }
+}
+
+// View transcript
+function viewTranscript(index) {
+    const ticket = ticketsData.closed[index];
+    if (!ticket) return;
+
+    document.getElementById('transcript-ticket-id').textContent = ticket.channel_name || `mc-ticket-${String(ticket.id).padStart(4, '0')}`;
+    const container = document.getElementById('transcript-content');
+
+    if (ticket.messages && ticket.messages.length > 0) {
+        container.innerHTML = ticket.messages.map(msg => `
+            <div class="transcript-message">
+                <span class="author">${msg.author || 'Unknown'}</span>
+                <span class="time">${msg.timestamp || ''}</span>
+                <div class="content">${msg.content || '<em>No content</em>'}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-scroll"></i><p>No transcript available</p></div>';
+    }
+    openModal('transcript-modal');
+}
+
+// Delete closed ticket
+async function deleteClosed(index) {
+    const ticket = ticketsData.closed[index];
+    if (!ticket) return;
+    if (!confirm(`Delete closed ticket ${ticket.channel_name || ticket.id}?`)) return;
+    try {
+        const response = await fetch(`/api/boilercraft/tickets/closed/${ticket.id}/delete`, { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) { showToast('Ticket deleted', 'success'); loadTicketData(); }
+        else { showToast(result.error || 'Failed to delete', 'error'); }
+    } catch (err) { showToast('Failed to delete ticket', 'error'); }
+}
+
+async function deleteAllClosed() {
+    if (!confirm('Delete ALL closed tickets? This cannot be undone.')) return;
+    try {
+        const response = await fetch('/api/boilercraft/tickets/closed/delete-all', { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) { showToast('All closed tickets deleted', 'success'); loadTicketData(); }
+        else { showToast(result.error || 'Failed to delete', 'error'); }
+    } catch (err) { showToast('Failed to delete tickets', 'error'); }
+}
+
+// Blacklist actions
+async function confirmAddBlacklist() {
+    const userId = document.getElementById('blacklist-user-id').value.trim();
+    const username = document.getElementById('blacklist-username').value.trim();
+    const reason = document.getElementById('blacklist-reason').value.trim();
+    if (!userId) { showToast('Please enter a User ID', 'error'); return; }
+    try {
+        const response = await fetch('/api/boilercraft/tickets/blacklist/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, username, reason })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('User blacklisted', 'success');
+            closeModal('blacklist-modal');
+            document.getElementById('blacklist-user-id').value = '';
+            document.getElementById('blacklist-username').value = '';
+            document.getElementById('blacklist-reason').value = '';
+            loadTicketData();
+        } else { showToast(result.error || 'Failed', 'error'); }
+    } catch (err) { showToast('Failed to blacklist user', 'error'); }
+}
+
+async function removeBlacklist(userId) {
+    if (!confirm('Remove this user from the blacklist?')) return;
+    try {
+        const response = await fetch('/api/boilercraft/tickets/blacklist/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId })
+        });
+        const result = await response.json();
+        if (result.success) { showToast('User removed from blacklist', 'success'); loadTicketData(); }
+        else { showToast(result.error || 'Failed', 'error'); }
+    } catch (err) { showToast('Failed to remove from blacklist', 'error'); }
+}
+
+// Filter events
+document.getElementById('open-filter').addEventListener('change', renderOpenTickets);
+document.getElementById('closed-search').addEventListener('input', renderClosedTickets);
+
+// ===== Settings Functions =====
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/boilercraft/settings');
+        if (response.status === 401) return;
+        botConfig = await response.json();
+
+        const cfgStaffRole = document.getElementById('cfg-staff-role-id');
+        if (cfgStaffRole) {
+            cfgStaffRole.value = botConfig.staff_role_id || '';
+            document.getElementById('cfg-panel-channel-id').value = botConfig.ticket_panel_channel_id || '';
+            document.getElementById('cfg-category-name').value = botConfig.ticket_category_name || 'MC Tickets';
+            document.getElementById('cfg-channel-prefix').value = botConfig.ticket_channel_prefix || 'mc-ticket-';
+            document.getElementById('cfg-announce-channel-id').value = botConfig.announce_channel_id || '';
+            document.getElementById('cfg-minecraft-role-id').value = botConfig.minecraft_role_id || '';
+            editingCategories = JSON.parse(JSON.stringify(botConfig.support_categories || []));
+            renderCategories();
+        }
+        updateFilterDropdown();
+    } catch (err) {
+        console.error('Failed to load settings:', err);
+    }
+}
+
+function updateFilterDropdown() {
+    const select = document.getElementById('open-filter');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="all">All Types</option>';
+    const categories = botConfig.support_categories || editingCategories || [];
+    categories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat.label || cat.value;
+        opt.textContent = cat.label || cat.value;
+        select.appendChild(opt);
+    });
+    select.value = currentVal || 'all';
+}
+
+function renderCategories() {
+    const tbody = document.getElementById('categories-body');
+    if (editingCategories.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-list"></i><p>No categories configured</p></div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = editingCategories.map((cat, i) => `
+        <tr>
+            <td>
+                <input type="text" value="${cat.emoji || ''}" onchange="editingCategories[${i}].emoji = this.value"
+                    style="width: 50px; text-align: center; padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 16px;">
+            </td>
+            <td>
+                <input type="text" value="${cat.label || ''}" onchange="editingCategories[${i}].label = this.value; editingCategories[${i}].value = this.value"
+                    style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13px;">
+            </td>
+            <td>
+                <input type="text" value="${cat.description || ''}" onchange="editingCategories[${i}].description = this.value"
+                    style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13px;">
+            </td>
+            <td>
+                <div style="display: flex; gap: 4px;">
+                    ${i > 0 ? `<button onclick="moveCategoryUp(${i})" class="action-btn action-btn-view" title="Move Up"><i class="fas fa-arrow-up"></i></button>` : ''}
+                    ${i < editingCategories.length - 1 ? `<button onclick="moveCategoryDown(${i})" class="action-btn action-btn-view" title="Move Down"><i class="fas fa-arrow-down"></i></button>` : ''}
+                    <button onclick="removeCategory(${i})" class="action-btn action-btn-delete" title="Remove"><i class="fas fa-trash"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function addCategory() {
+    editingCategories.push({ label: 'New Category', value: 'New Category', emoji: '📌', description: '' });
+    renderCategories();
+}
+
+function removeCategory(index) {
+    editingCategories.splice(index, 1);
+    renderCategories();
+}
+
+function moveCategoryUp(index) {
+    if (index <= 0) return;
+    [editingCategories[index - 1], editingCategories[index]] = [editingCategories[index], editingCategories[index - 1]];
+    renderCategories();
+}
+
+function moveCategoryDown(index) {
+    if (index >= editingCategories.length - 1) return;
+    [editingCategories[index], editingCategories[index + 1]] = [editingCategories[index + 1], editingCategories[index]];
+    renderCategories();
+}
+
+async function saveSettings() {
+    const staffRoleId = document.getElementById('cfg-staff-role-id').value.trim() || null;
+    const panelChannelId = document.getElementById('cfg-panel-channel-id').value.trim() || null;
+    const categoryName = document.getElementById('cfg-category-name').value.trim() || 'MC Tickets';
+    const channelPrefix = document.getElementById('cfg-channel-prefix').value.trim() || 'mc-ticket-';
+    const announceChannelId = document.getElementById('cfg-announce-channel-id').value.trim() || null;
+    const minecraftRoleId = document.getElementById('cfg-minecraft-role-id').value.trim() || null;
+
+    try {
+        const response = await fetch('/api/boilercraft/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                staff_role_id: staffRoleId,
+                ticket_panel_channel_id: panelChannelId,
+                ticket_category_name: categoryName,
+                ticket_channel_prefix: channelPrefix,
+                announce_channel_id: announceChannelId,
+                minecraft_role_id: minecraftRoleId
+            })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Settings saved successfully', 'success');
+            loadSettings();
+        } else {
+            showToast(result.error || 'Failed to save settings', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to save settings', 'error');
+    }
+}
+
+async function saveCategories() {
+    try {
+        const response = await fetch('/api/boilercraft/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ support_categories: editingCategories })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Categories saved. Click "Refresh Panel" to update the Discord embed.', 'success');
+            loadSettings();
+        } else {
+            showToast(result.error || 'Failed to save categories', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to save categories', 'error');
+    }
+}
+
+async function deployPanel() {
+    if (!confirm('This will send the support panel to the configured channel. Continue?')) return;
+    try {
+        const response = await fetch('/api/boilercraft/deploy-panel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(result.message || 'Panel deployment queued!', 'success');
+        } else {
+            showToast(result.error || 'Failed to deploy panel', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to deploy panel', 'error');
+    }
+}
+
+async function refreshPanel() {
+    if (!confirm('This will delete the existing panel and re-send it with current settings. Continue?')) return;
+    try {
+        const response = await fetch('/api/boilercraft/refresh-panel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(result.message || 'Panel refresh queued!', 'success');
+        } else {
+            showToast(result.error || 'Failed to refresh panel', 'error');
+        }
+    } catch (err) {
+        showToast('Failed to refresh panel', 'error');
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    loadTicketData();
+    loadSettings();
+    loadServerStatus();
+});
+
+// ═══════ MC SERVER STATUS ═══════
+async function loadServerStatus() {
+    const icon = document.getElementById('mc-refresh-icon');
+    icon.classList.add('fa-spin');
+    try {
+        const resp = await fetch('/api/boilercraft/server-status');
+        const data = await resp.json();
+        renderServerStatus(data);
+    } catch (e) {
+        renderServerStatus({ success: false, online: false });
+    }
+    icon.classList.remove('fa-spin');
+}
+
+function renderServerStatus(data) {
+    const dot = document.getElementById('mc-status-dot');
+    const statusText = document.getElementById('mc-status-text');
+    const motd = document.getElementById('mc-motd');
+    const body = document.getElementById('mc-server-body');
+    const iconImg = document.getElementById('mc-server-icon');
+    const versionInfo = document.getElementById('mc-version-info');
+
+    if (!data.success || !data.online) {
+        dot.className = 'mc-status-dot offline';
+        statusText.textContent = 'Offline';
+        statusText.style.color = '#ef4444';
+        motd.textContent = 'Server is currently offline';
+        body.innerHTML = `<div class="mc-offline-msg"><i class="fas fa-server"></i><p style="font-weight:600;">Server Offline</p><p style="font-size:13px;">The Minecraft server is not responding right now.</p></div>`;
+        iconImg.style.display = 'none';
+        versionInfo.textContent = '';
+        return;
+    }
+
+    // Icon
+    if (data.icon) {
+        iconImg.src = data.icon;
+        iconImg.style.display = 'block';
+    }
+
+    // Status
+    dot.className = 'mc-status-dot online';
+    statusText.textContent = 'Online';
+    statusText.style.color = '#22c55e';
+
+    // MOTD
+    const motdLines = data.motd || [];
+    motd.textContent = motdLines.join(' — ') || 'Purdue MC Network';
+
+    // Version / Software
+    let verText = data.version || '';
+    if (data.software) verText += ` (${data.software})`;
+    versionInfo.innerHTML = `<i class="fas fa-code-branch" style="margin-right:4px;"></i> ${verText}`;
+
+    // Stats
+    const online = data.players?.online || 0;
+    const max = data.players?.max || 0;
+    const pct = max > 0 ? Math.min((online / max) * 100, 100) : 0;
+    const playerList = data.players?.list || [];
+
+    let html = `<div class="mc-stats-row">
+        <div class="mc-stat">
+            <div class="mc-stat-value" style="color: #4ade80;">${online}</div>
+            <div class="mc-stat-label">Players Online</div>
+        </div>
+        <div class="mc-stat">
+            <div class="mc-stat-value">${max.toLocaleString()}</div>
+            <div class="mc-stat-label">Max Players</div>
+        </div>
+        <div class="mc-stat">
+            <div class="mc-stat-value" style="color: #CFB991;">${pct.toFixed(1)}%</div>
+            <div class="mc-stat-label">Capacity</div>
+        </div>
+        <div class="mc-stat">
+            <div class="mc-stat-value" style="color: #60a5fa;">${data.port || 25565}</div>
+            <div class="mc-stat-label">Port</div>
+        </div>
+    </div>`;
+
+    // Player bar
+    html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:12px; color:var(--text-secondary);">
+        <span>Player Capacity</span><span>${online} / ${max.toLocaleString()}</span>
+    </div>`;
+    html += `<div class="mc-player-bar"><div class="mc-player-fill" style="width:${pct}%"></div></div>`;
+
+    // Player list
+    if (playerList.length > 0) {
+        html += `<div style="margin-bottom:8px; font-size:13px; font-weight:600; color:var(--text-secondary);">Online Players</div>`;
+        html += `<div class="mc-player-list">`;
+        playerList.forEach(name => {
+            html += `<span class="mc-player-tag"><img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/18" alt="${name}"> ${name}</span>`;
+        });
+        if (online > playerList.length) {
+            html += `<span class="mc-player-tag" style="color:var(--text-secondary); font-style:italic;">+${online - playerList.length} more</span>`;
+        }
+        html += `</div>`;
+    }
+
+    body.innerHTML = html;
+}
+
+function copyIP() {
+    navigator.clipboard.writeText('mc.esports.purdue.edu').then(() => {
+        showToast('Server IP copied!', 'success');
+    });
+}
+
+// Auto-refresh server status every 60 seconds
+setInterval(loadServerStatus, 60000);
+</script>
+{% endblock %}

@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Logs{% endblock %}
+{% block page_title %}Activity Logs{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+            <div class="search-box" style="flex: 1; max-width: 300px;">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search logs..." id="log-search">
+            </div>
+            
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-secondary filter-btn active" data-filter="all">All</button>
+                <button class="btn btn-secondary filter-btn" data-filter="moderation">Moderation</button>
+                <button class="btn btn-secondary filter-btn" data-filter="ticket">Tickets</button>
+                <button class="btn btn-secondary filter-btn" data-filter="varsity">Varsity</button>
+                <button class="btn btn-secondary filter-btn" data-filter="bot">Bot Events</button>
+            </div>
+            
+            <button class="btn btn-primary" onclick="refreshLogs()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+            
+            <button class="btn btn-secondary" onclick="exportLogs()">
+                <i class="fas fa-download"></i>
+                Export
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-scroll"></i>
+            Moderation Logs
+        </h3>
+        <span class="badge badge-info" id="log-count">0 records</span>
+    </div>
+    <div class="card-body">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>By</th>
+                        <th>Date & Time</th>
+                    </tr>
+                </thead>
+                <tbody id="logs-body">
+                    <tr>
+                        <td colspan="5" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Summary -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-chart-bar"></i>
+            Statistics Summary
+        </h3>
+    </div>
+    <div class="card-body">
+        <div class="stats-grid">
+            <div class="stat-card gold">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+                <div class="stat-value" id="total-warnings">0</div>
+                <div class="stat-label">Total Warnings</div>
+            </div>
+            
+            <div class="stat-card red">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-user-slash"></i>
+                    </div>
+                </div>
+                <div class="stat-value" id="total-kicks">0</div>
+                <div class="stat-label">Total Kicks</div>
+            </div>
+            
+            <div class="stat-card red">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-gavel"></i>
+                    </div>
+                </div>
+                <div class="stat-value" id="total-bans">0</div>
+                <div class="stat-label">Total Bans</div>
+            </div>
+            
+            <div class="stat-card purple">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-users"></i>
+                    </div>
+                </div>
+                <div class="stat-value" id="unique-users">0</div>
+                <div class="stat-label">Unique Users</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allLogs = [];
+    let currentFilter = 'all';
+    let searchQuery = '';
+
+    // Load logs from multiple sources
+    async function loadLogs() {
+        try {
+            // Fetch both APIs concurrently for speed
+            const [logsResponse, recordsResponse] = await Promise.all([
+                fetch('/api/logs'),
+                fetch('/api/user-records')
+            ]);
+            const [logs, records] = await Promise.all([
+                logsResponse.json(),
+                recordsResponse.json()
+            ]);
+
+            // Build a lookup from user-records for enrichment
+            const memberLookup = {};
+            records.forEach(user => {
+                memberLookup[user.user_id] = {
+                    username: user.username || '',
+                    display_name: user.display_name || '',
+                    avatar_url: user.avatar_url || ''
+                };
+            });
+            
+            allLogs = [...logs];
+            
+            // Add moderation records (enriched)
+            records.forEach(user => {
+                user.records.forEach(record => {
+                    allLogs.push({
+                        type: 'moderation',
+                        action: record.type || 'Unknown',
+                        user_id: user.user_id,
+                        username: user.username || '',
+                        display_name: user.display_name || '',
+                        avatar_url: user.avatar_url || '',
+                        reason: record.reason || 'N/A',
+                        moderator: record.moderator || 'Unknown',
+                        timestamp: record.timestamp || 'Unknown',
+                        message: `${record.type}: ${record.reason || 'No reason'}`
+                    });
+                });
+            });
+
+            // Deduplicate moderation logs (API already includes them)
+            const seen = new Set();
+            allLogs = allLogs.filter(log => {
+                const key = `${log.type}_${log.user_id}_${log.timestamp}_${log.action}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            
+            // Sort by timestamp descending
+            allLogs.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+            
+            // Update stats
+            updateStats(allLogs, records);
+            
+            // Render logs
+            renderLogs();
+        } catch (error) {
+            console.error('Failed to load logs:', error);
+        }
+    }
+
+    function updateStats(logs, records) {
+        let warnings = 0, kicks = 0, bans = 0;
+        
+        records.forEach(user => {
+            user.records.forEach(record => {
+                if (record.type === 'Warning') warnings++;
+                else if (record.type === 'Kick') kicks++;
+                else if (record.type === 'Ban') bans++;
+            });
+        });
+        
+        document.getElementById('total-warnings').textContent = warnings;
+        document.getElementById('total-kicks').textContent = kicks;
+        document.getElementById('total-bans').textContent = bans;
+        document.getElementById('unique-users').textContent = records.length;
+    }
+
+    function renderLogs() {
+        let filtered = allLogs;
+        
+        // Apply filter
+        if (currentFilter !== 'all') {
+            filtered = filtered.filter(log => {
+                const logType = (log.type || '').toLowerCase();
+                if (currentFilter === 'moderation') {
+                    return logType === 'moderation' || ['warning', 'kick', 'ban'].includes(log.action?.toLowerCase());
+                }
+                return logType === currentFilter || log.action?.toLowerCase() === currentFilter;
+            });
+        }
+        
+        // Apply search
+        if (searchQuery) {
+            filtered = filtered.filter(log => {
+                const searchFields = [
+                    log.user_id,
+                    log.message,
+                    log.reason,
+                    log.action,
+                    log.moderator,
+                    log.source
+                ].filter(Boolean).join(' ').toLowerCase();
+                return searchFields.includes(searchQuery);
+            });
+        }
+        
+        // Update count
+        document.getElementById('log-count').textContent = `${filtered.length} records`;
+        
+        const tbody = document.getElementById('logs-body');
+        
+        if (filtered.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                        <i class="fas fa-inbox" style="font-size: 24px; display: block; margin-bottom: 8px;"></i>
+                        No logs found
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = filtered.slice(0, 100).map(log => {
+            const date = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown';
+            const typeClass = getTypeClass(log.type, log.action);
+            const icon = getTypeIcon(log.type, log.action);
+            const displayType = log.action || log.type || 'Event';
+            const name = log.display_name || log.username || log.user_id || 'System';
+            const avatarUrl = log.avatar_url;
+            const avatarHtml = avatarUrl 
+                ? `<img src="${avatarUrl}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+                : `<div class="user-avatar-sm">${(name || 'SY').substring(0,2).toUpperCase()}</div>`;
+            const userId = log.user_id || '';
+            const clickAttr = userId ? `onclick="openUserProfile('${userId}')" style="cursor:pointer;"` : '';
+            
+            return `
+                <tr ${clickAttr}>
+                    <td>
+                        <div class="user-cell">
+                            ${avatarHtml}
+                            <div style="display:flex;flex-direction:column;gap:1px;">
+                                <span style="font-weight:600;font-size:13px;">${escapeHtml(name)}</span>
+                                ${(log.display_name && log.username) ? `<span style="font-size:11px;color:var(--text-muted);">@${escapeHtml(log.username)}</span>` : (userId ? `<span style="font-size:11px;color:var(--text-muted);">${userId}</span>` : '')}
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge ${typeClass}">
+                            <i class="fas fa-${icon}"></i>
+                            ${displayType}
+                        </span>
+                    </td>
+                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${log.message || log.reason || 'No details'}
+                    </td>
+                    <td style="color: var(--text-muted);">${log.moderator || log.source || '-'}</td>
+                    <td style="color: var(--text-secondary);">
+                        ${date}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+    
+    function getTypeClass(type, action) {
+        const a = (action || type || '').toLowerCase();
+        if (a === 'warning') return 'badge-warning';
+        if (a === 'kick' || a === 'ban') return 'badge-danger';
+        if (a === 'ticket' || a === 'created') return 'badge-info';
+        if (a === 'varsity' || a === 'approved') return 'badge-success';
+        if (a === 'denied') return 'badge-danger';
+        return 'badge-purple';
+    }
+    
+    function getTypeIcon(type, action) {
+        const a = (action || type || '').toLowerCase();
+        if (a === 'warning') return 'exclamation-triangle';
+        if (a === 'kick') return 'user-slash';
+        if (a === 'ban') return 'gavel';
+        if (a === 'ticket') return 'ticket-alt';
+        if (a === 'varsity') return 'trophy';
+        if (a === 'approved') return 'check-circle';
+        if (a === 'denied') return 'times-circle';
+        return 'info-circle';
+    }
+
+    function refreshLogs() {
+        loadLogs();
+    }
+    
+    function exportLogs() {
+        const dataStr = JSON.stringify(allLogs, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const exportName = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
+        
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportName);
+        linkElement.click();
+    }
+
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            renderLogs();
+        });
+    });
+
+    // Search
+    document.getElementById('log-search').addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase();
+        renderLogs();
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadLogs);
+</script>
+
+<style>
+    .filter-btn.active {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+</style>
+{% endblock %}

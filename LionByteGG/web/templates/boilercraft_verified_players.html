@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+
+{% block title %}Verified Players{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <h1 class="page-title">
+            <i class="fas fa-user-check"></i>
+            Verified Players
+        </h1>
+        <p class="page-description">All players who have verified through the BoilerCraftGG bot</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-primary" onclick="exportExcel()">
+            <i class="fas fa-file-excel"></i> Export Excel
+        </button>
+    </div>
+</div>
+
+<style>
+.vp-stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.vp-stat-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.vp-stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.vp-stat-icon {
+    width: 50px; height: 50px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+}
+.vp-stat-icon.gold { background: rgba(207,166,48,0.15); color: #CFA630; }
+.vp-stat-icon.green { background: rgba(16,185,129,0.15); color: #10b981; }
+.vp-stat-icon.blue { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.vp-stat-icon.purple { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.vp-stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.vp-stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Search & Filter Bar */
+.vp-toolbar {
+    display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;
+}
+.vp-search {
+    flex: 1; min-width: 220px; padding: 10px 14px 10px 40px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text-primary); font-size: 14px; outline: none; transition: border-color 0.2s;
+}
+.vp-search:focus { border-color: #CFA630; }
+.vp-search-wrap { position: relative; flex: 1; min-width: 220px; }
+.vp-search-wrap i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 14px; }
+.vp-filter-select {
+    padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text-primary); font-size: 14px; cursor: pointer; outline: none;
+    min-width: 160px;
+}
+.vp-filter-select:focus { border-color: #CFA630; }
+.vp-count { color: var(--text-secondary); font-size: 13px; white-space: nowrap; padding: 10px 0; }
+
+/* Table */
+.vp-table-wrap {
+    background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
+    overflow: hidden;
+}
+.vp-table { width: 100%; border-collapse: collapse; }
+.vp-table thead th {
+    padding: 14px 16px; text-align: left; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);
+    background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap; transition: color 0.2s;
+}
+.vp-table thead th:hover { color: #CFA630; }
+.vp-table thead th .sort-icon { margin-left: 6px; font-size: 10px; opacity: 0.4; }
+.vp-table thead th.sorted .sort-icon { opacity: 1; color: #CFA630; }
+.vp-table tbody tr {
+    border-bottom: 1px solid var(--border); transition: background 0.15s;
+}
+.vp-table tbody tr:hover { background: rgba(207,166,48,0.04); }
+.vp-table tbody tr:last-child { border-bottom: none; }
+.vp-table tbody td { padding: 12px 16px; font-size: 14px; color: var(--text-primary); vertical-align: middle; }
+
+/* Player cell */
+.vp-player-cell { display: flex; align-items: center; gap: 12px; }
+.vp-mc-head {
+    width: 36px; height: 36px; border-radius: 6px; image-rendering: pixelated;
+    background: var(--border); flex-shrink: 0;
+}
+.vp-player-names { display: flex; flex-direction: column; gap: 2px; }
+.vp-ign { font-weight: 600; color: var(--text-primary); }
+.vp-discord-tag { font-size: 12px; color: var(--text-secondary); }
+
+/* Campus badge */
+.vp-campus-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border-radius: 20px; font-size: 12px; font-weight: 500;
+    background: rgba(207,166,48,0.1); color: #CFA630; border: 1px solid rgba(207,166,48,0.2);
+}
+
+/* Date */
+.vp-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+.vp-date-relative { font-size: 11px; color: var(--text-tertiary, #666); display: block; margin-top: 2px; }
+
+/* Empty & Loading */
+.vp-loading { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+.vp-loading i { font-size: 32px; margin-bottom: 12px; display: block; color: #CFA630; }
+.vp-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+.vp-empty i { font-size: 48px; margin-bottom: 16px; display: block; opacity: 0.3; }
+
+/* Pagination */
+.vp-pagination {
+    display: flex; justify-content: center; align-items: center; gap: 8px;
+    padding: 16px; border-top: 1px solid var(--border);
+}
+.vp-page-btn {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-primary); cursor: pointer;
+    font-size: 13px; transition: all 0.2s;
+}
+.vp-page-btn:hover { border-color: #CFA630; color: #CFA630; }
+.vp-page-btn.active { background: #CFA630; color: #000; border-color: #CFA630; font-weight: 600; }
+.vp-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.vp-page-info { font-size: 13px; color: var(--text-secondary); padding: 0 8px; }
+
+@media (max-width: 900px) {
+    .vp-stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+    .vp-stats-row { grid-template-columns: 1fr; }
+    .vp-table thead th, .vp-table tbody td { padding: 10px 12px; }
+}
+</style>
+
+<!-- Stats -->
+<div class="vp-stats-row">
+    <div class="vp-stat-card">
+        <div class="vp-stat-icon gold"><i class="fas fa-user-check"></i></div>
+        <div><div class="vp-stat-value" id="statTotal">—</div><div class="vp-stat-label">Total Verified</div></div>
+    </div>
+    <div class="vp-stat-card">
+        <div class="vp-stat-icon green"><i class="fas fa-calendar-day"></i></div>
+        <div><div class="vp-stat-value" id="statRecent">—</div><div class="vp-stat-label">Last 7 Days</div></div>
+    </div>
+    <div class="vp-stat-card">
+        <div class="vp-stat-icon blue"><i class="fas fa-university"></i></div>
+        <div><div class="vp-stat-value" id="statCampuses">—</div><div class="vp-stat-label">Campuses</div></div>
+    </div>
+    <div class="vp-stat-card">
+        <div class="vp-stat-icon purple"><i class="fas fa-clock"></i></div>
+        <div><div class="vp-stat-value" id="statLatest">—</div><div class="vp-stat-label">Latest Verification</div></div>
+    </div>
+</div>
+
+<!-- Toolbar -->
+<div class="vp-toolbar">
+    <div class="vp-search-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" class="vp-search" id="searchInput" placeholder="Search by IGN, Discord name, campus, or email...">
+    </div>
+    <select class="vp-filter-select" id="campusFilter">
+        <option value="">All Campuses</option>
+    </select>
+    <select class="vp-filter-select" id="sortSelect">
+        <option value="date-desc">Newest First</option>
+        <option value="date-asc">Oldest First</option>
+        <option value="ign-asc">IGN A–Z</option>
+        <option value="ign-desc">IGN Z–A</option>
+        <option value="campus-asc">Campus A–Z</option>
+    </select>
+    <span class="vp-count" id="resultCount"></span>
+</div>
+
+<!-- Table -->
+<div class="vp-table-wrap">
+    <div class="vp-loading" id="loadingState">
+        <i class="fas fa-spinner fa-spin"></i>
+        Loading verified players...
+    </div>
+    <div class="vp-empty" id="emptyState" style="display:none;">
+        <i class="fas fa-user-slash"></i>
+        <p>No verified players found</p>
+    </div>
+    <table class="vp-table" id="playersTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Campus</th>
+                <th>First Name</th>
+                <th>Email</th>
+                <th>Verified</th>
+            </tr>
+        </thead>
+        <tbody id="playersBody"></tbody>
+    </table>
+    <div class="vp-pagination" id="pagination" style="display:none;"></div>
+</div>
+
+<script>
+(function() {
+    const PER_PAGE = 25;
+    let allPlayers = [];
+    let filtered = [];
+    let currentPage = 1;
+
+    async function loadPlayers() {
+        try {
+            const res = await fetch('/api/boilercraft/verified-players');
+            const data = await res.json();
+            allPlayers = data.players || [];
+            populateCampusFilter();
+            updateStats();
+            applyFilters();
+            document.getElementById('loadingState').style.display = 'none';
+        } catch (e) {
+            document.getElementById('loadingState').innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed to load players';
+        }
+    }
+
+    function populateCampusFilter() {
+        const campuses = [...new Set(allPlayers.map(p => p.campus).filter(Boolean))].sort();
+        const sel = document.getElementById('campusFilter');
+        campuses.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            sel.appendChild(opt);
+        });
+    }
+
+    function updateStats() {
+        document.getElementById('statTotal').textContent = allPlayers.length;
+
+        const week = Date.now() - 7 * 24 * 3600 * 1000;
+        const recent = allPlayers.filter(p => p.verified_at && new Date(p.verified_at).getTime() > week).length;
+        document.getElementById('statRecent').textContent = recent;
+
+        const campuses = new Set(allPlayers.map(p => p.campus).filter(Boolean));
+        document.getElementById('statCampuses').textContent = campuses.size;
+
+        if (allPlayers.length > 0 && allPlayers[0].verified_at) {
+            const d = new Date(allPlayers[0].verified_at);
+            document.getElementById('statLatest').textContent = timeAgo(d);
+        } else {
+            document.getElementById('statLatest').textContent = '—';
+        }
+    }
+
+    function applyFilters() {
+        const q = document.getElementById('searchInput').value.toLowerCase().trim();
+        const campus = document.getElementById('campusFilter').value;
+        const sort = document.getElementById('sortSelect').value;
+
+        filtered = allPlayers.filter(p => {
+            if (campus && p.campus !== campus) return false;
+            if (q) {
+                const hay = [p.minecraft_username, p.discord_name, p.campus, p.email, p.first_name]
+                    .filter(Boolean).join(' ').toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            return true;
+        });
+
+        // Sort
+        filtered.sort((a, b) => {
+            switch (sort) {
+                case 'date-desc': return (new Date(b.verified_at || 0)) - (new Date(a.verified_at || 0));
+                case 'date-asc': return (new Date(a.verified_at || 0)) - (new Date(b.verified_at || 0));
+                case 'ign-asc': return (a.minecraft_username || '').localeCompare(b.minecraft_username || '');
+                case 'ign-desc': return (b.minecraft_username || '').localeCompare(a.minecraft_username || '');
+                case 'campus-asc': return (a.campus || '').localeCompare(b.campus || '');
+                default: return 0;
+            }
+        });
+
+        currentPage = 1;
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('playersBody');
+        const table = document.getElementById('playersTable');
+        const empty = document.getElementById('emptyState');
+        const pag = document.getElementById('pagination');
+        const count = document.getElementById('resultCount');
+
+        if (filtered.length === 0) {
+            table.style.display = 'none';
+            pag.style.display = 'none';
+            empty.style.display = '';
+            count.textContent = '0 players';
+            return;
+        }
+
+        empty.style.display = 'none';
+        table.style.display = '';
+
+        const totalPages = Math.ceil(filtered.length / PER_PAGE);
+        const start = (currentPage - 1) * PER_PAGE;
+        const page = filtered.slice(start, start + PER_PAGE);
+        count.textContent = `${filtered.length} player${filtered.length !== 1 ? 's' : ''}`;
+
+        tbody.innerHTML = page.map(p => {
+            const headUrl = p.minecraft_uuid
+                ? `https://mc-heads.net/avatar/${p.minecraft_uuid}/36`
+                : `https://mc-heads.net/avatar/${encodeURIComponent(p.minecraft_username)}/36`;
+            const campusBadge = p.campus
+                ? `<span class="vp-campus-badge"><i class="fas fa-university"></i> ${escHtml(p.campus)}</span>`
+                : '<span style="color:var(--text-secondary)">—</span>';
+            const dateStr = p.verified_at ? formatDate(p.verified_at) : '—';
+            const relStr = p.verified_at ? timeAgo(new Date(p.verified_at)) : '';
+            return `<tr>
+                <td>
+                    <div class="vp-player-cell">
+                        <img class="vp-mc-head" src="${headUrl}" alt="${escHtml(p.minecraft_username)}" onerror="this.style.display='none'">
+                        <div class="vp-player-names">
+                            <span class="vp-ign">${escHtml(p.minecraft_username)}</span>
+                            <span class="vp-discord-tag">${escHtml(p.discord_name)}</span>
+                        </div>
+                    </div>
+                </td>
+                <td>${campusBadge}</td>
+                <td>${escHtml(p.first_name || '—')}</td>
+                <td>${escHtml(p.email || '—')}</td>
+                <td><span class="vp-date">${dateStr}<span class="vp-date-relative">${relStr}</span></span></td>
+            </tr>`;
+        }).join('');
+
+        // Pagination
+        if (totalPages > 1) {
+            pag.style.display = 'flex';
+            let html = `<button class="vp-page-btn" onclick="vpGoPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>`;
+            const range = getPageRange(currentPage, totalPages);
+            range.forEach(n => {
+                if (n === '...') {
+                    html += `<span class="vp-page-info">…</span>`;
+                } else {
+                    html += `<button class="vp-page-btn ${n === currentPage ? 'active' : ''}" onclick="vpGoPage(${n})">${n}</button>`;
+                }
+            });
+            html += `<button class="vp-page-btn" onclick="vpGoPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+            pag.innerHTML = html;
+        } else {
+            pag.style.display = 'none';
+        }
+    }
+
+    function getPageRange(current, total) {
+        if (total <= 7) return Array.from({length: total}, (_, i) => i + 1);
+        const pages = [];
+        pages.push(1);
+        if (current > 3) pages.push('...');
+        for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
+        if (current < total - 2) pages.push('...');
+        pages.push(total);
+        return pages;
+    }
+
+    function formatDate(str) {
+        try {
+            const d = new Date(str);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch { return str; }
+    }
+
+    function timeAgo(date) {
+        const s = Math.floor((Date.now() - date.getTime()) / 1000);
+        if (s < 60) return 'just now';
+        if (s < 3600) return Math.floor(s / 60) + 'm ago';
+        if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+        if (s < 604800) return Math.floor(s / 86400) + 'd ago';
+        if (s < 2592000) return Math.floor(s / 604800) + 'w ago';
+        return Math.floor(s / 2592000) + 'mo ago';
+    }
+
+    function escHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    window.vpGoPage = function(n) {
+        const totalPages = Math.ceil(filtered.length / PER_PAGE);
+        if (n < 1 || n > totalPages) return;
+        currentPage = n;
+        renderTable();
+        document.querySelector('.vp-table-wrap').scrollIntoView({behavior: 'smooth', block: 'start'});
+    };
+
+    window.exportExcel = function() {
+        window.location.href = '/api/boilercraft/verified-players/export';
+    };
+
+    // Event listeners
+    let debounce;
+    document.getElementById('searchInput').addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(applyFilters, 200);
+    });
+    document.getElementById('campusFilter').addEventListener('change', applyFilters);
+    document.getElementById('sortSelect').addEventListener('change', applyFilters);
+
+    loadPlayers();
+})();
+</script>
+{% endblock %}

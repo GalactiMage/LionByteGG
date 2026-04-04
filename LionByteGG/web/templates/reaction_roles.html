@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}Reaction Roles{% endblock %}
+{% block page_title %}Reaction Roles Manager{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+    <!-- Info Banner -->
+    <div class="info-banner">
+        <i class="fas fa-info-circle"></i>
+        <div>
+            <strong>Reaction Roles</strong>
+            <p>View and manage reaction role panels. Members can react to messages to get roles.</p>
+        </div>
+    </div>
+
+    <!-- Reaction Role Panels -->
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-tags"></i> Active Reaction Role Panels</h2>
+            <button class="btn btn-primary" onclick="refreshPanels()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="panels-container">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i> Loading reaction role panels...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- How to Create Panel -->
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header">
+            <h2><i class="fas fa-question-circle"></i> How to Create Reaction Roles</h2>
+        </div>
+        <div class="card-body">
+            <div class="instructions">
+                <div class="instruction-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h4>Use the Setup Command</h4>
+                        <p>In Discord, use <code>/setup-reaction-roles</code> to create a new reaction role panel.</p>
+                    </div>
+                </div>
+                <div class="instruction-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h4>Configure Roles</h4>
+                        <p>Add emoji-role pairs to the panel. Each emoji will assign a specific role when clicked.</p>
+                    </div>
+                </div>
+                <div class="instruction-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h4>Members React</h4>
+                        <p>Members click the emoji to receive the role. Click again to remove the role.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .info-banner {
+        background: rgba(124, 58, 237, 0.1);
+        border: 1px solid rgba(124, 58, 237, 0.3);
+        border-radius: 12px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .info-banner i {
+        font-size: 24px;
+        color: var(--primary-light);
+        margin-top: 2px;
+    }
+
+    .info-banner strong {
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .info-banner p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .card-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .card-header h2 {
+        font-size: 18px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-header h2 i {
+        color: var(--primary-light);
+    }
+
+    .card-body {
+        padding: 24px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+    }
+
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+    }
+
+    .loading-spinner i {
+        margin-right: 8px;
+    }
+
+    .panel-card {
+        background: var(--background-secondary);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+    }
+
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .panel-title {
+        font-weight: 600;
+        font-size: 16px;
+    }
+
+    .panel-channel {
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+
+    .panel-roles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .role-item {
+        background: var(--surface);
+        padding: 8px 14px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .role-emoji {
+        font-size: 18px;
+    }
+
+    .role-name {
+        color: var(--text-primary);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-secondary);
+    }
+
+    .empty-state i {
+        font-size: 48px;
+        margin-bottom: 16px;
+        color: var(--text-muted);
+    }
+
+    .instructions {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .instruction-step {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .step-number {
+        width: 36px;
+        height: 36px;
+        background: var(--gradient-1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .step-content h4 {
+        margin-bottom: 4px;
+        font-size: 15px;
+    }
+
+    .step-content p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin: 0;
+    }
+
+    .step-content code {
+        background: var(--background-secondary);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 13px;
+    }
+</style>
+
+<script>
+    async function loadReactionRoles() {
+        const container = document.getElementById('panels-container');
+        
+        try {
+            const response = await fetch('/api/reaction-roles');
+            const data = await response.json();
+            
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-tags"></i>
+                        <h3>No Reaction Role Panels</h3>
+                        <p>Create reaction role panels using the /setup-reaction-roles command in Discord.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            for (const [messageId, panelData] of Object.entries(data)) {
+                const roles = panelData.roles || {};
+                html += `
+                    <div class="panel-card">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">${escapeHtml(panelData.title || 'Reaction Role Panel')}</div>
+                                <div class="panel-channel">Message ID: ${messageId}</div>
+                            </div>
+                        </div>
+                        <div class="panel-roles">
+                            ${Object.entries(roles).map(([emoji, roleData]) => `
+                                <div class="role-item">
+                                    <span class="role-emoji">${emoji}</span>
+                                    <span class="role-name">${escapeHtml(roleData.name || roleData.role_id || 'Unknown Role')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading reaction roles:', error);
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Error Loading Data</h3>
+                    <p>Could not load reaction role panels. Please try again.</p>
+                </div>
+            `;
+        }
+    }
+
+    function refreshPanels() {
+        const container = document.getElementById('panels-container');
+        container.innerHTML = `
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i> Loading reaction role panels...
+            </div>
+        `;
+        loadReactionRoles();
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadReactionRoles);
+</script>
+{% endblock %}

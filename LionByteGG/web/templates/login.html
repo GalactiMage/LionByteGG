@@ -1,0 +1,1518 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - LionByteGG Dashboard</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #7c3aed;
+            --primary-dark: #6d28d9;
+            --primary-light: #a78bfa;
+            --secondary: #f59e0b;
+            --background: #09090b;
+            --background-secondary: #18181b;
+            --surface: #1f1f23;
+            --surface-light: #27272a;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --border: #3f3f46;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--background);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ===== LANDSCAPE SPLIT LAYOUT ===== */
+        .login-wrapper {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        /* ===== LEFT SIDE - BRANDING ===== */
+        .branding-side {
+            flex: 1;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated Background Elements */
+        .branding-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .branding-bg::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.15) 0%, transparent 50%);
+            animation: bgRotate 40s linear infinite;
+        }
+
+        .branding-bg::after {
+            content: '';
+            position: absolute;
+            bottom: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 70% 70%, rgba(245, 158, 11, 0.1) 0%, transparent 50%);
+            animation: bgRotate 35s linear infinite reverse;
+        }
+
+        @keyframes bgRotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Floating Particles */
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: var(--primary-light);
+            border-radius: 50%;
+            opacity: 0.3;
+            animation: particleFloat 15s infinite ease-in-out;
+        }
+
+        .particle:nth-child(1) { left: 10%; top: 20%; animation-delay: 0s; }
+        .particle:nth-child(2) { left: 20%; top: 60%; animation-delay: -2s; }
+        .particle:nth-child(3) { left: 30%; top: 40%; animation-delay: -4s; }
+        .particle:nth-child(4) { left: 50%; top: 80%; animation-delay: -6s; }
+        .particle:nth-child(5) { left: 70%; top: 30%; animation-delay: -8s; }
+        .particle:nth-child(6) { left: 80%; top: 70%; animation-delay: -10s; }
+        .particle:nth-child(7) { left: 90%; top: 50%; animation-delay: -12s; }
+
+        @keyframes particleFloat {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
+            25% { transform: translateY(-30px) translateX(10px); opacity: 0.6; }
+            50% { transform: translateY(-15px) translateX(-15px); opacity: 0.4; }
+            75% { transform: translateY(-40px) translateX(5px); opacity: 0.5; }
+        }
+
+        /* Logo Orbit Container */
+        .logo-showcase {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        /* Orbit Rings */
+        .orbit-ring {
+            position: absolute;
+            border: 1px solid rgba(124, 58, 237, 0.2);
+            border-radius: 50%;
+            animation: ringPulse 4s ease-in-out infinite;
+        }
+
+        .orbit-ring:nth-child(1) {
+            width: 280px;
+            height: 280px;
+            animation-delay: 0s;
+        }
+
+        .orbit-ring:nth-child(2) {
+            width: 340px;
+            height: 340px;
+            border-color: rgba(245, 158, 11, 0.15);
+            animation-delay: -1s;
+        }
+
+        .orbit-ring:nth-child(3) {
+            width: 400px;
+            height: 400px;
+            animation-delay: -2s;
+        }
+
+        @keyframes ringPulse {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.02); }
+        }
+
+        /* Main Logo */
+        .main-logo {
+            width: 160px;
+            height: 160px;
+            border-radius: 32px;
+            overflow: hidden;
+            box-shadow: 
+                0 0 60px rgba(124, 58, 237, 0.4),
+                0 25px 50px rgba(0, 0, 0, 0.5);
+            animation: mainLogoFloat 4s ease-in-out infinite;
+            position: relative;
+            z-index: 10;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            padding: 3px;
+        }
+
+        .main-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 29px;
+        }
+
+        @keyframes mainLogoFloat {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-10px) scale(1.02); }
+        }
+
+        /* Orbiting Satellite Logos */
+        .orbit-container {
+            position: absolute;
+            width: 340px;
+            height: 340px;
+            animation: orbitSpin 20s linear infinite;
+        }
+
+        @keyframes orbitSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .satellite-logo {
+            position: absolute;
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 
+                0 0 30px rgba(245, 158, 11, 0.3),
+                0 10px 30px rgba(0, 0, 0, 0.4);
+            animation: counterSpin 20s linear infinite;
+            background: linear-gradient(135deg, var(--secondary), #d97706);
+            padding: 2px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .satellite-logo:hover {
+            transform: scale(1.15) !important;
+            box-shadow: 0 0 50px rgba(245, 158, 11, 0.5);
+        }
+
+        .satellite-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 14px;
+        }
+
+        @keyframes counterSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(-360deg); }
+        }
+
+        .satellite-logo:nth-child(1) {
+            top: -32px;
+            left: 50%;
+            margin-left: -32px;
+        }
+
+        .satellite-logo:nth-child(2) {
+            bottom: -16px;
+            right: -16px;
+        }
+
+        .satellite-logo:nth-child(3) {
+            bottom: -16px;
+            left: -16px;
+        }
+
+        /* Branding Text */
+        .branding-text {
+            position: absolute;
+            bottom: 60px;
+            text-align: center;
+            z-index: 5;
+        }
+
+        .branding-text h1 {
+            font-size: 42px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, var(--primary-light) 50%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+            letter-spacing: -1px;
+        }
+
+        .branding-text p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        /* ===== RIGHT SIDE - LOGIN FORM ===== */
+        .login-side {
+            flex: 1;
+            background: var(--background);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            position: relative;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .login-header {
+            margin-bottom: 40px;
+        }
+
+        .login-header h2 {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .login-header p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper > i {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 16px;
+            transition: color 0.3s;
+            pointer-events: none;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 16px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 4px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+            transition: color 0.3s;
+        }
+
+        .password-toggle:hover {
+            color: var(--primary-light);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 18px 18px 18px 52px;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 14px;
+            color: var(--text-primary);
+            font-size: 16px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: var(--primary);
+            background: var(--surface-light);
+            box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.15);
+        }
+
+        .form-input:focus ~ i {
+            color: var(--primary);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .form-input.error {
+            border-color: var(--danger);
+            animation: inputShake 0.4s ease;
+        }
+
+        .form-input.error:focus {
+            box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+        }
+
+        @keyframes inputShake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            60% { transform: translateX(-6px); }
+            80% { transform: translateX(6px); }
+        }
+
+        /* Error Message */
+        .error-message {
+            display: none;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 24px;
+            animation: errorSlide 0.4s ease;
+        }
+
+        .error-message.show {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        @keyframes errorSlide {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .error-message i {
+            color: var(--danger);
+            font-size: 20px;
+            margin-top: 2px;
+        }
+
+        .error-message-content h4 {
+            color: var(--danger);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .error-message-content p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* Server Error (Flask) */
+        .server-error {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 24px;
+        }
+
+        .server-error i {
+            color: var(--danger);
+            font-size: 20px;
+            margin-top: 2px;
+        }
+
+        .server-error-content h4 {
+            color: var(--danger);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .server-error-content p {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        /* Submit Button */
+        .submit-btn {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            border: none;
+            border-radius: 14px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .submit-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(124, 58, 237, 0.4);
+        }
+
+        .submit-btn:hover::before {
+            left: 100%;
+        }
+
+        .submit-btn:active {
+            transform: translateY(-1px);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* OAuth Divider */
+        .oauth-divider {
+            display: flex;
+            align-items: center;
+            margin: 28px 0;
+            gap: 16px;
+        }
+
+        .oauth-divider::before,
+        .oauth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .oauth-divider span {
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+
+        /* Discord Button */
+        .discord-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 18px;
+            background: #5865F2;
+            border: none;
+            border-radius: 14px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+
+        .discord-btn:hover {
+            background: #4752C4;
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(88, 101, 242, 0.4);
+        }
+
+        .discord-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .oauth-info {
+            text-align: center;
+            margin-top: 16px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .oauth-info i {
+            color: var(--primary-light);
+        }
+
+        /* ===== LOADING OVERLAY ===== */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--background);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .loading-overlay.active {
+            display: flex;
+            animation: lo-fadeIn .5s ease;
+        }
+        @keyframes lo-fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Animated background */
+        .lo-bg {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .lo-glow {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0;
+            animation: lo-glowIn 1.2s ease forwards;
+        }
+        .lo-glow.g1 { width: 600px; height: 600px; background: rgba(124,58,237,.2); top: 50%; left: 50%; transform: translate(-60%,-60%); animation-delay: .1s; }
+        .lo-glow.g2 { width: 500px; height: 500px; background: rgba(245,158,11,.12); top: 50%; left: 50%; transform: translate(-40%,-40%); animation-delay: .3s; }
+        .lo-glow.g3 { width: 350px; height: 350px; background: rgba(37,99,235,.15); top: 50%; left: 50%; transform: translate(-50%,-50%); animation-delay: .5s; }
+        @keyframes lo-glowIn { to { opacity: 1; } }
+
+        /* Grid dot pattern */
+        .lo-grid {
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, black 40%, transparent 100%);
+            -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, black 40%, transparent 100%);
+        }
+
+        /* Center stage */
+        .lo-stage {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        /* Logo burst */
+        .lo-logo-wrap {
+            position: relative;
+            width: 140px;
+            height: 140px;
+            margin-bottom: 36px;
+        }
+        .lo-logo-ring {
+            position: absolute;
+            inset: -20px;
+            border-radius: 50%;
+            border: 2px solid rgba(124,58,237,.25);
+            opacity: 0;
+            animation: lo-ringExpand 1.4s cubic-bezier(.23,1,.32,1) forwards;
+        }
+        .lo-logo-ring:nth-child(2) { inset: -40px; border-color: rgba(245,158,11,.15); animation-delay: .15s; }
+        .lo-logo-ring:nth-child(3) { inset: -60px; border-color: rgba(124,58,237,.1); animation-delay: .3s; }
+        @keyframes lo-ringExpand {
+            0% { transform: scale(.6); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: scale(1); opacity: .5; }
+        }
+        .lo-logo-pulse {
+            position: absolute;
+            inset: -8px;
+            border-radius: 34px;
+            background: rgba(124,58,237,.2);
+            animation: lo-logoPulse 2s ease-in-out infinite 1s;
+            filter: blur(16px);
+        }
+        @keyframes lo-logoPulse {
+            0%, 100% { opacity: .3; transform: scale(1); }
+            50% { opacity: .6; transform: scale(1.08); }
+        }
+        .lo-logo {
+            position: relative;
+            width: 140px;
+            height: 140px;
+            border-radius: 32px;
+            overflow: hidden;
+            box-shadow: 0 0 80px rgba(124,58,237,.45), 0 25px 60px rgba(0,0,0,.5);
+            opacity: 0;
+            transform: scale(.7);
+            animation: lo-logoIn .8s cubic-bezier(.23,1,.32,1) .2s forwards;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            padding: 3px;
+        }
+        .lo-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: 29px; }
+        @keyframes lo-logoIn {
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Welcome text */
+        .lo-welcome {
+            text-align: center;
+            margin-bottom: 32px;
+            opacity: 0;
+            transform: translateY(16px);
+            animation: lo-txtIn .7s ease .6s forwards;
+        }
+        .lo-welcome h2 {
+            font-size: 34px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, var(--primary-light) 60%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+            letter-spacing: -.5px;
+        }
+        .lo-welcome p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+        @keyframes lo-txtIn { to { opacity: 1; transform: translateY(0); } }
+
+        /* Progress bar */
+        .lo-bar-wrap {
+            width: 320px;
+            margin-bottom: 28px;
+            opacity: 0;
+            animation: lo-txtIn .5s ease .8s forwards;
+        }
+        .lo-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,.06);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .lo-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--primary-light), var(--secondary));
+            background-size: 200% 100%;
+            border-radius: 3px;
+            width: 0%;
+            transition: width .5s cubic-bezier(.4,0,.2,1);
+            position: relative;
+        }
+        .lo-bar-fill::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent);
+            animation: lo-shimmer 1.5s infinite;
+        }
+        @keyframes lo-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+        /* Steps */
+        .lo-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            opacity: 0;
+            animation: lo-txtIn .5s ease .9s forwards;
+        }
+        .lo-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(255,255,255,.25);
+            transition: all .4s cubic-bezier(.23,1,.32,1);
+        }
+        .lo-step .lo-step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            background: rgba(255,255,255,.04);
+            border: 1.5px solid rgba(255,255,255,.08);
+            transition: all .4s cubic-bezier(.23,1,.32,1);
+            flex-shrink: 0;
+        }
+        .lo-step.active {
+            color: var(--text-primary);
+        }
+        .lo-step.active .lo-step-icon {
+            background: rgba(124,58,237,.15);
+            border-color: rgba(124,58,237,.4);
+            color: var(--primary-light);
+            animation: lo-iconSpin .6s ease;
+        }
+        @keyframes lo-iconSpin {
+            0% { transform: rotate(0deg) scale(.8); }
+            50% { transform: rotate(180deg) scale(1.1); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+        .lo-step.completed {
+            color: var(--success);
+        }
+        .lo-step.completed .lo-step-icon {
+            background: rgba(34,197,94,.15);
+            border-color: rgba(34,197,94,.4);
+            color: var(--success);
+            animation: lo-checkPop .35s cubic-bezier(.34,1.56,.64,1);
+        }
+        @keyframes lo-checkPop { 0% { transform: scale(.6); } 100% { transform: scale(1); } }
+
+        /* Launch transition — keep overlay solid while navigating */
+
+        /* Footer */
+        .footer-credit {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            opacity: 0.6;
+            z-index: 10;
+            transition: opacity 0.3s;
+        }
+
+        .footer-credit:hover {
+            opacity: 1;
+        }
+
+        .footer-credit .heart {
+            color: #ef4444;
+            animation: heartbeat 1.5s ease-in-out infinite;
+            display: inline-block;
+        }
+
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* Confidential Button */
+        .confidential-btn {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 10;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .confidential-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* Confidential Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-box {
+            background: var(--surface);
+            border-radius: 20px;
+            max-width: 500px;
+            width: 100%;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+            transform: scale(0.9) translateY(20px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .modal-overlay.active .modal-box {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 20px 20px 0 0;
+        }
+
+        .modal-header i {
+            font-size: 24px;
+            color: #ef4444;
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-body p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+
+        .modal-body p strong {
+            color: var(--text-primary);
+        }
+
+        .modal-body ul {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .modal-body ul li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-body ul li:last-child {
+            border-bottom: none;
+        }
+
+        .modal-body ul li i {
+            color: var(--primary-light);
+            width: 18px;
+        }
+
+        .modal-body .warning-box {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 10px;
+            padding: 14px 18px;
+            color: #ef4444;
+            font-weight: 500;
+            margin-top: 16px;
+            font-size: 13px;
+        }
+
+        .modal-body .warning-box i {
+            margin-right: 8px;
+        }
+
+        .modal-footer {
+            padding: 16px 24px 24px;
+        }
+
+        .modal-close-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .modal-close-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1024px) {
+            .login-wrapper {
+                flex-direction: column;
+            }
+
+            .branding-side {
+                padding: 60px 20px;
+                min-height: auto;
+            }
+
+            .logo-showcase {
+                width: 300px;
+                height: 300px;
+            }
+
+            .orbit-ring:nth-child(1) { width: 220px; height: 220px; }
+            .orbit-ring:nth-child(2) { width: 260px; height: 260px; }
+            .orbit-ring:nth-child(3) { width: 300px; height: 300px; }
+
+            .orbit-container {
+                width: 260px;
+                height: 260px;
+            }
+
+            .main-logo {
+                width: 120px;
+                height: 120px;
+            }
+
+            .satellite-logo {
+                width: 52px;
+                height: 52px;
+            }
+
+            .satellite-logo:nth-child(1) {
+                top: -26px;
+                margin-left: -26px;
+            }
+
+            .satellite-logo:nth-child(2) {
+                bottom: -12px;
+                right: -12px;
+                left: auto;
+                margin-left: 0;
+            }
+
+            .satellite-logo:nth-child(3) {
+                bottom: -12px;
+                left: -12px;
+            }
+
+            .branding-text {
+                position: relative;
+                bottom: auto;
+                margin-top: 40px;
+            }
+
+            .branding-text h1 {
+                font-size: 32px;
+            }
+
+            .login-side {
+                padding: 40px 20px 80px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .branding-text h1 {
+                font-size: 26px;
+            }
+
+            .login-header h2 {
+                font-size: 26px;
+            }
+
+            .form-input {
+                padding: 16px 16px 16px 48px;
+            }
+
+            .submit-btn,
+            .discord-btn {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="lo-bg">
+            <div class="lo-glow g1"></div>
+            <div class="lo-glow g2"></div>
+            <div class="lo-glow g3"></div>
+            <div class="lo-grid"></div>
+        </div>
+        <div class="lo-stage" id="loStage">
+            <div class="lo-logo-wrap">
+                <div class="lo-logo-ring"></div>
+                <div class="lo-logo-ring"></div>
+                <div class="lo-logo-ring"></div>
+                <div class="lo-logo-pulse"></div>
+                <div class="lo-logo">
+                    <img src="{{ url_for('static', filename='images/LionByteGGLogo.png') }}" alt="LionByteGG">
+                </div>
+            </div>
+            <div class="lo-welcome">
+                <h2 id="welcomeTitle">Welcome Back!</h2>
+                <p id="loadingStatus">Initializing dashboard...</p>
+            </div>
+            <div class="lo-bar-wrap">
+                <div class="lo-bar">
+                    <div class="lo-bar-fill" id="loadingBarFill"></div>
+                </div>
+            </div>
+            <div class="lo-steps">
+                <div class="lo-step" id="step1">
+                    <span class="lo-step-icon"><i class="fas fa-spinner fa-spin"></i></span>
+                    <span>Authenticating credentials</span>
+                </div>
+                <div class="lo-step" id="step2">
+                    <span class="lo-step-icon"><i class="fas fa-spinner fa-spin"></i></span>
+                    <span>Loading bot status</span>
+                </div>
+                <div class="lo-step" id="step3">
+                    <span class="lo-step-icon"><i class="fas fa-spinner fa-spin"></i></span>
+                    <span>Fetching server data</span>
+                </div>
+                <div class="lo-step" id="step4">
+                    <span class="lo-step-icon"><i class="fas fa-spinner fa-spin"></i></span>
+                    <span>Preparing dashboard</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer Credit -->
+    <div class="footer-credit">
+        The LionByteGG Suite is Created with <span class="heart">❤</span> by Jay Moon
+    </div>
+
+    <!-- Confidential Button -->
+    <button class="confidential-btn" onclick="showModal()">
+        <i class="fas fa-shield-alt"></i>
+        LionByteGG Confidential
+    </button>
+
+    <!-- Confidential Modal -->
+    <div class="modal-overlay" id="confidentialModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h2>Restricted Access Notice</h2>
+            </div>
+            <div class="modal-body">
+                <p><strong>This system contains confidential and sensitive information.</strong></p>
+                <p>Access to this dashboard is restricted to authorized personnel only. This system contains protected student information, operational data, and administrative controls.</p>
+                <ul>
+                    <li><i class="fas fa-lock"></i> All access and activities are monitored and logged</li>
+                    <li><i class="fas fa-user-shield"></i> Unauthorized access attempts will be investigated</li>
+                    <li><i class="fas fa-gavel"></i> Violations may result in disciplinary action</li>
+                    <li><i class="fas fa-file-contract"></i> By accessing, you agree to comply with all policies</li>
+                </ul>
+                <p class="warning-box"><i class="fas fa-ban"></i> If you are not authorized, please close this page immediately.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close-btn" onclick="hideModal()">
+                    <i class="fas fa-check"></i>
+                    I Understand
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="login-wrapper">
+        <!-- Left Side - Branding -->
+        <div class="branding-side">
+            <div class="branding-bg"></div>
+            <div class="particles">
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+            </div>
+
+            <div class="logo-showcase">
+                <!-- Orbit Rings -->
+                <div class="orbit-ring"></div>
+                <div class="orbit-ring"></div>
+                <div class="orbit-ring"></div>
+
+                <!-- Main Logo -->
+                <div class="main-logo">
+                    <img src="{{ url_for('static', filename='images/LionByteGGLogo.png') }}" alt="LionByteGG">
+                </div>
+
+                <!-- Orbiting Logos -->
+                <div class="orbit-container">
+                    <div class="satellite-logo">
+                        <img src="{{ url_for('static', filename='images/LionShiftGGLogo.png') }}" alt="LionShiftGG">
+                    </div>
+                    <div class="satellite-logo">
+                        <img src="{{ url_for('static', filename='images/LionBeatsGGLogo.png') }}" alt="LionBeatsGG">
+                    </div>
+                    <div class="satellite-logo">
+                        <img src="{{ url_for('static', filename='images/PurdueNetworkLogo.png') }}" alt="Purdue Network">
+                    </div>
+                </div>
+            </div>
+
+            <div class="branding-text">
+                <h1>LionByteGG Suite</h1>
+                <p>Complete Bot Management Platform</p>
+            </div>
+        </div>
+
+        <!-- Right Side - Login Form -->
+        <div class="login-side">
+            <div class="login-card">
+                <div class="login-header">
+                    <h2>Welcome Back</h2>
+                    <p>Sign in to access the management dashboard</p>
+                </div>
+
+                <!-- Client-side Error Message -->
+                <div class="error-message" id="clientError">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div class="error-message-content">
+                        <h4 id="errorTitle">Invalid Credentials</h4>
+                        <p id="errorText">Please check your information and try again.</p>
+                    </div>
+                </div>
+
+                <!-- Server Error (from Flask) -->
+                {% if error %}
+                <div class="server-error">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div class="server-error-content">
+                        <h4>Authentication Failed</h4>
+                        <p>{{ error }}</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form id="loginForm" method="POST" action="/login">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <div class="input-wrapper">
+                            <input type="text" 
+                                   id="username" 
+                                   name="username" 
+                                   class="form-input" 
+                                   placeholder="Enter your username"
+                                   autocomplete="username">
+                            <i class="fas fa-user"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" 
+                                   id="password" 
+                                   name="password" 
+                                   class="form-input" 
+                                   placeholder="Enter your password"
+                                   autocomplete="current-password"
+                                   style="padding-right: 44px;">
+                            <i class="fas fa-lock"></i>
+                            <button type="button" class="password-toggle" id="togglePassword" tabindex="-1" aria-label="Toggle password visibility">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Sign In
+                    </button>
+                </form>
+
+                {% if oauth_enabled %}
+                <div class="oauth-divider">
+                    <span>or</span>
+                </div>
+                
+                <a href="{{ url_for('discord_login') }}" class="discord-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                    </svg>
+                    Login with Discord
+                </a>
+                
+                <p class="oauth-info">
+                    <i class="fas fa-info-circle"></i>
+                    Discord login uses your server roles for permissions
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const clientError = document.getElementById('clientError');
+        const errorTitle = document.getElementById('errorTitle');
+        const errorText = document.getElementById('errorText');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // Password visibility toggle
+        const togglePassword = document.getElementById('togglePassword');
+        if (togglePassword) {
+            togglePassword.addEventListener('click', function() {
+                const icon = this.querySelector('i');
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                } else {
+                    passwordInput.type = 'password';
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+                passwordInput.focus();
+            });
+        }
+
+        // Track validation attempts
+        let attemptCount = 0;
+
+        function showError(title, message) {
+            errorTitle.textContent = title;
+            errorText.textContent = message;
+            clientError.classList.add('show');
+            
+            // Shake the inputs
+            usernameInput.classList.add('error');
+            passwordInput.classList.add('error');
+            
+            setTimeout(() => {
+                usernameInput.classList.remove('error');
+                passwordInput.classList.remove('error');
+            }, 400);
+        }
+
+        function hideError() {
+            clientError.classList.remove('show');
+        }
+
+        function validateForm() {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value;
+
+            if (!username && !password) {
+                showError('Missing Information', 'Please enter both your username and password.');
+                return false;
+            }
+
+            if (!username) {
+                showError('Username Required', 'Please enter your username to continue.');
+                usernameInput.focus();
+                return false;
+            }
+
+            if (!password) {
+                showError('Password Required', 'Please enter your password to continue.');
+                passwordInput.focus();
+                return false;
+            }
+
+            if (username.length < 2) {
+                showError('Invalid Username', 'Username must be at least 2 characters long.');
+                usernameInput.focus();
+                return false;
+            }
+
+            return true;
+        }
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideError();
+
+            if (!validateForm()) {
+                attemptCount++;
+                if (attemptCount >= 3) {
+                    showError('Multiple Failed Attempts', 'Please ensure you are entering the correct credentials. Contact an administrator if you need help.');
+                }
+                return;
+            }
+
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value;
+
+            // Disable button while validating
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
+
+            try {
+                // Validate credentials with server first
+                const response = await fetch('/api/validate-login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, password: password })
+                });
+
+                const result = await response.json();
+
+                if (!result.valid) {
+                    attemptCount++;
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In';
+                    
+                    if (attemptCount >= 5) {
+                        showError('Too Many Attempts', 'You have been temporarily locked out. Please wait a moment before trying again.');
+                    } else if (attemptCount >= 3) {
+                        showError('Access Denied', 'Multiple failed attempts detected. Please verify your credentials or contact an administrator.');
+                    } else {
+                        showError('Invalid Credentials', result.error || 'The username or password you entered is incorrect.');
+                    }
+                    return;
+                }
+
+                // Credentials valid - show loading animation
+                const overlay = document.getElementById('loadingOverlay');
+                const loStage = document.getElementById('loStage');
+                const welcomeTitle = document.getElementById('welcomeTitle');
+                const loadingStatus = document.getElementById('loadingStatus');
+                const loadingBarFill = document.getElementById('loadingBarFill');
+
+                welcomeTitle.textContent = `Welcome, ${result.display_name || username}!`;
+                overlay.classList.add('active');
+
+                function activateStep(id) {
+                    const el = document.getElementById(id);
+                    el.classList.add('active');
+                    el.querySelector('.lo-step-icon').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                }
+                function completeStep(id) {
+                    const el = document.getElementById(id);
+                    el.classList.remove('active');
+                    el.classList.add('completed');
+                    el.querySelector('.lo-step-icon').innerHTML = '<i class="fas fa-check"></i>';
+                }
+
+                const steps = [
+                    { time: 300,  action: () => { activateStep('step1'); loadingBarFill.style.width = '10%'; loadingStatus.textContent = 'Authenticating credentials...'; } },
+                    { time: 1000, action: () => { completeStep('step1'); activateStep('step2'); loadingBarFill.style.width = '35%'; loadingStatus.textContent = 'Loading bot status...'; } },
+                    { time: 1800, action: () => { completeStep('step2'); activateStep('step3'); loadingBarFill.style.width = '60%'; loadingStatus.textContent = 'Fetching server data...'; } },
+                    { time: 2600, action: () => { completeStep('step3'); activateStep('step4'); loadingBarFill.style.width = '85%'; loadingStatus.textContent = 'Preparing dashboard...'; } },
+                    { time: 3300, action: () => { completeStep('step4'); loadingBarFill.style.width = '100%'; loadingStatus.textContent = 'Launching...'; } },
+                    { time: 3800, action: () => { form.submit(); } }
+                ];
+
+                steps.forEach(s => setTimeout(s.action, s.time));
+
+            } catch (error) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In';
+                showError('Connection Error', 'Unable to connect to the server. Please check your connection and try again.');
+            }
+        });
+
+        // Clear error on input
+        usernameInput.addEventListener('input', hideError);
+        passwordInput.addEventListener('input', hideError);
+
+        // Modal functions
+        function showModal() {
+            document.getElementById('confidentialModal').classList.add('active');
+        }
+
+        function hideModal() {
+            document.getElementById('confidentialModal').classList.remove('active');
+        }
+
+        // Close modal on escape or outside click
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideModal();
+        });
+
+        document.getElementById('confidentialModal').addEventListener('click', function(e) {
+            if (e.target === this) hideModal();
+        });
+    </script>
+</body>
+</html>

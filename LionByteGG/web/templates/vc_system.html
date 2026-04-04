@@ -1,0 +1,1670 @@
+{% extends "base.html" %}
+{% block title %}VC Generators{% endblock %}
+{% block page_title %}Voice Channel Generators{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Critical Tab Styles - Loaded early to prevent FOUC */
+.tab-nav {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    background: var(--background-secondary, #1a1a2e);
+    border: 1px solid var(--border, #374151);
+    border-radius: 8px;
+    color: var(--text-secondary, #9ca3af);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+}
+
+.tab-btn:hover {
+    background: var(--surface, #16213e);
+    color: var(--text-primary, #ffffff);
+}
+
+.tab-btn.active {
+    background: var(--primary, #7c3aed);
+    color: white;
+    border-color: var(--primary, #7c3aed);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Overview -->
+<div class="stats-grid mb-3">
+    <div class="stat-card purple">
+        <div class="stat-header">
+            <div class="stat-icon"><i class="fas fa-users"></i></div>
+        </div>
+        <div class="stat-value" id="stat-users">--</div>
+        <div class="stat-label">Users in VCs</div>
+    </div>
+    <div class="stat-card green">
+        <div class="stat-header">
+            <div class="stat-icon"><i class="fas fa-volume-up"></i></div>
+        </div>
+        <div class="stat-value" id="stat-active">--</div>
+        <div class="stat-label">Active VCs</div>
+    </div>
+    <div class="stat-card gold">
+        <div class="stat-header">
+            <div class="stat-icon"><i class="fas fa-broadcast-tower"></i></div>
+        </div>
+        <div class="stat-value" id="stat-generators">--</div>
+        <div class="stat-label">Generators</div>
+    </div>
+    <div class="stat-card blue">
+        <div class="stat-header">
+            <div class="stat-icon"><i class="fas fa-clock"></i></div>
+        </div>
+        <div class="stat-value" id="stat-updated">--</div>
+        <div class="stat-label">Last Updated</div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="card mb-3">
+    <div class="card-body" style="padding: 8px 16px;">
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="live-vcs-tab">
+                <i class="fas fa-signal"></i> Live VCs
+            </button>
+            <button class="tab-btn" data-tab="generators-tab">
+                <i class="fas fa-cog"></i> Generators
+            </button>
+            <button class="tab-btn" data-tab="settings-tab">
+                <i class="fas fa-sliders-h"></i> Settings
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Live VCs Tab -->
+<div id="live-vcs-tab" class="tab-content active">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-signal" style="color: var(--success);"></i>
+                Active Voice Channels
+                <span class="live-indicator"></span>
+            </h3>
+            <button class="btn btn-secondary btn-sm" onclick="refreshVCData()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="active-vcs-container">
+                <div class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p style="margin-top: 12px;">Loading live voice channels...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generators Tab -->
+<div id="generators-tab" class="tab-content">
+    <div class="grid-2 gap-3">
+        <!-- Normal VC Generators -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-volume-up" style="color: var(--primary);"></i>
+                    Normal Generators
+                </h3>
+                <span class="badge badge-primary" id="normal-count">0</span>
+            </div>
+            <div class="card-body">
+                <div id="normal-generators">
+                    <div class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                        <i class="fas fa-spinner fa-spin"></i> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tryout VC Generators -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-gamepad" style="color: var(--warning);"></i>
+                    Tryout Generators
+                </h3>
+                <span class="badge badge-warning" id="tryout-count">0</span>
+            </div>
+            <div class="card-body">
+                <div id="tryout-generators">
+                    <div class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                        <i class="fas fa-spinner fa-spin"></i> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="card mt-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-info-circle"></i>
+                How VC Generators Work
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon purple">
+                        <i class="fas fa-sign-in-alt"></i>
+                    </div>
+                    <h4>Join to Create</h4>
+                    <p>When a user joins a generator VC, a new temporary voice channel is created for them.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon green">
+                        <i class="fas fa-user-cog"></i>
+                    </div>
+                    <h4>Owner Controls</h4>
+                    <p>The channel creator becomes the owner and can manage permissions and settings.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon gold">
+                        <i class="fas fa-trash-alt"></i>
+                    </div>
+                    <h4>Auto Cleanup</h4>
+                    <p>Empty channels are automatically deleted to keep the server clean.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon blue">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                    <h4>Tryout Mode</h4>
+                    <p>Tryout generators create private channels for team tryouts and practices.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Tab -->
+<div id="settings-tab" class="tab-content">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-terminal"></i>
+                Setup Commands
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="commands-list">
+                <div class="command-item">
+                    <code>/setup_vc_generator</code>
+                    <p>Create a new normal VC generator channel</p>
+                </div>
+                <div class="command-item">
+                    <code>/setup_tryout_vc</code>
+                    <p>Create a new tryout VC generator channel</p>
+                </div>
+                <div class="command-item">
+                    <code>/list_vc_generators</code>
+                    <p>List all configured VC generators</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Actions Modal -->
+<div id="user-modal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 16px 16px 0 0;">
+            <div>
+                <h2 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-user"></i>
+                    <span id="user-modal-title">User Details</span>
+                </h2>
+                <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;" id="user-modal-subtitle">Loading...</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeUserModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px; max-height: 70vh; overflow-y: auto;">
+            <div id="user-modal-content">
+                <div class="text-center" style="padding: 40px;">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p style="margin-top: 12px;">Loading member details...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VC Actions Modal -->
+<div id="vc-modal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); color: white; padding: 24px; border-radius: 16px 16px 0 0;">
+            <div>
+                <h2 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-headphones"></i>
+                    <span id="vc-modal-title">VC Actions</span>
+                </h2>
+                <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;" id="vc-modal-subtitle">Manage this voice channel</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeVCModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; transition: all 0.2s;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+            <div id="vc-modal-content">
+                <div class="vc-action-btns">
+                    <!-- Rename Channel -->
+                    {% if has_perm('vc.manage_channels') %}
+                    <div style="margin-bottom: 16px; background: var(--background-secondary); padding: 16px; border-radius: 12px; border: 1px solid var(--border);">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-pen" style="color: var(--primary);"></i> Rename Channel
+                        </label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" class="form-input" id="vc-rename-input" placeholder="New channel name" style="flex: 1;">
+                            <button class="btn btn-primary vc-action-btn" onclick="renameVC(this)" data-loading="Renaming...">
+                                <i class="fas fa-check"></i> Rename
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Lock/Hide Buttons -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+                        <button class="btn vc-action-btn" id="lock-btn" onclick="toggleVCLock(this)" data-loading="Updating..." style="padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; height: auto;">
+                            <i class="fas fa-lock" style="font-size: 20px;"></i>
+                            <span>Lock Channel</span>
+                        </button>
+                        <button class="btn vc-action-btn" id="hide-btn" onclick="toggleVCHide(this)" data-loading="Updating..." style="padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; height: auto;">
+                            <i class="fas fa-eye-slash" style="font-size: 20px;"></i>
+                            <span>Hide Channel</span>
+                        </button>
+                    </div>
+                    
+                    <!-- User Limit -->
+                    <div style="margin-bottom: 16px; background: var(--background-secondary); padding: 16px; border-radius: 12px; border: 1px solid var(--border);">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-users" style="color: var(--primary);"></i> User Limit
+                        </label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="number" class="form-input" id="vc-limit-input" min="0" max="99" value="0" style="flex: 1; text-align: center; font-size: 18px; font-weight: 600;">
+                            <button class="btn btn-primary vc-action-btn" onclick="setVCLimit(this)" data-loading="Setting...">
+                                <i class="fas fa-check"></i> Set
+                            </button>
+                        </div>
+                        <small style="color: var(--text-muted); font-size: 11px; margin-top: 6px; display: block;">0 = unlimited users</small>
+                    </div>
+                    
+                    <!-- Danger Zone -->
+                    <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px;">
+                        <p style="font-size: 12px; color: var(--danger); margin-bottom: 10px; font-weight: 500;">
+                            <i class="fas fa-exclamation-triangle"></i> Danger Zone
+                        </p>
+                        <button class="btn btn-danger vc-action-btn" onclick="deleteVC(this)" data-loading="Deleting..." style="width: 100%;" id="delete-vc-btn">
+                            <i class="fas fa-trash"></i> Delete Channel
+                        </button>
+                    </div>
+                    {% else %}
+                    <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                        <i class="fas fa-lock" style="font-size: 24px; margin-bottom: 8px;"></i>
+                        <p>You don't have permission to manage channels</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Move User Modal -->
+<div id="move-modal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 24px; border-radius: 16px 16px 0 0;">
+            <div>
+                <h2 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-exchange-alt"></i>
+                    Move User
+                </h2>
+                <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;">Select destination channel</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeMoveModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+            <div id="move-channels-list" style="max-height: 300px; overflow-y: auto;">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.tab-nav {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: var(--background-secondary);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tab-btn:hover {
+    background: var(--background-tertiary);
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.live-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    margin-left: 8px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.vc-card {
+    background: var(--background-secondary);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+}
+
+.vc-card:hover {
+    border-color: var(--primary);
+}
+
+.vc-card.is-generator {
+    border-left: 3px solid var(--primary);
+}
+
+.vc-card.is-tryout {
+    border-left: 3px solid var(--warning);
+}
+
+.vc-card.is-locked {
+    border-left: 3px solid var(--danger);
+}
+
+.vc-card.is-hidden {
+    border-left: 3px solid var(--text-secondary);
+    opacity: 0.85;
+}
+
+.vc-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.vc-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, var(--primary), #818cf8);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: white;
+}
+
+.vc-icon.tryout {
+    background: linear-gradient(135deg, var(--warning), #fbbf24);
+}
+
+.vc-icon.locked {
+    background: linear-gradient(135deg, var(--danger), #f87171);
+}
+
+.vc-icon.hidden {
+    background: linear-gradient(135deg, #6b7280, #9ca3af);
+}
+
+.vc-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.vc-name {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-meta {
+    display: flex;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.vc-actions {
+    display: flex;
+    gap: 6px;
+    position: relative;
+    z-index: 10;
+    flex-shrink: 0;
+}
+
+/* VC Modal Action Buttons with loading states */
+.vc-action-btn {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.vc-action-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.vc-action-btn.loading {
+    pointer-events: none;
+}
+
+.vc-action-btn.success {
+    background: var(--success) !important;
+    border-color: var(--success) !important;
+}
+
+#lock-btn, #hide-btn {
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+#lock-btn:hover, #hide-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+#lock-btn.active {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+#hide-btn.active {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: white;
+}
+
+.vc-settings-btn {
+    position: relative;
+    z-index: 11;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    background: var(--surface-light, #2a2a4a);
+    border: 1px solid var(--border, #374151);
+    color: var(--text-secondary, #9ca3af);
+    transition: all 0.2s ease;
+}
+
+.vc-settings-btn:hover {
+    background: var(--primary, #7c3aed);
+    color: white;
+    border-color: var(--primary, #7c3aed);
+}
+
+.vc-settings-btn i {
+    pointer-events: none;
+}
+
+.vc-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.vc-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--background-tertiary);
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.vc-member:hover {
+    background: var(--primary);
+    color: white;
+}
+
+.vc-member-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: white;
+}
+
+.vc-member-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.vc-member-name {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.vc-member-status {
+    display: flex;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.vc-member:hover .vc-member-status {
+    color: rgba(255,255,255,0.7);
+}
+
+.status-icon {
+    opacity: 0.7;
+}
+
+.status-icon.active {
+    color: var(--danger);
+    opacity: 1;
+}
+
+.generator-item {
+    background: var(--background-secondary);
+    padding: 16px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.generator-item:last-child {
+    margin-bottom: 0;
+}
+
+.generator-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, var(--primary), #818cf8);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: white;
+}
+
+.generator-icon.tryout {
+    background: linear-gradient(135deg, var(--warning), #fbbf24);
+}
+
+.generator-info {
+    flex: 1;
+}
+
+.generator-name {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.generator-meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+}
+
+.empty-state i {
+    font-size: 36px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.feature-card {
+    background: var(--background-secondary);
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.feature-icon {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, var(--primary), #818cf8);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: white;
+    margin: 0 auto 16px;
+}
+
+.feature-icon.purple { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+.feature-icon.green { background: linear-gradient(135deg, #22c55e, #4ade80); }
+.feature-icon.gold { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.feature-icon.blue { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+
+.feature-card h4 {
+    margin-bottom: 8px;
+    font-size: 15px;
+}
+
+.feature-card p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.commands-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.command-item {
+    background: var(--background-secondary);
+    padding: 16px 20px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.command-item code {
+    background: var(--background-tertiary);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--primary);
+    white-space: nowrap;
+}
+
+.command-item p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
+}
+
+.badge-primary {
+    background: var(--primary);
+}
+
+.badge-warning {
+    background: var(--warning);
+}
+
+.badge-secondary {
+    background: #6b7280;
+}
+
+.badge-danger {
+    background: var(--danger);
+}
+
+.move-channel-item {
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.move-channel-item:hover {
+    background: var(--primary);
+    color: white;
+}
+
+/* VC System specific modals - don't override base modal styles */
+#user-modal, #vc-modal, #move-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+#user-modal.active, #vc-modal.active, #move-modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--background-primary);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+</style>
+
+<script>
+const VC_PERMS = {
+    kick: {{ has_perm('vc.kick_users')|tojson }},
+    move: {{ has_perm('vc.move_users')|tojson }},
+    manage_channels: {{ has_perm('vc.manage_channels')|tojson }},
+    manage_generators: {{ has_perm('vc.manage_generators')|tojson }}
+};
+let vcData = { generators: { normal: [], tryout: [] }, active_vcs: [], stats: {} };
+let selectedUser = null;
+let selectedVC = null;
+
+// Tab navigation
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+    });
+});
+
+async function loadVCData() {
+    try {
+        const response = await fetch('/api/vc-generators/live');
+        vcData = await response.json();
+        
+        // If no live data (bot not running), load generator config as fallback
+        const hasLiveData = vcData.last_updated !== null;
+        if (!hasLiveData) {
+            try {
+                const genResponse = await fetch('/api/vc-generators');
+                const genConfig = await genResponse.json();
+                // Convert raw IDs to simple display objects
+                vcData.generators = {
+                    normal: (genConfig.normal || []).map(id => ({
+                        id: String(id),
+                        name: `Generator ${id}`,
+                        category: 'Unknown (Bot Offline)',
+                        member_count: 0
+                    })),
+                    tryout: (genConfig.tryout || []).map(id => ({
+                        id: String(id),
+                        name: `Tryout Generator ${id}`,
+                        category: 'Unknown (Bot Offline)',
+                        member_count: 0
+                    }))
+                };
+                vcData.stats = {
+                    total_users: 0,
+                    active_vcs: 0,
+                    normal_generators: genConfig.normal?.length || 0,
+                    tryout_generators: genConfig.tryout?.length || 0
+                };
+            } catch (e) {
+                console.error('Failed to load generator config:', e);
+            }
+        }
+        
+        // Update stats
+        document.getElementById('stat-users').textContent = vcData.stats?.total_users || 0;
+        document.getElementById('stat-active').textContent = vcData.stats?.active_vcs || 0;
+        document.getElementById('stat-generators').textContent = 
+            (vcData.stats?.normal_generators || 0) + (vcData.stats?.tryout_generators || 0);
+        
+        if (vcData.last_updated) {
+            const updated = new Date(vcData.last_updated);
+            document.getElementById('stat-updated').textContent = updated.toLocaleTimeString();
+        } else {
+            document.getElementById('stat-updated').textContent = 'Bot Offline';
+        }
+        
+        renderActiveVCs();
+        renderGenerators();
+    } catch (error) {
+        console.error('Error loading VC data:', error);
+    }
+}
+
+function renderActiveVCs() {
+    const container = document.getElementById('active-vcs-container');
+    const vcs = vcData.active_vcs || [];
+    const botOnline = vcData.last_updated !== null;
+    
+    if (!botOnline) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <img src="{{ url_for('static', filename='images/LionByteGGLogo.png') }}" alt="Bot" style="width: 64px; height: 64px; object-fit: contain; border-radius: 12px; opacity: 0.5; margin-bottom: 12px;">
+                <p>Bot is offline - live VC data unavailable</p>
+                <p style="font-size: 12px; color: var(--text-secondary);">Start the bot to see live voice channel activity</p>
+            </div>
+        `;
+        return;
+    }
+    
+    if (vcs.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-volume-mute"></i>
+                <p>No active voice channels with users</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = vcs.map(vc => {
+        const isLocked = vc.is_locked;
+        const isHidden = vc.is_hidden;
+        const isTryout = vc.is_tryout;
+        const isGenerator = vc.is_generator;
+        
+        let cardClass = 'vc-card';
+        if (isGenerator) cardClass += ' is-generator';
+        if (isTryout) cardClass += ' is-tryout';
+        if (isLocked) cardClass += ' is-locked';
+        if (isHidden) cardClass += ' is-hidden';
+        
+        let iconClass = 'vc-icon';
+        if (isTryout) iconClass += ' tryout';
+        if (isLocked) iconClass += ' locked';
+        if (isHidden) iconClass += ' hidden';
+        
+        const icon = isLocked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : (isTryout ? 'fa-gamepad' : 'fa-volume-up'));
+        
+        return `
+            <div class="${cardClass}" data-vc-id="${vc.id}">
+                <div class="vc-header">
+                    <div class="${iconClass}">
+                        <i class="fas ${icon}"></i>
+                    </div>
+                    <div class="vc-info">
+                        <div class="vc-name">
+                            ${vc.name}
+                            ${isLocked ? '<span class="badge badge-danger" style="font-size: 10px;">Locked</span>' : ''}
+                            ${isHidden ? '<span class="badge badge-secondary" style="font-size: 10px;">Hidden</span>' : ''}
+                            ${isGenerator ? '<span class="badge badge-primary" style="font-size: 10px;">Generator</span>' : ''}
+                            ${isTryout ? '<span class="badge badge-warning" style="font-size: 10px;">Tryout</span>' : ''}
+                        </div>
+                        <div class="vc-meta">
+                            <span><i class="fas fa-users"></i> ${vc.member_count}${vc.user_limit ? '/' + vc.user_limit : ''}</span>
+                            <span><i class="fas fa-folder"></i> ${vc.category}</span>
+                            <span><i class="fas fa-signal"></i> ${vc.bitrate} kbps</span>
+                        </div>
+                    </div>
+                    <div class="vc-actions">
+                        <button class="btn btn-sm vc-settings-btn" data-vcid="${vc.id}" title="Manage VC">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="vc-members">
+                    ${vc.members.map(m => `
+                        <div class="vc-member" onclick="openUserModal('${m.id}', '${vc.id}', '${m.name.replace(/'/g, "\\'")}')">
+                            <div class="vc-member-avatar">
+                                ${m.avatar ? `<img src="${m.avatar}" alt="">` : m.name[0].toUpperCase()}
+                            </div>
+                            <div>
+                                <div class="vc-member-name">${m.name}</div>
+                                <div class="vc-member-status">
+                                    <i class="fas fa-microphone-slash status-icon ${m.is_muted ? 'active' : ''}" title="Muted"></i>
+                                    <i class="fas fa-deaf status-icon ${m.is_deafened ? 'active' : ''}" title="Deafened"></i>
+                                    <i class="fas fa-desktop status-icon ${m.is_streaming ? 'active' : ''}" title="Streaming"></i>
+                                    <i class="fas fa-video status-icon ${m.is_video ? 'active' : ''}" title="Video"></i>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderGenerators() {
+    const botOnline = vcData.last_updated !== null;
+    
+    // Normal generators
+    const normalContainer = document.getElementById('normal-generators');
+    const normalGens = vcData.generators?.normal || [];
+    document.getElementById('normal-count').textContent = normalGens.length;
+    
+    if (normalGens.length > 0) {
+        normalContainer.innerHTML = normalGens.map(gen => `
+            <div class="generator-item">
+                <div class="generator-icon">
+                    <i class="fas fa-volume-up"></i>
+                </div>
+                <div class="generator-info">
+                    <div class="generator-name">${gen.name}</div>
+                    <div class="generator-meta">
+                        <i class="fas fa-folder"></i> ${gen.category} • 
+                        <i class="fas fa-users"></i> ${gen.member_count} waiting
+                        ${!botOnline ? '<span class="badge badge-warning" style="font-size: 10px; margin-left: 8px;">Bot Offline</span>' : ''}
+                    </div>
+                </div>
+                ${VC_PERMS.manage_generators ? `<button class="btn btn-danger btn-sm" onclick="removeGenerator('${gen.id}', 'normal')" title="Remove Generator">
+                    <i class="fas fa-trash"></i>
+                </button>` : ''}
+            </div>
+        `).join('');
+    } else {
+        normalContainer.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-volume-mute"></i>
+                <p>No normal generators configured</p>
+                ${!botOnline ? '<p style="font-size: 12px; color: var(--warning);">Bot is offline - showing config only</p>' : ''}
+            </div>
+        `;
+    }
+    
+    // Tryout generators
+    const tryoutContainer = document.getElementById('tryout-generators');
+    const tryoutGens = vcData.generators?.tryout || [];
+    document.getElementById('tryout-count').textContent = tryoutGens.length;
+    
+    if (tryoutGens.length > 0) {
+        tryoutContainer.innerHTML = tryoutGens.map(gen => `
+            <div class="generator-item">
+                <div class="generator-icon tryout">
+                    <i class="fas fa-gamepad"></i>
+                </div>
+                <div class="generator-info">
+                    <div class="generator-name">${gen.name}</div>
+                    <div class="generator-meta">
+                        <i class="fas fa-folder"></i> ${gen.category} • 
+                        <i class="fas fa-users"></i> ${gen.member_count} waiting
+                        ${!botOnline ? '<span class="badge badge-warning" style="font-size: 10px; margin-left: 8px;">Bot Offline</span>' : ''}
+                    </div>
+                </div>
+                ${VC_PERMS.manage_generators ? `<button class="btn btn-danger btn-sm" onclick="removeGenerator('${gen.id}', 'tryout')" title="Remove Generator">
+                    <i class="fas fa-trash"></i>
+                </button>` : ''}
+            </div>
+        `).join('');
+    } else {
+        tryoutContainer.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-gamepad"></i>
+                <p>No tryout generators configured</p>
+                ${!botOnline ? '<p style="font-size: 12px; color: var(--warning);">Bot is offline - showing config only</p>' : ''}
+            </div>
+        `;
+    }
+}
+
+async function openUserModal(userId, channelId, userName) {
+    selectedUser = { id: userId, channelId: channelId, name: userName };
+    document.getElementById('user-modal-title').textContent = userName;
+    document.getElementById('user-modal-subtitle').textContent = 'Loading member details...';
+    document.getElementById('user-modal-content').innerHTML = `
+        <div class="text-center" style="padding: 40px;">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+            <p style="margin-top: 12px;">Loading member details...</p>
+        </div>
+    `;
+    document.getElementById('user-modal').classList.add('active');
+    
+    // Fetch member details
+    try {
+        const response = await fetch(`/api/members/${userId}`);
+        const data = await response.json();
+        
+        const member = data.member;
+        const records = data.records || [];
+        
+        if (!member) {
+            document.getElementById('user-modal-content').innerHTML = `
+                <div class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                    <i class="fas fa-user-slash fa-2x"></i>
+                    <p style="margin-top: 12px;">Member not found in cache</p>
+                </div>
+            `;
+            return;
+        }
+        
+        document.getElementById('user-modal-title').textContent = member.display_name || member.name;
+        document.getElementById('user-modal-subtitle').textContent = `@${member.name} • ID: ${member.id}`;
+        
+        const joinedDate = member.joined_at ? new Date(member.joined_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown';
+        const createdDate = member.created_at ? new Date(member.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown';
+        const statusClass = member.status || 'offline';
+        const statusText = (member.status || 'offline').charAt(0).toUpperCase() + (member.status || 'offline').slice(1);
+        
+        document.getElementById('user-modal-content').innerHTML = `
+            <!-- Member Info Header -->
+            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #818cf8); display: flex; align-items: center; justify-content: center; font-size: 24px; color: white; overflow: hidden;">
+                    ${member.avatar ? `<img src="${member.avatar}" style="width: 100%; height: 100%; object-fit: cover;">` : (member.display_name?.charAt(0).toUpperCase() || '?')}
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 18px; font-weight: 600;">${escapeHtml(member.display_name || member.name)}</div>
+                    <div style="color: var(--text-secondary); font-size: 13px;">@${escapeHtml(member.name)}</div>
+                    <div style="display: flex; gap: 8px; margin-top: 6px;">
+                        <span class="badge" style="background: ${statusClass === 'online' ? 'var(--success)' : statusClass === 'idle' ? 'var(--warning)' : statusClass === 'dnd' ? 'var(--danger)' : '#747f8d'}; font-size: 11px;">
+                            <i class="fas fa-circle" style="font-size: 8px;"></i> ${statusText}
+                        </span>
+                        ${member.bot ? '<span class="badge" style="background: #5865F2; font-size: 11px;"><i class="fas fa-robot"></i> Bot</span>' : ''}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Account Info -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <div style="background: var(--background-secondary); padding: 12px; border-radius: 8px;">
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;"><i class="fas fa-sign-in-alt"></i> Joined Server</div>
+                    <div style="font-size: 13px; font-weight: 500;">${joinedDate}</div>
+                </div>
+                <div style="background: var(--background-secondary); padding: 12px; border-radius: 8px;">
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;"><i class="fas fa-birthday-cake"></i> Account Created</div>
+                    <div style="font-size: 13px; font-weight: 500;">${createdDate}</div>
+                </div>
+            </div>
+            
+            <!-- Roles -->
+            <div style="background: var(--background-secondary); padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;"><i class="fas fa-tags"></i> Roles (${member.roles?.length || 0})</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    ${member.roles && member.roles.length > 0 
+                        ? member.roles.map(r => `
+                            <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--background-tertiary); border-radius: 4px; font-size: 12px;">
+                                <span style="width: 8px; height: 8px; border-radius: 50%; background: ${r.color !== '#000000' ? r.color : '#747f8d'};"></span>
+                                ${escapeHtml(r.name)}
+                            </span>
+                        `).join('')
+                        : '<span style="color: var(--text-secondary); font-size: 12px;">No roles</span>'
+                    }
+                </div>
+            </div>
+            
+            <!-- Moderation History -->
+            <div style="background: var(--background-secondary); padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;"><i class="fas fa-gavel"></i> Moderation History (${records.length})</div>
+                ${records.length > 0 
+                    ? `<div style="max-height: 150px; overflow-y: auto;">
+                        ${records.slice(0, 5).map(r => {
+                            const type = (r.type || 'action').toLowerCase();
+                            const icon = type === 'ban' ? 'fa-ban' : type === 'kick' ? 'fa-user-minus' : type === 'timeout' ? 'fa-clock' : type === 'warn' ? 'fa-exclamation-triangle' : 'fa-gavel';
+                            const color = type === 'ban' ? 'var(--danger)' : type === 'kick' ? '#f59e0b' : type === 'timeout' ? '#3b82f6' : type === 'warn' ? '#f59e0b' : 'var(--text-secondary)';
+                            return `
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                                    <i class="fas ${icon}" style="color: ${color}; width: 16px;"></i>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 12px; font-weight: 500;">${r.type || 'Action'}</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">${r.reason || 'No reason'}</div>
+                                    </div>
+                                    <div style="font-size: 10px; color: var(--text-secondary);">${r.timestamp ? new Date(r.timestamp).toLocaleDateString() : ''}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                        ${records.length > 5 ? `<div style="text-align: center; padding: 8px; color: var(--text-secondary); font-size: 11px;">+${records.length - 5} more records</div>` : ''}
+                    </div>`
+                    : '<div style="color: var(--text-secondary); font-size: 12px;">No moderation history</div>'
+                }
+            </div>
+            
+            <!-- VC Actions -->
+            <div style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;"><i class="fas fa-headphones"></i> Voice Channel Actions</div>
+                <div style="display: flex; gap: 8px;">
+                    ${VC_PERMS.kick ? `<button class="btn btn-danger" onclick="kickUserFromVC()" style="flex: 1;">
+                        <i class="fas fa-user-slash"></i> Kick from VC
+                    </button>` : ''}
+                    ${VC_PERMS.move ? `<button class="btn btn-warning" onclick="showMoveUserModal()" style="flex: 1;">
+                        <i class="fas fa-exchange-alt"></i> Move User
+                    </button>` : ''}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading member:', error);
+        document.getElementById('user-modal-content').innerHTML = `
+            <div class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                <i class="fas fa-exclamation-circle fa-2x"></i>
+                <p style="margin-top: 12px;">Error loading member details</p>
+            </div>
+        `;
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function closeUserModal() {
+    document.getElementById('user-modal').classList.remove('active');
+    selectedUser = null;
+}
+
+function openVCModal(vcId) {
+    console.log('Opening VC modal for:', vcId);
+    const vc = vcData.active_vcs.find(v => v.id === vcId || v.id === String(vcId));
+    if (!vc) {
+        console.error('VC not found:', vcId, 'Available:', vcData.active_vcs.map(v => v.id));
+        return;
+    }
+    
+    selectedVC = vc;
+    document.getElementById('vc-modal-title').textContent = vc.name;
+    document.getElementById('vc-modal-subtitle').textContent = `${vc.member_count} members • ${vc.category}`;
+    document.getElementById('vc-limit-input').value = vc.user_limit || 0;
+    document.getElementById('vc-rename-input').value = vc.name;
+    
+    const lockBtn = document.getElementById('lock-btn');
+    if (vc.is_locked) {
+        lockBtn.innerHTML = '<i class="fas fa-unlock" style="font-size: 20px;"></i><span>Unlock Channel</span>';
+        lockBtn.classList.add('active');
+    } else {
+        lockBtn.innerHTML = '<i class="fas fa-lock" style="font-size: 20px;"></i><span>Lock Channel</span>';
+        lockBtn.classList.remove('active');
+    }
+    
+    const hideBtn = document.getElementById('hide-btn');
+    if (vc.is_hidden) {
+        hideBtn.innerHTML = '<i class="fas fa-eye" style="font-size: 20px;"></i><span>Unhide Channel</span>';
+        hideBtn.classList.add('active');
+    } else {
+        hideBtn.innerHTML = '<i class="fas fa-eye-slash" style="font-size: 20px;"></i><span>Hide Channel</span>';
+        hideBtn.classList.remove('active');
+    }
+    
+    // Disable delete for generator channels
+    const deleteBtn = document.getElementById('delete-vc-btn');
+    if (vc.is_generator) {
+        deleteBtn.disabled = true;
+        deleteBtn.title = 'Cannot delete generator channels';
+    } else {
+        deleteBtn.disabled = false;
+        deleteBtn.title = '';
+    }
+    
+    document.getElementById('vc-modal').classList.add('active');
+}
+
+function closeVCModal() {
+    document.getElementById('vc-modal').classList.remove('active');
+    selectedVC = null;
+}
+
+async function kickUserFromVC() {
+    if (!selectedUser) return;
+    
+    if (!confirm(`Kick ${selectedUser.name} from voice channel?`)) return;
+    
+    try {
+        const response = await fetch('/api/vc-generators/kick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: selectedUser.id,
+                channel_id: selectedUser.channelId,
+                reason: 'Kicked from dashboard'
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('User kick queued', 'success');
+            closeUserModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to kick user', 'error');
+        }
+    } catch (error) {
+        console.error('Error kicking user:', error);
+        showToast('Failed to kick user', 'error');
+    }
+}
+
+function showMoveUserModal() {
+    closeUserModal();
+    
+    const container = document.getElementById('move-channels-list');
+    const vcs = vcData.active_vcs.filter(v => v.id !== selectedUser?.channelId);
+    
+    if (vcs.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-circle"></i>
+                <p>No other voice channels available</p>
+            </div>
+        `;
+    } else {
+        container.innerHTML = vcs.map(vc => `
+            <div class="move-channel-item" onclick="moveUserToVC('${vc.id}')">
+                <i class="fas fa-volume-up"></i>
+                <div>
+                    <div style="font-weight: 500;">${vc.name}</div>
+                    <div style="font-size: 12px; opacity: 0.7;">${vc.member_count} members</div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    document.getElementById('move-modal').classList.add('active');
+}
+
+function closeMoveModal() {
+    document.getElementById('move-modal').classList.remove('active');
+}
+
+// Helper function for button loading states
+function setButtonLoading(btn, loading) {
+    if (loading) {
+        btn.disabled = true;
+        btn.classList.add('loading');
+        btn.dataset.originalHtml = btn.innerHTML;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${btn.dataset.loading || 'Loading...'}`;
+    } else {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+        }
+    }
+}
+
+function setButtonSuccess(btn) {
+    btn.classList.add('success');
+    const originalHtml = btn.dataset.originalHtml || btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Done!';
+    setTimeout(() => {
+        btn.classList.remove('success');
+        btn.innerHTML = originalHtml;
+    }, 1500);
+}
+
+async function moveUserToVC(targetChannelId) {
+    if (!selectedUser) return;
+    
+    try {
+        const response = await fetch('/api/vc-generators/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: selectedUser.id,
+                target_channel_id: targetChannelId
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('User move queued', 'success');
+            closeMoveModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to move user', 'error');
+        }
+    } catch (error) {
+        console.error('Error moving user:', error);
+        showToast('Failed to move user', 'error');
+    }
+}
+
+async function toggleVCLock(btn) {
+    if (!selectedVC) return;
+    
+    const shouldLock = !selectedVC.is_locked;
+    setButtonLoading(btn, true);
+    
+    try {
+        const response = await fetch('/api/vc-generators/lock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: selectedVC.id,
+                lock: shouldLock
+            })
+        });
+        const result = await response.json();
+        
+        setButtonLoading(btn, false);
+        
+        if (result.success) {
+            setButtonSuccess(btn);
+            showToast(`Channel ${shouldLock ? 'locked' : 'unlocked'}`, 'success');
+            closeVCModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to toggle lock', 'error');
+        }
+    } catch (error) {
+        setButtonLoading(btn, false);
+        console.error('Error toggling lock:', error);
+        showToast('Failed to toggle lock', 'error');
+    }
+}
+
+async function setVCLimit(btn) {
+    if (!selectedVC) return;
+    
+    const limit = parseInt(document.getElementById('vc-limit-input').value) || 0;
+    setButtonLoading(btn, true);
+    
+    try {
+        const response = await fetch('/api/vc-generators/limit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: selectedVC.id,
+                limit: limit
+            })
+        });
+        const result = await response.json();
+        
+        setButtonLoading(btn, false);
+        
+        if (result.success) {
+            setButtonSuccess(btn);
+            showToast(`User limit set to ${limit || 'unlimited'}`, 'success');
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to set limit', 'error');
+        }
+    } catch (error) {
+        setButtonLoading(btn, false);
+        console.error('Error setting limit:', error);
+        showToast('Failed to set limit', 'error');
+    }
+}
+
+async function renameVC(btn) {
+    if (!selectedVC) return;
+    
+    const newName = document.getElementById('vc-rename-input').value.trim();
+    if (!newName) {
+        showToast('Please enter a new channel name', 'error');
+        return;
+    }
+    
+    if (newName === selectedVC.name) {
+        showToast('Name is the same as current name', 'info');
+        return;
+    }
+    
+    setButtonLoading(btn, true);
+    
+    try {
+        const response = await fetch('/api/vc-generators/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: selectedVC.id,
+                name: newName
+            })
+        });
+        const result = await response.json();
+        
+        setButtonLoading(btn, false);
+        
+        if (result.success) {
+            setButtonSuccess(btn);
+            showToast('Channel rename queued', 'success');
+            closeVCModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to rename channel', 'error');
+        }
+    } catch (error) {
+        setButtonLoading(btn, false);
+        console.error('Error renaming channel:', error);
+        showToast('Failed to rename channel', 'error');
+    }
+}
+
+async function toggleVCHide(btn) {
+    if (!selectedVC) return;
+    
+    const shouldHide = !selectedVC.is_hidden;
+    setButtonLoading(btn, true);
+    
+    try {
+        const response = await fetch('/api/vc-generators/hide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: selectedVC.id,
+                hide: shouldHide
+            })
+        });
+        const result = await response.json();
+        
+        setButtonLoading(btn, false);
+        
+        if (result.success) {
+            setButtonSuccess(btn);
+            showToast(`Channel ${shouldHide ? 'hidden' : 'visible'}`, 'success');
+            closeVCModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to toggle visibility', 'error');
+        }
+    } catch (error) {
+        setButtonLoading(btn, false);
+        console.error('Error toggling visibility:', error);
+        showToast('Failed to toggle visibility', 'error');
+    }
+}
+
+async function deleteVC(btn) {
+    if (!selectedVC || selectedVC.is_generator) return;
+    
+    if (!confirm(`Delete voice channel "${selectedVC.name}"? All users will be disconnected.`)) return;
+    
+    setButtonLoading(btn, true);
+    
+    try {
+        const response = await fetch('/api/vc-generators/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: selectedVC.id
+            })
+        });
+        const result = await response.json();
+        
+        setButtonLoading(btn, false);
+        
+        if (result.success) {
+            showToast('Channel deletion queued', 'success');
+            closeVCModal();
+            setTimeout(loadVCData, 2000);
+        } else {
+            showToast(result.error || 'Failed to delete channel', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting channel:', error);
+        showToast('Failed to delete channel', 'error');
+    }
+}
+
+async function removeGenerator(channelId, type) {
+    if (!confirm('Remove this VC generator? The channel will not be deleted.')) return;
+    
+    try {
+        const response = await fetch('/api/vc-generators/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_id: channelId,
+                type: type
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('Generator removed', 'success');
+            loadVCData();
+        } else {
+            showToast(result.error || 'Failed to remove generator', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing generator:', error);
+        showToast('Failed to remove generator', 'error');
+    }
+}
+
+function refreshVCData() {
+    loadVCData();
+    showToast('Refreshing VC data...', 'info');
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        <span>${message}</span>
+    `;
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        background: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary)'};
+        color: white;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Close modals on click outside
+['user-modal', 'vc-modal', 'move-modal'].forEach(modalId => {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    }
+});
+
+// Handle VC settings button clicks (event delegation for dynamic content)
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.vc-settings-btn');
+    if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const vcId = btn.getAttribute('data-vcid');
+        if (vcId) {
+            openVCModal(vcId);
+        }
+    }
+});
+
+// Auto-refresh every 30 seconds
+setInterval(loadVCData, 30000);
+
+// Initial load
+document.addEventListener('DOMContentLoaded', loadVCData);
+</script>
+
+<style>
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+</style>
+{% endblock %}

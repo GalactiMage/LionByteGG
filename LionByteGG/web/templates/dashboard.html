@@ -1,0 +1,779 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Live Status Header -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+        <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 4px;">Welcome back!</h2>
+        <p style="color: var(--text-secondary);">Here's what's happening with your server today.</p>
+    </div>
+    <div class="live-indicator" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: rgba(16, 185, 129, 0.1); border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);">
+        <span class="live-dot" style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; animation: livePulse 2s ease-in-out infinite;"></span>
+        <span style="color: #10b981; font-size: 12px; font-weight: 500;">LIVE</span>
+        <span id="dashboardLastUpdated" style="color: var(--text-secondary); font-size: 11px; margin-left: 8px;">Updating...</span>
+    </div>
+</div>
+
+<style>
+@keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+</style>
+
+<!-- Stats Grid -->
+<div class="stats-grid" id="stats-grid">
+    <div class="stat-card purple">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-server"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-guilds"><span class="skeleton" style="display: inline-block; width: 50px; height: 32px;"></span></div>
+        <div class="stat-label">Connected Servers</div>
+    </div>
+
+    <div class="stat-card gold">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-members"><span class="skeleton" style="display: inline-block; width: 60px; height: 32px;"></span></div>
+        <div class="stat-label">Total Members</div>
+    </div>
+
+    <div class="stat-card green">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-clock"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-latency"><span class="skeleton" style="display: inline-block; width: 70px; height: 32px;"></span></div>
+        <div class="stat-label">Bot Latency</div>
+    </div>
+
+    <div class="stat-card blue">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-user-clock"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-guests"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Active Guests</div>
+    </div>
+</div>
+
+<!-- Second Row Stats -->
+<div class="stats-grid mb-4">
+    <div class="stat-card purple">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-warnings"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Total Warnings</div>
+    </div>
+
+    <div class="stat-card red">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-user-slash"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-kicks"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Total Kicks</div>
+    </div>
+
+    <div class="stat-card red">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-gavel"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-bans"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Total Bans</div>
+    </div>
+
+    <div class="stat-card gold">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-folder-open"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-records"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Users with Records</div>
+    </div>
+
+    <div class="stat-card green">
+        <div class="stat-header">
+            <div class="stat-icon">
+                <i class="fas fa-trophy"></i>
+            </div>
+        </div>
+        <div class="stat-value" id="stat-varsity-pending"><span class="skeleton" style="display: inline-block; width: 40px; height: 32px;"></span></div>
+        <div class="stat-label">Varsity Pending</div>
+    </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="grid-2 gap-3">
+    <!-- Recent Activity Card -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-history"></i>
+                Recent Activity
+            </h3>
+            {% if has_perm('page.logs') %}<a href="/logs" class="btn btn-secondary btn-sm">View All</a>{% endif %}
+        </div>
+        <div class="card-body">
+            <div class="table-container">
+                <table class="table" id="recent-activity-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activity-body">
+                        <!-- Skeleton loading rows -->
+                        <tr class="skeleton-row-loading">
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="skeleton skeleton-avatar" style="width: 32px; height: 32px;"></span>
+                                    <span class="skeleton" style="width: 100px; height: 14px;"></span>
+                                </div>
+                            </td>
+                            <td><span class="skeleton" style="width: 150px; height: 14px;"></span></td>
+                            <td><span class="skeleton" style="width: 80px; height: 14px;"></span></td>
+                        </tr>
+                        <tr class="skeleton-row-loading">
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="skeleton skeleton-avatar" style="width: 32px; height: 32px;"></span>
+                                    <span class="skeleton" style="width: 120px; height: 14px;"></span>
+                                </div>
+                            </td>
+                            <td><span class="skeleton" style="width: 130px; height: 14px;"></span></td>
+                            <td><span class="skeleton" style="width: 70px; height: 14px;"></span></td>
+                        </tr>
+                        <tr class="skeleton-row-loading">
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="skeleton skeleton-avatar" style="width: 32px; height: 32px;"></span>
+                                    <span class="skeleton" style="width: 90px; height: 14px;"></span>
+                                </div>
+                            </td>
+                            <td><span class="skeleton" style="width: 140px; height: 14px;"></span></td>
+                            <td><span class="skeleton" style="width: 75px; height: 14px;"></span></td>
+                        </tr>
+                        <tr class="skeleton-row-loading">
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="skeleton skeleton-avatar" style="width: 32px; height: 32px;"></span>
+                                    <span class="skeleton" style="width: 110px; height: 14px;"></span>
+                                </div>
+                            </td>
+                            <td><span class="skeleton" style="width: 120px; height: 14px;"></span></td>
+                            <td><span class="skeleton" style="width: 85px; height: 14px;"></span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions & User Lookup Card -->
+    <div>
+        <!-- Quick Actions -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-bolt"></i>
+                    Quick Actions
+                </h3>
+            </div>
+            <div class="card-body">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                {% if has_perm('page.members') %}
+                <a href="/members" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <i class="fas fa-users"></i>
+                    Manage Users
+                </a>
+                {% endif %}
+                {% if has_perm('page.moderation') %}
+                <a href="/moderation" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <i class="fas fa-shield-alt"></i>
+                    Moderation
+                </a>
+                {% endif %}
+                {% if has_perm('page.tickets') %}
+                <a href="/tickets" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <i class="fas fa-ticket-alt"></i>
+                    Ticket System
+                </a>
+                {% endif %}
+                {% if has_perm('page.settings') %}
+                <a href="/settings" class="btn btn-secondary" style="justify-content: flex-start;">
+                    <i class="fas fa-cog"></i>
+                    Bot Settings
+                </a>
+                {% endif %}
+                {% if has_perm('dashboard.bot_activity') %}
+                <button class="btn btn-primary" onclick="openActivityModal()" style="justify-content: flex-start;">
+                    <i class="fas fa-gamepad"></i>
+                    Set Bot Activity
+                </button>
+                {% endif %}
+                {% if has_perm('dashboard.bot_restart') %}
+                <button class="btn btn-success" onclick="confirmRestart()" style="justify-content: flex-start;">
+                    <i class="fas fa-redo"></i>
+                    Restart Bot
+                </button>
+                {% endif %}
+                {% if has_perm('dashboard.bot_stop') %}
+                <button class="btn btn-danger" onclick="confirmStopBot()" style="justify-content: flex-start; grid-column: span 2;">
+                    <i class="fas fa-power-off"></i>
+                    Stop Bot
+                </button>
+                {% endif %}
+            </div>
+
+            <hr style="margin: 24px 0; border-color: var(--border);">
+
+            <h4 style="margin-bottom: 16px; font-size: 14px; color: var(--text-secondary);">Arena Status</h4>
+            <div class="arena-status-display" id="arena-status">
+                <div style="display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--background-secondary); border-radius: 10px;">
+                    <div style="width: 48px; height: 48px; background: rgba(16, 185, 129, 0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-door-open" style="color: var(--success); font-size: 20px;"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; margin-bottom: 4px;">Arena Status</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);">Check arena hours for current status</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick User Lookup Card -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-search"></i>
+                Quick User Lookup
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="form-group mb-0">
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" class="form-input" id="quick-user-lookup" placeholder="Enter Discord ID or username..." style="flex: 1;">
+                    <button class="btn btn-primary" onclick="quickUserLookup()">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                <i class="fas fa-lightbulb"></i> Tip: Use the global search bar (Ctrl+K) for advanced searching
+            </p>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Guest Expiring Soon -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-user-clock" style="color: var(--warning);"></i>
+            Guests Expiring Soon
+        </h3>
+        {% if has_perm('page.users') %}<a href="/users" class="btn btn-secondary btn-sm">View All Guests</a>{% endif %}
+    </div>
+    <div class="card-body">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Username</th>
+                        <th>Expires</th>
+                        <th>Days Left</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="guests-expiring-body">
+                    <tr>
+                        <td colspan="5" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                            Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Bot Commands Reference -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-terminal"></i>
+            Available Commands
+        </h3>
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" placeholder="Search commands..." id="command-search">
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="tabs">
+            <button class="tab active" data-tab="all">All</button>
+            <button class="tab" data-tab="general">General</button>
+            <button class="tab" data-tab="moderation">Moderation</button>
+            <button class="tab" data-tab="admin">Admin Only</button>
+        </div>
+        <div class="command-grid" id="commands-grid">
+            <!-- Commands will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<!-- Set Activity Modal -->
+<div class="modal-overlay" id="activity-modal">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); border-radius: 16px 16px 0 0;">
+            <h3 class="modal-title" style="color: white; display: flex; align-items: center; gap: 10px;">
+                <i class="fas fa-gamepad"></i> Set Bot Activity
+            </h3>
+            <button class="modal-close" onclick="closeActivityModal()" style="color: white;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-pen" style="color: var(--primary); margin-right: 6px;"></i>Activity Text</label>
+                <div style="position: relative;">
+                    <input type="text" class="form-input" id="activity-text" placeholder="Playing..." style="padding-left: 40px; font-size: 15px;">
+                    <i class="fas fa-gamepad" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-list" style="color: var(--primary); margin-right: 6px;"></i>Activity Type</label>
+                <select class="form-select" id="activity-type" style="width: 100%;">
+                    <option value="playing">🎮 Playing</option>
+                    <option value="watching">👀 Watching</option>
+                    <option value="listening">🎧 Listening to</option>
+                    <option value="competing">🏆 Competing in</option>
+                </select>
+            </div>
+            
+            <div style="background: var(--background-secondary); border-radius: 12px; padding: 16px; margin-top: 16px;">
+                <h5 style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas fa-eye"></i> Preview
+                </h5>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-robot" style="color: white; font-size: 20px;"></i>
+                    </div>
+                    <div>
+                        <p style="font-weight: 600; margin-bottom: 2px;">LionByteGG</p>
+                        <p id="activity-preview" style="font-size: 13px; color: var(--success); margin: 0;">🎮 Playing...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px; display: flex; align-items: center; gap: 6px;">
+                <i class="fas fa-info-circle"></i>
+                Leave empty to reset to default arena status display.
+            </p>
+        </div>
+        <div class="modal-footer" style="background: var(--background-secondary); border-radius: 0 0 16px 16px; padding: 16px 24px;">
+            <button class="btn btn-secondary" onclick="closeActivityModal()">Cancel</button>
+            <button class="btn" onclick="setActivity()" id="set-activity-btn" style="background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); color: white; border: none;">
+                <i class="fas fa-check"></i> Set Activity
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load stats
+    async function loadStats() {
+        try {
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+            
+            // Animate numbers counting up
+            animateNumber('stat-guilds', data.guilds || 0);
+            animateNumber('stat-members', data.members || 0);
+            animateNumber('stat-latency', data.latency || 0, 'ms');
+            animateNumber('stat-guests', data.active_guests || 0);
+            animateNumber('stat-warnings', data.total_warnings || 0);
+            animateNumber('stat-kicks', data.total_kicks || 0);
+            animateNumber('stat-bans', data.total_bans || 0);
+            animateNumber('stat-records', data.users_with_records || 0);
+            
+            // Update last updated time
+            const lastUpdatedEl = document.getElementById('dashboardLastUpdated');
+            if (lastUpdatedEl) {
+                lastUpdatedEl.textContent = 'Updated just now';
+            }
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+        }
+        
+        // Also load varsity stats
+        try {
+            const varsityResponse = await fetch('/api/varsity-registrations');
+            const varsityData = await varsityResponse.json();
+            const pendingCount = varsityData.filter(r => r.status?.toLowerCase() === 'pending').length;
+            animateNumber('stat-varsity-pending', pendingCount);
+        } catch (error) {
+            document.getElementById('stat-varsity-pending').textContent = '0';
+        }
+    }
+    
+    // Animated number counter
+    function animateNumber(elementId, targetValue, suffix = '') {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        
+        const duration = 800; // ms
+        const startTime = performance.now();
+        const startValue = 0;
+        
+        function updateNumber(currentTime) {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Ease out cubic for smooth deceleration
+            const easeOut = 1 - Math.pow(1 - progress, 3);
+            const currentValue = Math.floor(startValue + (targetValue - startValue) * easeOut);
+            
+            element.textContent = currentValue.toLocaleString() + suffix;
+            
+            if (progress < 1) {
+                requestAnimationFrame(updateNumber);
+            } else {
+                element.textContent = targetValue.toLocaleString() + suffix;
+            }
+        }
+        
+        requestAnimationFrame(updateNumber);
+    }
+
+    // Load recent activity from user records
+    async function loadRecentActivity() {
+        try {
+            const response = await fetch('/api/user-records');
+            const data = await response.json();
+            
+            // Flatten all records and sort by timestamp
+            let allRecords = [];
+            data.forEach(user => {
+                user.records.forEach(record => {
+                    allRecords.push({
+                        user_id: user.user_id,
+                        username: user.username || '',
+                        display_name: user.display_name || '',
+                        avatar_url: user.avatar_url || '',
+                        ...record
+                    });
+                });
+            });
+            
+            // Sort by timestamp descending
+            allRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // Take top 5
+            const recent = allRecords.slice(0, 5);
+            
+            const tbody = document.getElementById('activity-body');
+            if (recent.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                            <i class="fas fa-inbox" style="font-size: 24px; display: block; margin-bottom: 8px;"></i>
+                            No recent activity
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = recent.map(record => {
+                const date = new Date(record.timestamp);
+                const timeAgo = getTimeAgo(date);
+                const badgeClass = record.type === 'Warning' ? 'badge-warning' : 
+                                   record.type === 'AutoMod Flag' ? 'badge-warning' :
+                                   record.type === 'Kick' ? 'badge-danger' : 'badge-danger';
+                const name = record.display_name || record.username || record.user_id;
+                const avatarHtml = record.avatar_url 
+                    ? `<img src="${record.avatar_url}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">`
+                    : `<div class="user-avatar-sm">${name.substring(0,2).toUpperCase()}</div>`;
+                
+                return `
+                    <tr onclick="openUserProfile('${record.user_id}')" style="cursor: pointer;">
+                        <td>
+                            <div class="user-cell">
+                                ${avatarHtml}
+                                <div style="display:flex;flex-direction:column;gap:1px;">
+                                    <span style="font-weight:600;font-size:13px;">${escapeHtml(name)}</span>
+                                    ${record.display_name ? `<span style="font-size:11px;color:var(--text-muted);">@${escapeHtml(record.username || record.user_id)}</span>` : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="badge ${badgeClass}">${record.type}</span></td>
+                        <td style="color: var(--text-secondary);">${timeAgo}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Failed to load activity:', error);
+        }
+    }
+
+    // Load expiring guests
+    async function loadExpiringGuests() {
+        try {
+            const response = await fetch('/api/guests');
+            const data = await response.json();
+            
+            // Sort by days remaining
+            const expiring = data.filter(g => g.days_remaining <= 7 && !g.expired)
+                                 .sort((a, b) => a.days_remaining - b.days_remaining)
+                                 .slice(0, 5);
+            
+            const tbody = document.getElementById('guests-expiring-body');
+            if (expiring.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                            <i class="fas fa-check-circle" style="font-size: 24px; display: block; margin-bottom: 8px; color: var(--success);"></i>
+                            No guests expiring soon
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = expiring.map(guest => {
+                const expiresDate = new Date(guest.expires_at);
+                const badgeClass = guest.days_remaining <= 3 ? 'badge-danger' : 'badge-warning';
+                
+                return `
+                    <tr>
+                        <td>${guest.user_id}</td>
+                        <td>${guest.username || 'Unknown'}</td>
+                        <td>${expiresDate.toLocaleDateString()}</td>
+                        <td><span class="badge ${badgeClass}">${guest.days_remaining} days</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" onclick="resetGuestTimer('${guest.user_id}')">
+                                <i class="fas fa-redo"></i> Reset
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Failed to load guests:', error);
+        }
+    }
+
+    // Load commands
+    async function loadCommands() {
+        try {
+            const response = await fetch('/api/commands');
+            const commands = await response.json();
+            
+            renderCommands(commands);
+            
+            // Command search
+            document.getElementById('command-search').addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const filtered = commands.filter(c => 
+                    c.name.toLowerCase().includes(query) || 
+                    c.description.toLowerCase().includes(query)
+                );
+                renderCommands(filtered);
+            });
+            
+            // Tab filtering
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    
+                    const filter = tab.dataset.tab;
+                    let filtered = commands;
+                    
+                    if (filter === 'admin') {
+                        filtered = commands.filter(c => c.admin);
+                    } else if (filter !== 'all') {
+                        filtered = commands.filter(c => c.category.toLowerCase() === filter);
+                    }
+                    
+                    renderCommands(filtered);
+                });
+            });
+        } catch (error) {
+            console.error('Failed to load commands:', error);
+        }
+    }
+
+    function renderCommands(commands) {
+        const grid = document.getElementById('commands-grid');
+        grid.innerHTML = commands.map(cmd => `
+            <div class="command-card">
+                <div class="command-name">${cmd.name}</div>
+                <div class="command-desc">${cmd.description}</div>
+                <div style="margin-top: 10px;">
+                    <span class="badge badge-purple">${cmd.category}</span>
+                    ${cmd.admin ? '<span class="badge badge-danger">Admin</span>' : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Helper functions
+    function getTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        const intervals = {
+            year: 31536000,
+            month: 2592000,
+            week: 604800,
+            day: 86400,
+            hour: 3600,
+            minute: 60
+        };
+        
+        for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+            const interval = Math.floor(seconds / secondsInUnit);
+            if (interval >= 1) {
+                return `${interval} ${unit}${interval > 1 ? 's' : ''} ago`;
+            }
+        }
+        return 'Just now';
+    }
+
+    async function resetGuestTimer(userId) {
+        if (!confirm('Reset guest timer for 30 more days?')) return;
+        
+        try {
+            const response = await fetch(`/api/guests/${userId}/reset`, { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                loadExpiringGuests();
+                loadStats();
+            } else {
+                alert('Failed to reset timer: ' + data.message);
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    }
+
+    // Activity modal
+    function openActivityModal() {
+        document.getElementById('activity-modal').classList.add('active');
+        updateActivityPreview();
+        
+        // Add event listeners for preview updates
+        document.getElementById('activity-text').addEventListener('input', updateActivityPreview);
+        document.getElementById('activity-type').addEventListener('change', updateActivityPreview);
+    }
+    
+    function updateActivityPreview() {
+        const text = document.getElementById('activity-text').value || '...';
+        const type = document.getElementById('activity-type').value;
+        const icons = { playing: '🎮', watching: '👀', listening: '🎧', competing: '🏆' };
+        const labels = { playing: 'Playing', watching: 'Watching', listening: 'Listening to', competing: 'Competing in' };
+        document.getElementById('activity-preview').textContent = `${icons[type]} ${labels[type]} ${text}`;
+    }
+
+    function closeActivityModal() {
+        closeModalWithAnimation(document.getElementById('activity-modal'));
+    }
+
+    async function setActivity() {
+        const activity = document.getElementById('activity-text').value;
+        const activityType = document.getElementById('activity-type').value;
+        const btn = document.getElementById('set-activity-btn');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+        
+        try {
+            const response = await fetch('/api/bot/activity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activity, activity_type: activityType })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                closeActivityModal();
+                showToast('Activity updated successfully!', 'success');
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Set Activity';
+        }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        loadRecentActivity();
+        loadExpiringGuests();
+        loadCommands();
+        
+        // Quick user lookup on Enter key
+        document.getElementById('quick-user-lookup')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') quickUserLookup();
+        });
+    });
+    
+    // Quick user lookup function
+    function quickUserLookup() {
+        const input = document.getElementById('quick-user-lookup');
+        const query = input.value.trim();
+        
+        if (!query) {
+            showToast('Please enter a user ID or username', 'warning');
+            return;
+        }
+        
+        // Check if it's a numeric ID (likely a Discord ID)
+        if (/^\d+$/.test(query)) {
+            // Open profile directly
+            openUserProfile(query);
+        } else {
+            // Trigger global search
+            const globalSearch = document.getElementById('global-search-input');
+            if (globalSearch) {
+                globalSearch.value = query;
+                globalSearch.dispatchEvent(new Event('input'));
+                globalSearch.focus();
+            }
+        }
+        
+        input.value = '';
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,41 @@
+server:
+  port: 2333
+  address: 127.0.0.1
+
+lavalink:
+  server:
+    password: "pnwesports123"
+    sources:
+      youtube: false
+      bandcamp: false
+      soundcloud: true
+      twitch: false
+      vimeo: false
+      http: true
+      local: false
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+  lavasrc:
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: true
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+    spotify:
+      clientId: "718dffa17c6c4b73833756eabf950c7e"
+      clientSecret: "7e89d54323284e4c834958d33bdf3446"
+      countryCode: "US"
+      playlistLoadLimit: 100
+      albumLoadLimit: 100
+
+logging:
+  level:
+    root: INFO

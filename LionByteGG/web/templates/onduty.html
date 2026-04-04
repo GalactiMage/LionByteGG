@@ -1,0 +1,1604 @@
+{% extends "base.html" %}
+{% block title %}Worker On Duty{% endblock %}
+{% block page_title %}Worker On Duty{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ═══════ PAGE ANIMATION ═══════ */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.15); }
+        50% { box-shadow: 0 0 20px 4px rgba(245, 158, 11, 0.1); }
+    }
+    @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.92); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    .content-wrapper > * {
+        animation: fadeInUp 0.4s ease forwards;
+    }
+
+    /* ═══════ TAB NAVIGATION ═══════ */
+    .onduty-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 28px;
+        padding: 6px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        position: relative;
+    }
+    .onduty-tab {
+        padding: 11px 22px;
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 10px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+        white-space: nowrap;
+    }
+    .onduty-tab i { font-size: 14px; opacity: 0.6; transition: opacity 0.25s; }
+    .onduty-tab:hover {
+        color: var(--text-primary);
+        background: var(--surface-hover);
+    }
+    .onduty-tab:hover i { opacity: 0.9; }
+    .onduty-tab.active {
+        color: #fff;
+        background: linear-gradient(135deg, var(--secondary), var(--secondary-dark));
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+    }
+    .onduty-tab.active i { opacity: 1; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeInUp 0.35s ease; }
+
+    /* ═══════ CLOCK IN BANNER ═══════ */
+    .clock-banner {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(124, 58, 237, 0.06) 100%);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 20px;
+        padding: 28px 32px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 28px;
+        position: relative;
+        overflow: hidden;
+        animation: pulseGlow 4s ease infinite;
+    }
+    .clock-banner::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 280px;
+        height: 280px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(245, 158, 11, 0.08) 0%, transparent 70%);
+        pointer-events: none;
+    }
+    .clock-banner-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3);
+    }
+    .clock-banner-icon i { font-size: 26px; color: white; }
+    .clock-banner-info { flex: 1; z-index: 1; }
+    .clock-banner-info h3 { color: var(--text-primary); font-size: 20px; margin-bottom: 4px; font-weight: 700; }
+    .clock-banner-info p { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+    .clock-btn {
+        padding: 14px 32px;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-decoration: none;
+        color: white;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+        z-index: 1;
+    }
+    .clock-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px rgba(245, 158, 11, 0.45);
+    }
+    .clock-btn:active { transform: translateY(-1px); }
+
+    /* ═══════ STAT CARDS ═══════ */
+    .inv-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 18px;
+        margin-bottom: 28px;
+    }
+    .inv-stat {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px 20px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .inv-stat:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+        border-color: var(--border-light);
+    }
+    .inv-stat::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        opacity: 0.12;
+        transform: translate(30%, -30%);
+        transition: all 0.4s;
+        pointer-events: none;
+    }
+    .inv-stat:hover::before {
+        transform: translate(20%, -20%) scale(1.3);
+        opacity: 0.2;
+    }
+    .inv-stat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+    }
+    .inv-stat-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+    }
+    .inv-stat-value {
+        font-size: 32px;
+        font-weight: 800;
+        color: var(--text-primary);
+        letter-spacing: -0.5px;
+        line-height: 1;
+    }
+    .inv-stat-label {
+        font-size: 12px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-top: 6px;
+        font-weight: 500;
+    }
+    /* Stat card color variants */
+    .inv-stat.purple::before { background: var(--primary); }
+    .inv-stat.purple .inv-stat-icon { background: rgba(124, 58, 237, 0.15); color: var(--primary-light); }
+
+    .inv-stat.success::before { background: var(--success); }
+    .inv-stat.success .inv-stat-value { color: var(--success); }
+    .inv-stat.success .inv-stat-icon { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+
+    .inv-stat.blue::before { background: var(--info); }
+    .inv-stat.blue .inv-stat-value { color: var(--info); }
+    .inv-stat.blue .inv-stat-icon { background: rgba(59, 130, 246, 0.15); color: var(--info); }
+
+    .inv-stat.warning::before { background: var(--warning); }
+    .inv-stat.warning .inv-stat-value { color: var(--warning); }
+    .inv-stat.warning .inv-stat-icon { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+
+    .inv-stat.danger::before { background: var(--danger); }
+    .inv-stat.danger .inv-stat-value { color: var(--danger); }
+    .inv-stat.danger .inv-stat-icon { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+
+    /* ═══════ CARDS OVERRIDE ═══════ */
+    .tab-panel .card {
+        border-radius: 18px;
+        overflow: hidden;
+    }
+    .tab-panel .card-header {
+        padding: 20px 28px;
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.04) 0%, transparent 100%);
+        border-bottom: 1px solid var(--border);
+    }
+    .tab-panel .card-header h2 {
+        font-size: 17px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .tab-panel .card-header h2 i {
+        color: var(--secondary);
+        font-size: 16px;
+    }
+    .tab-panel .card-body {
+        padding: 24px 28px;
+    }
+
+    /* ═══════ EQUIPMENT TABLE ═══════ */
+    .eq-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .eq-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+    .eq-table th {
+        text-align: left;
+        padding: 14px 16px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-muted);
+        border-bottom: 2px solid var(--border);
+        font-weight: 700;
+        background: var(--surface);
+    }
+    .eq-table td {
+        padding: 16px 16px;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+        font-size: 14px;
+        color: var(--text-primary);
+        transition: background 0.15s;
+    }
+    .eq-table tbody tr {
+        transition: all 0.2s;
+    }
+    .eq-table tbody tr:hover {
+        background: rgba(245, 158, 11, 0.04);
+    }
+    .eq-table tbody tr:hover td {
+        border-bottom-color: rgba(245, 158, 11, 0.15);
+    }
+    .eq-table .category-badge {
+        padding: 5px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(124, 58, 237, 0.12);
+        color: #a78bfa;
+        letter-spacing: 0.3px;
+    }
+    .eq-table .status-badge {
+        padding: 5px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+    }
+    .status-good { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+    .status-warning { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+    .status-danger { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+    .status-checkout { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
+
+    .action-btns { display: flex; gap: 6px; }
+    .action-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        font-size: 13px;
+    }
+    .action-btn:hover { background: var(--surface-hover); color: var(--text-primary); transform: translateY(-1px); }
+    .action-btn.danger:hover { background: rgba(239, 68, 68, 0.12); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+    .action-btn.warning:hover { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border-color: rgba(245, 158, 11, 0.3); }
+    .action-btn.checkout-btn:hover { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+    .action-btn.checkin-btn:hover { background: rgba(16, 185, 129, 0.12); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+
+    /* Quantity display */
+    .qty-display {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .qty-bar {
+        width: 80px;
+        height: 6px;
+        background: rgba(55, 65, 81, 0.5);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .qty-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ═══════ MODALS ═══════ */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-overlay.active .modal { animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+    .modal {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 32px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+        position: relative;
+        overflow: hidden;
+    }
+    .modal::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--secondary), var(--primary), var(--info));
+        border-radius: 20px 20px 0 0;
+    }
+    .modal h3 {
+        margin-bottom: 24px;
+        color: var(--text-primary);
+        font-size: 18px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .modal .form-group { margin-bottom: 18px; }
+    .modal label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+        letter-spacing: 0.2px;
+    }
+    .modal input, .modal select, .modal textarea {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--background-secondary);
+        color: var(--text-primary);
+        font-size: 14px;
+        box-sizing: border-box;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .modal input:focus, .modal select:focus, .modal textarea:focus {
+        outline: none;
+        border-color: var(--secondary);
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+    }
+    .modal select option {
+        background: var(--background-secondary);
+        color: var(--text-primary);
+    }
+    .modal textarea { resize: vertical; min-height: 80px; }
+    .modal-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 28px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+    }
+    .modal-actions .btn {
+        padding: 11px 26px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .modal-actions .btn:hover { transform: translateY(-1px); }
+    .modal-actions .btn-cancel {
+        background: var(--surface-hover);
+        color: var(--text-secondary);
+    }
+    .modal-actions .btn-cancel:hover { background: var(--border); color: var(--text-primary); }
+    .modal-actions .btn-primary {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: white;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+    }
+    .modal-actions .btn-primary:hover { box-shadow: 0 6px 22px rgba(245, 158, 11, 0.4); }
+    .modal-actions .btn-danger {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+        box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+    }
+    .modal-actions .btn-danger:hover { box-shadow: 0 6px 22px rgba(239, 68, 68, 0.4); }
+
+    /* ═══════ HISTORY TIMELINE ═══════ */
+    .history-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 16px 0;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.4);
+        transition: background 0.2s;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background: rgba(245, 158, 11, 0.02); margin: 0 -28px; padding: 16px 28px; }
+    .history-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 15px;
+        transition: transform 0.2s;
+    }
+    .history-item:hover .history-icon { transform: scale(1.08); }
+    .history-icon.added { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+    .history-icon.checkout { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
+    .history-icon.checkin { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+    .history-icon.reported { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+    .history-icon.updated { background: rgba(124, 58, 237, 0.12); color: #a78bfa; }
+    .history-icon.removed { background: rgba(107, 114, 128, 0.12); color: #9ca3af; }
+    .history-icon.resolved { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+    .history-info { flex: 1; }
+    .history-info .action-text { font-size: 14px; color: var(--text-primary); line-height: 1.4; }
+    .history-info .action-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ═══════ REPORTS ═══════ */
+    .report-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 20px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.2s;
+    }
+    .report-card:hover { border-color: var(--border-light); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+    .report-card.unresolved { border-left: 4px solid #ef4444; }
+    .report-card.resolved { border-left: 4px solid #10b981; opacity: 0.65; }
+    .report-card.resolved:hover { opacity: 0.85; }
+    .report-type-badge {
+        padding: 5px 12px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    .type-missing { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+    .type-stolen { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+    .type-damaged { background: rgba(124, 58, 237, 0.12); color: #a78bfa; }
+
+    /* ═══════ ACTIVE CHECKOUTS ═══════ */
+    .checkout-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px 24px;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: flex-start;
+        gap: 18px;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+    .checkout-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 4px;
+        background: linear-gradient(180deg, var(--info), #2563eb);
+        border-radius: 16px 0 0 16px;
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+    .checkout-card:hover {
+        border-color: rgba(59, 130, 246, 0.25);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+        transform: translateY(-2px);
+    }
+    .checkout-card:hover::after { opacity: 1; }
+    .checkout-card .co-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.08));
+        color: #60a5fa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 20px;
+    }
+    .checkout-card .co-info { flex: 1; min-width: 0; }
+    .checkout-card .co-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+    .checkout-card .co-name { font-weight: 700; color: var(--text-primary); font-size: 16px; }
+    .checkout-card .co-qty {
+        background: rgba(59, 130, 246, 0.12);
+        color: #60a5fa;
+        padding: 3px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .checkout-card .co-details {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+    }
+    .checkout-card .co-detail {
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+    .checkout-card .co-detail strong {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+    .checkout-card .co-detail .co-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-muted);
+        display: block;
+        margin-bottom: 3px;
+        font-weight: 600;
+    }
+    .checkout-card .co-time {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .checkout-card .co-actions { flex-shrink: 0; align-self: center; }
+    .checkout-card .co-actions .btn { box-shadow: 0 4px 14px rgba(59, 130, 246, 0.2); }
+    .id-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(245, 158, 11, 0.1);
+        color: #fbbf24;
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+    }
+    .purpose-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(124, 58, 237, 0.1);
+        color: #a78bfa;
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+    }
+
+    /* ═══════ FORM EXTRAS ═══════ */
+    .required::after {
+        content: ' *';
+        color: #ef4444;
+        font-weight: 400;
+    }
+    .id-row {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr;
+        gap: 10px;
+    }
+    .condition-group {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .condition-option {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 10px 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        background: transparent;
+    }
+    .condition-option:hover { border-color: var(--border-light); color: var(--text-primary); background: var(--surface-hover); }
+    .condition-option input[type="radio"] { display: none; }
+    .condition-option.selected {
+        background: rgba(245, 158, 11, 0.1);
+        border-color: rgba(245, 158, 11, 0.4);
+        color: #fbbf24;
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+    }
+
+    /* ═══════ LOADING & EMPTY STATES ═══════ */
+    .loading-spinner {
+        text-align: center;
+        padding: 50px 20px;
+        color: var(--text-muted);
+        font-size: 14px;
+    }
+    .loading-spinner i { font-size: 20px; color: var(--secondary); margin-right: 8px; }
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+    }
+    .empty-state i {
+        font-size: 52px;
+        opacity: 0.2;
+        display: block;
+        margin-bottom: 16px;
+    }
+
+    /* ═══════ RESPONSIVE ═══════ */
+    @media (max-width: 900px) {
+        .onduty-tabs { flex-wrap: wrap; }
+        .onduty-tab { padding: 9px 14px; font-size: 12px; flex: 1; justify-content: center; min-width: fit-content; }
+        .inv-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    }
+    @media (max-width: 768px) {
+        .clock-banner { flex-direction: column; text-align: center; padding: 24px 20px; }
+        .clock-banner-icon { width: 56px; height: 56px; }
+        .inv-stats { grid-template-columns: 1fr 1fr; }
+        .inv-stat { padding: 16px; }
+        .inv-stat-value { font-size: 26px; }
+        .eq-table { font-size: 13px; }
+        .eq-table th:last-child, .eq-table td:last-child { display: none; }
+        .tab-panel .card-body { padding: 16px; }
+        .checkout-card { flex-direction: column; }
+        .checkout-card .co-actions { align-self: flex-end; }
+    }
+    @media (max-width: 480px) {
+        .inv-stats { grid-template-columns: 1fr; }
+        .onduty-tab { font-size: 11px; padding: 8px 10px; }
+        .onduty-tab span:not([id]) { display: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+    <!-- Tabs -->
+    <div class="onduty-tabs">
+        <button class="onduty-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" onclick="switchTab('dashboard')">
+            <i class="fas fa-clipboard-check"></i> Dashboard
+        </button>
+        <button class="onduty-tab {% if active_tab == 'equipment' %}active{% endif %}" data-tab="equipment" onclick="switchTab('equipment')">
+            <i class="fas fa-box-open"></i> Equipment
+        </button>
+        <button class="onduty-tab" data-tab="checkouts" onclick="switchTab('checkouts')">
+            <i class="fas fa-hand-holding"></i> Active Checkouts <span id="checkout-count-badge" style="background:#3b82f6; color:white; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; margin-left:4px; display:none;">0</span>
+        </button>
+        <button class="onduty-tab" data-tab="reports" onclick="switchTab('reports')">
+            <i class="fas fa-exclamation-triangle"></i> Reports
+        </button>
+        <button class="onduty-tab" data-tab="history" onclick="switchTab('history')">
+            <i class="fas fa-history"></i> Activity Log
+        </button>
+    </div>
+
+    <!-- ========== DASHBOARD TAB ========== -->
+    <div class="tab-panel {% if active_tab == 'dashboard' %}active{% endif %}" id="tab-dashboard">
+        <!-- Clock In/Out Banner -->
+        <div class="clock-banner">
+            <div class="clock-banner-icon">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="clock-banner-info">
+                <h3>Purdue WebClock</h3>
+                <p>Clock in or out for your shift using the Purdue University WebClock system.</p>
+            </div>
+            <a href="https://webclockd5beba80c.us2.hana.ondemand.com/webclock/saml/login" target="_blank" rel="noopener noreferrer" class="clock-btn">
+                <i class="fas fa-sign-in-alt"></i> Open WebClock
+            </a>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="inv-stats" id="dashboard-stats">
+            <div class="inv-stat purple">
+                <div class="inv-stat-header">
+                    <div class="inv-stat-icon"><i class="fas fa-boxes"></i></div>
+                </div>
+                <div class="inv-stat-value" id="stat-total">--</div>
+                <div class="inv-stat-label">Total Items</div>
+            </div>
+            <div class="inv-stat success">
+                <div class="inv-stat-header">
+                    <div class="inv-stat-icon"><i class="fas fa-check-double"></i></div>
+                </div>
+                <div class="inv-stat-value" id="stat-accounted">--</div>
+                <div class="inv-stat-label">Accounted For</div>
+            </div>
+            <div class="inv-stat blue">
+                <div class="inv-stat-header">
+                    <div class="inv-stat-icon"><i class="fas fa-hand-holding"></i></div>
+                </div>
+                <div class="inv-stat-value" id="stat-active-checkouts">--</div>
+                <div class="inv-stat-label">Active Checkouts</div>
+            </div>
+            <div class="inv-stat warning">
+                <div class="inv-stat-header">
+                    <div class="inv-stat-icon"><i class="fas fa-sign-out-alt"></i></div>
+                </div>
+                <div class="inv-stat-value" id="stat-checked-out">--</div>
+                <div class="inv-stat-label">Items Out</div>
+            </div>
+            <div class="inv-stat danger">
+                <div class="inv-stat-header">
+                    <div class="inv-stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                </div>
+                <div class="inv-stat-value" id="stat-missing">--</div>
+                <div class="inv-stat-label">Missing / Stolen</div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-history"></i> Recent Activity</h2>
+            </div>
+            <div class="card-body" id="dashboard-recent">
+                <div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== EQUIPMENT TAB ========== -->
+    <div class="tab-panel {% if active_tab == 'equipment' %}active{% endif %}" id="tab-equipment">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-box-open"></i> Equipment Inventory</h2>
+                <div class="header-actions" style="display: flex; gap: 8px;">
+                    {% if has_perm('equipment.export') %}
+                    <button class="btn btn-secondary" onclick="exportInventory()" title="Export to CSV for Excel">
+                        <i class="fas fa-file-export"></i> Export
+                    </button>
+                    {% endif %}
+                    {% if has_perm('equipment.manage') %}
+                    <button class="btn btn-primary" onclick="openAddModal()">
+                        <i class="fas fa-plus"></i> Add Item
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <table class="eq-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th>Expected</th>
+                            <th>Available</th>
+                            <th>Checked Out</th>
+                            <th>Missing</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="equipment-tbody">
+                        <tr><td colspan="8" style="text-align:center; padding: 40px;">
+                            <i class="fas fa-spinner fa-spin"></i> Loading inventory...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== ACTIVE CHECKOUTS TAB ========== -->
+    <div class="tab-panel" id="tab-checkouts">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-hand-holding"></i> Active Checkouts — Who Has What</h2>
+                <div class="header-actions" style="display: flex; gap: 8px;">
+                    <div style="position: relative;">
+                        <i class="fas fa-search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:12px; pointer-events:none;"></i>
+                        <input type="text" id="checkout-search" placeholder="Search name, item, or ID..." oninput="renderActiveCheckouts()" style="padding: 10px 14px 10px 34px; border: 1px solid var(--border); border-radius: 10px; background: var(--background-secondary); color: var(--text-primary); font-size: 13px; width: 240px; transition: border-color 0.2s, box-shadow 0.2s;" onfocus="this.style.borderColor='var(--secondary)'; this.style.boxShadow='0 0 0 3px rgba(245,158,11,0.1)'" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='none'">
+                    </div>
+                </div>
+            </div>
+            <div class="card-body" id="active-checkouts-list">
+                <div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== REPORTS TAB ========== -->
+    <div class="tab-panel" id="tab-reports">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-exclamation-triangle"></i> Missing / Stolen Reports</h2>
+                <div class="header-actions">
+                    <select id="report-filter" onchange="renderReports()" style="padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--background-secondary); color: var(--text-primary); font-size: 13px; cursor: pointer; transition: border-color 0.2s;">
+                        <option value="all">All Reports</option>
+                        <option value="unresolved">Unresolved</option>
+                        <option value="resolved">Resolved</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body" id="reports-list">
+                <div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== HISTORY TAB ========== -->
+    <div class="tab-panel" id="tab-history">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-history"></i> Equipment Activity Log</h2>
+                <div class="header-actions">
+                    {% if has_perm('equipment.export') %}
+                    <button class="btn btn-secondary" onclick="exportInventory()">
+                        <i class="fas fa-file-export"></i> Export Full Log
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body" id="history-list">
+                <div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Item Modal -->
+<div class="modal-overlay" id="item-modal">
+    <div class="modal">
+        <h3 id="modal-title">Add Equipment</h3>
+        <input type="hidden" id="modal-item-id">
+        <div class="form-group">
+            <label>Item Name</label>
+            <input type="text" id="modal-name" placeholder="e.g. Headphones">
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <select id="modal-category">
+                <option value="headset">Headset</option>
+                <option value="keyboard">Keyboard</option>
+                <option value="mouse">Mouse</option>
+                <option value="monitor">Monitor</option>
+                <option value="console">Console</option>
+                <option value="controller">Controller</option>
+                <option value="cable">Cable</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Expected Quantity</label>
+            <input type="number" id="modal-expected" min="0" placeholder="Total expected count">
+        </div>
+        <div class="form-group">
+            <label>Current Quantity</label>
+            <input type="number" id="modal-current" min="0" placeholder="Currently available">
+        </div>
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea id="modal-notes" placeholder="Optional notes..."></textarea>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-cancel" onclick="closeModal('item-modal')">Cancel</button>
+            <button class="btn btn-primary" id="modal-save-btn" onclick="saveItem()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Checkout / Check-In Modal -->
+<div class="modal-overlay" id="checkout-modal">
+    <div class="modal" style="max-width: 540px;">
+        <h3 id="checkout-modal-title"><i class="fas fa-sign-out-alt" id="checkout-modal-icon"></i> Check Out Equipment</h3>
+        <input type="hidden" id="checkout-item-id">
+        <input type="hidden" id="checkout-action" value="checkout">
+        <input type="hidden" id="checkout-record-id" value="">
+
+        <div class="form-group">
+            <label>Item</label>
+            <div style="padding: 10px 14px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; font-weight: 600; color: var(--text-primary);">
+                <i class="fas fa-box" style="color: #3b82f6; margin-right: 6px;"></i> <span id="checkout-item-name"></span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="required">Quantity</label>
+            <input type="number" id="checkout-quantity" min="1" value="1">
+        </div>
+
+        <!-- Checkout-only fields -->
+        <div id="checkout-fields">
+            <div class="form-group">
+                <label class="required">Full Name of Person</label>
+                <input type="text" id="checkout-to" placeholder="First and last name of the person borrowing">
+            </div>
+
+            <div class="form-group">
+                <label class="required">ID Verification</label>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+                    <i class="fas fa-info-circle" style="color: #f59e0b;"></i> A valid government-issued or university ID is required for all equipment checkouts.
+                </p>
+                <div class="id-row">
+                    <select id="checkout-id-type">
+                        <option value="drivers_license">Driver's License</option>
+                        <option value="state_id">State ID</option>
+                        <option value="university_id" selected>University ID</option>
+                        <option value="passport">Passport</option>
+                        <option value="military_id">Military ID</option>
+                        <option value="other">Other ID</option>
+                    </select>
+                    <input type="text" id="checkout-person-id" placeholder="ID number (last 4+ digits)">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="required">Purpose / Reason</label>
+                <select id="checkout-purpose">
+                    <option value="">— Select purpose —</option>
+                    <option value="personal_use">Personal Use (Arena)</option>
+                    <option value="event">Event / Tournament</option>
+                    <option value="practice">Team Practice</option>
+                    <option value="class_project">Class Project</option>
+                    <option value="meeting">Meeting / Presentation</option>
+                    <option value="other">Other (specify in notes)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Check-in only fields -->
+        <div id="checkin-fields" style="display:none;">
+            <div class="form-group">
+                <label>Returning Person</label>
+                <div id="checkin-person-info" style="padding: 10px 14px; background: var(--surface-hover); border-radius: 8px; font-size: 13px; color: var(--text-secondary);"></div>
+            </div>
+
+            <div class="form-group">
+                <label class="required">Condition on Return</label>
+                <div class="condition-group" id="condition-group">
+                    <label class="condition-option selected" onclick="selectCondition(this, 'good')">
+                        <input type="radio" name="condition" value="good" checked>
+                        <i class="fas fa-check-circle" style="color: #10b981;"></i> Good
+                    </label>
+                    <label class="condition-option" onclick="selectCondition(this, 'minor_wear')">
+                        <input type="radio" name="condition" value="minor_wear">
+                        <i class="fas fa-minus-circle" style="color: #f59e0b;"></i> Minor Wear
+                    </label>
+                    <label class="condition-option" onclick="selectCondition(this, 'damaged')">
+                        <input type="radio" name="condition" value="damaged">
+                        <i class="fas fa-times-circle" style="color: #ef4444;"></i> Damaged
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea id="checkout-notes" placeholder="Additional observations or notes..."></textarea>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-cancel" onclick="closeModal('checkout-modal')">Cancel</button>
+            <button class="btn btn-primary" id="checkout-save-btn" onclick="saveCheckout()">Check Out</button>
+        </div>
+    </div>
+</div>
+
+<!-- Report Modal -->
+<div class="modal-overlay" id="report-modal">
+    <div class="modal">
+        <h3>Report Missing / Stolen Equipment</h3>
+        <input type="hidden" id="report-item-id">
+        <div class="form-group">
+            <label>Item: <strong id="report-item-name"></strong></label>
+        </div>
+        <div class="form-group">
+            <label>Report Type</label>
+            <select id="report-type">
+                <option value="missing">Missing</option>
+                <option value="stolen">Stolen</option>
+                <option value="damaged">Damaged</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="report-quantity" min="1" value="1">
+        </div>
+        <div class="form-group">
+            <label>Details</label>
+            <textarea id="report-notes" placeholder="Describe what happened..."></textarea>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-cancel" onclick="closeModal('report-modal')">Cancel</button>
+            <button class="btn btn-danger" onclick="submitReport()">Submit Report</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const EQ_PERMS = {
+    manage: {{ has_perm('equipment.manage')|tojson }},
+    checkout: {{ has_perm('equipment.checkout')|tojson }},
+    checkin: {{ has_perm('equipment.checkin')|tojson }},
+    reports: {{ has_perm('equipment.reports')|tojson }},
+    export: {{ has_perm('equipment.export')|tojson }}
+};
+let equipmentData = { items: [], reports: [], active_checkouts: [] };
+
+function switchTab(tab) {
+    document.querySelectorAll('.onduty-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`.onduty-tab[data-tab="${tab}"]`)?.classList.add('active');
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
+
+    if (tab === 'dashboard') { window.history.replaceState(null, '', '/onduty/dashboard'); }
+    else if (tab === 'equipment') { window.history.replaceState(null, '', '/onduty/equipment'); }
+}
+
+async function loadEquipment() {
+    try {
+        const resp = await fetch('/api/equipment?_=' + Date.now(), { cache: 'no-store' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        equipmentData = await resp.json();
+        console.log('Equipment loaded:', equipmentData.items?.length, 'items,', equipmentData.active_checkouts?.length, 'active checkouts');
+        try { renderDashboard(); } catch (e) { console.error('renderDashboard error:', e); }
+        try { renderEquipmentTable(); } catch (e) { console.error('renderEquipmentTable error:', e); }
+        try { renderActiveCheckouts(); } catch (e) { console.error('renderActiveCheckouts error:', e); }
+        try { renderReports(); } catch (e) { console.error('renderReports error:', e); }
+        try { await loadHistory(); } catch (e) { console.error('loadHistory error:', e); }
+    } catch (e) {
+        console.error('loadEquipment failed:', e);
+        showToast('Failed to load equipment data', 'error');
+    }
+}
+
+function renderDashboard() {
+    const items = equipmentData.items || [];
+    const checkouts = equipmentData.active_checkouts || [];
+    const totalItems = items.reduce((s, i) => s + i.expected_quantity, 0);
+    const accounted = items.reduce((s, i) => s + i.current_quantity, 0);
+    const checkedOut = items.reduce((s, i) => s + i.checked_out, 0);
+    const missing = items.reduce((s, i) => s + i.missing, 0);
+
+    document.getElementById('stat-total').textContent = totalItems;
+    document.getElementById('stat-accounted').textContent = accounted;
+    document.getElementById('stat-active-checkouts').textContent = checkouts.length;
+    document.getElementById('stat-checked-out').textContent = checkedOut;
+    document.getElementById('stat-missing').textContent = missing;
+
+    // Update checkout count badge on tab
+    const badge = document.getElementById('checkout-count-badge');
+    if (checkouts.length > 0) {
+        badge.textContent = checkouts.length;
+        badge.style.display = 'inline';
+    } else {
+        badge.style.display = 'none';
+    }
+
+    // Recent activity loaded from history endpoint
+    const container = document.getElementById('dashboard-recent');
+    fetch('/api/equipment/history?_=' + Date.now(), { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+            const log = (data.history || []).slice(0, 10);
+            if (log.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color: var(--text-secondary); padding: 40px;">No recent activity</p>';
+                return;
+            }
+            container.innerHTML = log.map(entry => renderHistoryItem(entry)).join('');
+        })
+        .catch(() => {
+            container.innerHTML = '<p style="text-align:center; color: var(--text-secondary); padding: 40px;">No recent activity</p>';
+        });
+}
+
+function renderEquipmentTable() {
+    const tbody = document.getElementById('equipment-tbody');
+    const items = equipmentData.items || [];
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 40px; color: var(--text-secondary);">No equipment items yet. Click "Add Item" to get started.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(item => {
+        const pct = item.expected_quantity > 0 ? (item.current_quantity / item.expected_quantity) * 100 : 0;
+        const color = pct >= 90 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+        
+        let statusClass = 'status-good', statusText = 'All Good';
+        if (item.missing > 0) { statusClass = 'status-danger'; statusText = `${item.missing} Missing`; }
+        else if (item.checked_out > 0) { statusClass = 'status-checkout'; statusText = `${item.checked_out} Out`; }
+        else if (item.current_quantity < item.expected_quantity) { statusClass = 'status-warning'; statusText = 'Low'; }
+
+        return `<tr>
+            <td><strong>${esc(item.name)}</strong></td>
+            <td><span class="category-badge">${esc(item.category)}</span></td>
+            <td>${item.expected_quantity}</td>
+            <td>
+                <div class="qty-display">
+                    <span>${item.current_quantity}</span>
+                    <div class="qty-bar"><div class="qty-fill" style="width:${pct}%; background:${color}"></div></div>
+                </div>
+            </td>
+            <td>${item.checked_out}</td>
+            <td>${item.missing}</td>
+            <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+            <td>
+                <div class="action-btns">
+                    ${EQ_PERMS.checkout ? `<button class="action-btn checkout-btn" onclick="openCheckout('${item.id}','${esc(item.name)}','checkout')" title="Check Out"><i class="fas fa-sign-out-alt"></i></button>` : ''}
+                    ${EQ_PERMS.checkin ? `<button class="action-btn checkin-btn" onclick="openCheckout('${item.id}','${esc(item.name)}','checkin')" title="Check In"><i class="fas fa-sign-in-alt"></i></button>` : ''}
+                    ${EQ_PERMS.reports ? `<button class="action-btn warning" onclick="openReport('${item.id}','${esc(item.name)}')" title="Report Missing"><i class="fas fa-exclamation-triangle"></i></button>` : ''}
+                    ${EQ_PERMS.manage ? `<button class="action-btn" onclick="openEditModal('${item.id}')" title="Edit"><i class="fas fa-pen"></i></button>` : ''}
+                    ${EQ_PERMS.manage ? `<button class="action-btn danger" onclick="deleteItem('${item.id}')" title="Delete"><i class="fas fa-trash"></i></button>` : ''}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderActiveCheckouts() {
+    const container = document.getElementById('active-checkouts-list');
+    let checkouts = equipmentData.active_checkouts || [];
+    const search = (document.getElementById('checkout-search')?.value || '').toLowerCase().trim();
+    if (search) {
+        checkouts = checkouts.filter(co =>
+            (co.item_name || '').toLowerCase().includes(search) ||
+            (co.checked_out_to || '').toLowerCase().includes(search) ||
+            (co.person_id || '').toLowerCase().includes(search) ||
+            (co.purpose || '').toLowerCase().includes(search)
+        );
+    }
+
+    // Update badge
+    const allCheckouts = equipmentData.active_checkouts || [];
+    const badge = document.getElementById('checkout-count-badge');
+    if (allCheckouts.length > 0) { badge.textContent = allCheckouts.length; badge.style.display = 'inline'; }
+    else { badge.style.display = 'none'; }
+
+    if (checkouts.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding: 60px 20px; color: var(--text-secondary);">
+            <i class="fas fa-clipboard-check" style="font-size: 48px; opacity: 0.3; margin-bottom: 16px; display: block;"></i>
+            ${search ? 'No checkouts match your search.' : 'No equipment is currently checked out.'}
+        </div>`;
+        return;
+    }
+
+    container.innerHTML = checkouts.map(co => {
+        const ts = co.checked_out_at ? new Date(co.checked_out_at) : null;
+        const timeStr = ts ? ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+        const elapsed = ts ? getTimeElapsed(ts) : '';
+        const idTypeLabel = formatIdType(co.id_type);
+        const purposeLabel = formatPurpose(co.purpose);
+
+        return `<div class="checkout-card">
+            <div class="co-icon"><i class="fas fa-box-open"></i></div>
+            <div class="co-info">
+                <div class="co-header">
+                    <span class="co-name">${esc(co.item_name)}</span>
+                    <span class="co-qty">×${co.quantity}</span>
+                    ${co.person_id ? `<span class="id-badge"><i class="fas fa-id-card"></i> ${esc(idTypeLabel)}: ${esc(co.person_id)}</span>` : ''}
+                    ${co.purpose ? `<span class="purpose-badge"><i class="fas fa-tag"></i> ${esc(purposeLabel)}</span>` : ''}
+                </div>
+                <div class="co-details">
+                    <div class="co-detail">
+                        <span class="co-label">Checked Out To</span>
+                        <strong>${esc(co.checked_out_to)}</strong>
+                    </div>
+                    <div class="co-detail">
+                        <span class="co-label">Checked Out By (Worker)</span>
+                        <strong>${esc(co.checked_out_by)}</strong>
+                    </div>
+                    ${co.notes ? `<div class="co-detail"><span class="co-label">Notes</span><strong>${esc(co.notes)}</strong></div>` : ''}
+                </div>
+                <div class="co-time">
+                    <i class="fas fa-clock"></i> ${timeStr}${elapsed ? ` (${elapsed} ago)` : ''}
+                </div>
+            </div>
+            <div class="co-actions">
+                ${EQ_PERMS.checkin ? `<button class="btn btn-primary" style="padding: 8px 16px; font-size: 13px; white-space: nowrap;" onclick="openCheckinFromCheckout('${co.id}', '${co.item_id}', '${esc(co.item_name)}', ${co.quantity}, '${esc(co.checked_out_to)}', '${esc(co.person_id)}')">
+                    <i class="fas fa-sign-in-alt"></i> Check In
+                </button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function getTimeElapsed(date) {
+    const diff = Date.now() - date.getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ${hrs % 24}h`;
+}
+
+function formatIdType(type) {
+    const map = { drivers_license: "Driver's License", state_id: 'State ID', university_id: 'University ID', passport: 'Passport', military_id: 'Military ID', other: 'Other ID' };
+    return map[type] || type || 'ID';
+}
+
+function formatPurpose(purpose) {
+    const map = { personal_use: 'Personal Use', event: 'Event / Tournament', practice: 'Team Practice', class_project: 'Class Project', meeting: 'Meeting', other: 'Other' };
+    return map[purpose] || purpose || '';
+}
+
+function renderReports() {
+    const filter = document.getElementById('report-filter')?.value || 'all';
+    let reports = (equipmentData.reports || []).slice().sort((a, b) =>
+        (b.timestamp || '').localeCompare(a.timestamp || ''));
+    if (filter === 'unresolved') reports = reports.filter(r => !r.resolved);
+    else if (filter === 'resolved') reports = reports.filter(r => r.resolved);
+
+    const container = document.getElementById('reports-list');
+    if (reports.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color: var(--text-secondary); padding: 40px;">No reports found</p>';
+        return;
+    }
+    container.innerHTML = reports.map(r => `
+        <div class="report-card ${r.resolved ? 'resolved' : 'unresolved'}">
+            <div style="flex:1">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                    <strong>${esc(r.item_name)}</strong>
+                    <span class="report-type-badge type-${r.type}">${r.type.toUpperCase()}</span>
+                    <span style="color: var(--text-secondary); font-size:12px;">×${r.quantity}</span>
+                </div>
+                <div style="font-size:13px; color: var(--text-secondary);">
+                    Reported by ${esc(r.reported_by)} on ${new Date(r.timestamp).toLocaleDateString()}
+                    ${r.notes ? ` — ${esc(r.notes)}` : ''}
+                </div>
+                ${r.resolved ? `<div style="font-size:12px; color: #10b981; margin-top:4px;"><i class="fas fa-check-circle"></i> Resolved: ${esc(r.resolution || 'N/A')}</div>` : ''}
+            </div>
+            ${!r.resolved && EQ_PERMS.reports ? `<button class="btn btn-secondary" style="padding:8px 16px; font-size:13px;" onclick="resolveReport('${r.id}')"><i class="fas fa-check"></i> Resolve</button>` : ''}
+        </div>
+    `).join('');
+}
+
+async function loadHistory() {
+    try {
+        const resp = await fetch('/api/equipment/history?_=' + Date.now(), { cache: 'no-store' });
+        const data = await resp.json();
+        const container = document.getElementById('history-list');
+        const log = data.history || [];
+        if (log.length === 0) {
+            container.innerHTML = '<p style="text-align:center; color: var(--text-secondary); padding: 40px;">No activity yet</p>';
+            return;
+        }
+        container.innerHTML = log.map(entry => renderHistoryItem(entry)).join('');
+    } catch (e) {
+        console.error('Failed to load history:', e);
+    }
+}
+
+function renderHistoryItem(entry) {
+    const action = entry.action || '';
+    let iconClass = 'updated', icon = 'fa-pen';
+    if (action === 'added') { iconClass = 'added'; icon = 'fa-plus'; }
+    else if (action === 'checkout') { iconClass = 'checkout'; icon = 'fa-sign-out-alt'; }
+    else if (action === 'checkin') { iconClass = 'checkin'; icon = 'fa-sign-in-alt'; }
+    else if (action.startsWith('reported')) { iconClass = 'reported'; icon = 'fa-exclamation-triangle'; }
+    else if (action === 'removed') { iconClass = 'removed'; icon = 'fa-trash'; }
+    else if (action === 'report_resolved') { iconClass = 'resolved'; icon = 'fa-check-circle'; }
+
+    const ts = entry.timestamp ? new Date(entry.timestamp) : null;
+    const timeStr = ts ? ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+
+    let detailLine = entry.details || '';
+    if (entry.checked_out_to && action === 'checkout') {
+        detailLine = `To: ${esc(entry.checked_out_to)}` + (detailLine ? ` · ${detailLine}` : '');
+    }
+
+    return `<div class="history-item">
+        <div class="history-icon ${iconClass}"><i class="fas ${icon}"></i></div>
+        <div class="history-info">
+            <div class="action-text"><strong>${esc(entry.item_name || '')}</strong> — ${action.replace(/_/g, ' ')}${entry.quantity ? ` (×${entry.quantity})` : ''}</div>
+            <div class="action-meta">${esc(entry.performed_by || '')} · ${timeStr}${detailLine ? ` · ${detailLine}` : ''}</div>
+        </div>
+    </div>`;
+}
+
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
+// Modal helpers
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function openAddModal() {
+    document.getElementById('modal-title').textContent = 'Add Equipment';
+    document.getElementById('modal-item-id').value = '';
+    document.getElementById('modal-name').value = '';
+    document.getElementById('modal-category').value = 'other';
+    document.getElementById('modal-expected').value = '';
+    document.getElementById('modal-current').value = '';
+    document.getElementById('modal-notes').value = '';
+    openModal('item-modal');
+}
+
+function openEditModal(itemId) {
+    const item = (equipmentData.items || []).find(i => i.id === itemId);
+    if (!item) return;
+    document.getElementById('modal-title').textContent = 'Edit Equipment';
+    document.getElementById('modal-item-id').value = item.id;
+    document.getElementById('modal-name').value = item.name;
+    document.getElementById('modal-category').value = item.category;
+    document.getElementById('modal-expected').value = item.expected_quantity;
+    document.getElementById('modal-current').value = item.current_quantity;
+    document.getElementById('modal-notes').value = item.notes || '';
+    openModal('item-modal');
+}
+
+async function saveItem() {
+    const id = document.getElementById('modal-item-id').value;
+    const payload = {
+        name: document.getElementById('modal-name').value.trim(),
+        category: document.getElementById('modal-category').value,
+        expected_quantity: parseInt(document.getElementById('modal-expected').value) || 0,
+        current_quantity: parseInt(document.getElementById('modal-current').value) || 0,
+        notes: document.getElementById('modal-notes').value.trim()
+    };
+    if (!payload.name) { showToast('Item name is required', 'error'); return; }
+
+    try {
+        const url = id ? `/api/equipment/${id}` : '/api/equipment';
+        const method = id ? 'PUT' : 'POST';
+        const resp = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await resp.json();
+        if (data.success) {
+            closeModal('item-modal');
+            showToast(id ? 'Item updated' : 'Item added', 'success');
+            await loadEquipment();
+        } else {
+            showToast(data.message || 'Failed to save', 'error');
+        }
+    } catch (e) {
+        console.error('saveItem error:', e);
+        showToast('Network error', 'error');
+    }
+}
+
+async function deleteItem(itemId) {
+    if (!confirm('Are you sure you want to remove this item from inventory?')) return;
+    try {
+        const resp = await fetch(`/api/equipment/${itemId}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.success) { showToast('Item removed', 'success'); await loadEquipment(); }
+        else showToast(data.message || 'Failed', 'error');
+    } catch (e) { console.error('deleteItem error:', e); showToast('Network error', 'error'); }
+}
+
+function openCheckout(itemId, itemName, action) {
+    document.getElementById('checkout-item-id').value = itemId;
+    document.getElementById('checkout-action').value = action;
+    document.getElementById('checkout-record-id').value = '';
+    document.getElementById('checkout-item-name').textContent = itemName;
+    document.getElementById('checkout-quantity').value = 1;
+    document.getElementById('checkout-notes').value = '';
+
+    const isCheckout = action === 'checkout';
+    document.getElementById('checkout-modal-title').innerHTML = isCheckout
+        ? '<i class="fas fa-sign-out-alt" style="color:#3b82f6;"></i> Check Out Equipment'
+        : '<i class="fas fa-sign-in-alt" style="color:#10b981;"></i> Check In Equipment';
+    document.getElementById('checkout-save-btn').textContent = isCheckout ? 'Check Out' : 'Check In';
+    document.getElementById('checkout-save-btn').style.background = isCheckout
+        ? 'linear-gradient(135deg, #3b82f6, #2563eb)'
+        : 'linear-gradient(135deg, #10b981, #059669)';
+
+    // Show/hide checkout vs checkin fields
+    document.getElementById('checkout-fields').style.display = isCheckout ? 'block' : 'none';
+    document.getElementById('checkin-fields').style.display = isCheckout ? 'none' : 'block';
+
+    if (isCheckout) {
+        document.getElementById('checkout-to').value = '';
+        document.getElementById('checkout-person-id').value = '';
+        document.getElementById('checkout-id-type').value = 'university_id';
+        document.getElementById('checkout-purpose').value = '';
+    } else {
+        // For generic check-in (not from a specific checkout record), show basic info
+        document.getElementById('checkin-person-info').innerHTML = '<em>Checking in from equipment table — no specific checkout record linked.</em>';
+        resetConditionGroup();
+    }
+
+    openModal('checkout-modal');
+}
+
+function openCheckinFromCheckout(checkoutId, itemId, itemName, quantity, personName, personId) {
+    document.getElementById('checkout-item-id').value = itemId;
+    document.getElementById('checkout-action').value = 'checkin';
+    document.getElementById('checkout-record-id').value = checkoutId;
+    document.getElementById('checkout-item-name').textContent = itemName;
+    document.getElementById('checkout-quantity').value = quantity;
+    document.getElementById('checkout-notes').value = '';
+
+    document.getElementById('checkout-modal-title').innerHTML = '<i class="fas fa-sign-in-alt" style="color:#10b981;"></i> Check In Equipment';
+    document.getElementById('checkout-save-btn').textContent = 'Check In';
+    document.getElementById('checkout-save-btn').style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+    document.getElementById('checkout-fields').style.display = 'none';
+    document.getElementById('checkin-fields').style.display = 'block';
+    document.getElementById('checkin-person-info').innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px;">
+            <i class="fas fa-user" style="color: #3b82f6;"></i>
+            <strong style="color: var(--text-primary);">${esc(personName)}</strong>
+            ${personId ? `<span class="id-badge"><i class="fas fa-id-card"></i> ${esc(personId)}</span>` : ''}
+        </div>
+    `;
+
+    resetConditionGroup();
+    openModal('checkout-modal');
+}
+
+function selectCondition(el, value) {
+    document.querySelectorAll('#condition-group .condition-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    el.querySelector('input').checked = true;
+}
+
+function resetConditionGroup() {
+    document.querySelectorAll('#condition-group .condition-option').forEach(o => o.classList.remove('selected'));
+    const goodOption = document.querySelector('#condition-group .condition-option:first-child');
+    if (goodOption) {
+        goodOption.classList.add('selected');
+        goodOption.querySelector('input').checked = true;
+    }
+}
+
+async function saveCheckout() {
+    const itemId = document.getElementById('checkout-item-id').value;
+    const action = document.getElementById('checkout-action').value;
+    const isCheckout = action === 'checkout';
+
+    const payload = {
+        quantity: parseInt(document.getElementById('checkout-quantity').value) || 1,
+        notes: document.getElementById('checkout-notes').value.trim()
+    };
+
+    if (isCheckout) {
+        payload.checked_out_to = document.getElementById('checkout-to').value.trim();
+        payload.person_id = document.getElementById('checkout-person-id').value.trim();
+        payload.id_type = document.getElementById('checkout-id-type').value;
+        payload.purpose = document.getElementById('checkout-purpose').value;
+
+        if (!payload.checked_out_to) {
+            showToast('Full name of person is required', 'error');
+            return;
+        }
+        if (!payload.person_id) {
+            showToast('ID number is required for checkout', 'error');
+            return;
+        }
+        if (!payload.purpose) {
+            showToast('Please select a purpose', 'error');
+            return;
+        }
+    } else {
+        const checkoutId = document.getElementById('checkout-record-id').value;
+        if (checkoutId) payload.checkout_id = checkoutId;
+        const selectedCondition = document.querySelector('#condition-group input[name="condition"]:checked');
+        payload.condition = selectedCondition ? selectedCondition.value : 'good';
+    }
+
+    try {
+        const resp = await fetch(`/api/equipment/${itemId}/${action}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await resp.json();
+        if (data.success) {
+            closeModal('checkout-modal');
+            showToast(isCheckout ? 'Equipment checked out' : 'Equipment checked in', 'success');
+            await loadEquipment();
+        } else showToast(data.message || 'Failed', 'error');
+    } catch (e) { console.error('saveCheckout error:', e); showToast('Network error', 'error'); }
+}
+
+function openReport(itemId, itemName) {
+    document.getElementById('report-item-id').value = itemId;
+    document.getElementById('report-item-name').textContent = itemName;
+    document.getElementById('report-type').value = 'missing';
+    document.getElementById('report-quantity').value = 1;
+    document.getElementById('report-notes').value = '';
+    openModal('report-modal');
+}
+
+async function submitReport() {
+    const payload = {
+        type: document.getElementById('report-type').value,
+        quantity: parseInt(document.getElementById('report-quantity').value) || 1,
+        notes: document.getElementById('report-notes').value.trim()
+    };
+    const itemId = document.getElementById('report-item-id').value;
+    try {
+        const resp = await fetch(`/api/equipment/${itemId}/report`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await resp.json();
+        if (data.success) {
+            closeModal('report-modal');
+            showToast('Report submitted', 'success');
+            await loadEquipment();
+        } else showToast(data.message || 'Failed', 'error');
+    } catch (e) { console.error('submitReport error:', e); showToast('Network error', 'error'); }
+}
+
+async function resolveReport(reportId) {
+    const resolution = prompt('Enter resolution notes (e.g. "Found in storage room"):');
+    if (resolution === null) return;
+    const recovered = confirm('Was the equipment recovered?');
+    try {
+        const resp = await fetch(`/api/equipment/reports/${reportId}/resolve`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ resolution, recovered })
+        });
+        const data = await resp.json();
+        if (data.success) { showToast('Report resolved', 'success'); await loadEquipment(); }
+        else showToast(data.message || 'Failed', 'error');
+    } catch (e) { console.error('resolveReport error:', e); showToast('Network error', 'error'); }
+}
+
+function exportInventory() {
+    window.open('/api/equipment/export', '_blank');
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
+});
+
+document.addEventListener('DOMContentLoaded', loadEquipment);
+</script>
+{% endblock %}

@@ -1,0 +1,4164 @@
+{% extends "base.html" %}
+
+{% block title %}Shift Management{% endblock %}
+
+{% block page_title %}Shift Management{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7"></script>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+    /* Shift Management Specific Styles */
+    .shift-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .shift-tabs {
+        display: flex;
+        gap: 8px;
+        background: var(--surface);
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }
+
+    .shift-tab {
+        padding: 10px 20px;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .shift-tab:hover {
+        color: var(--text-primary);
+        background: rgba(245, 158, 11, 0.1);
+    }
+
+    .shift-tab.active {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+    }
+
+    .shift-tab .count {
+        background: rgba(255,255,255,0.2);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+
+    .shift-tab.active .count {
+        background: rgba(255,255,255,0.3);
+    }
+
+    /* Schedule Cards */
+    .schedule-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+        margin-bottom: 32px;
+    }
+
+    .schedule-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .schedule-card:hover {
+        border-color: #f59e0b;
+        box-shadow: 0 8px 30px rgba(245, 158, 11, 0.2);
+        transform: translateY(-4px);
+    }
+
+    .schedule-card-header {
+        padding: 20px;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .schedule-card-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 100%;
+        height: 200%;
+        background: rgba(255,255,255,0.1);
+        transform: rotate(30deg);
+    }
+
+    .schedule-card-header h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 4px;
+        position: relative;
+    }
+
+    .schedule-card-header .date-range {
+        font-size: 13px;
+        color: rgba(255,255,255,0.8);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+    }
+
+    .schedule-card-body {
+        padding: 20px;
+    }
+
+    .schedule-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: var(--background-secondary);
+        border-radius: 10px;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.2s;
+        margin-bottom: 16px;
+    }
+
+    .schedule-link:hover {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+
+    .schedule-link i {
+        color: #f59e0b;
+    }
+
+    .schedule-options {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+
+    .offer-toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .offer-toggle span {
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    /* Shift Offer Cards */
+    .offer-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 20px;
+    }
+
+    .offer-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .offer-card:hover {
+        border-color: var(--success);
+        box-shadow: 0 8px 30px rgba(16, 185, 129, 0.15);
+    }
+
+    .offer-card.taken {
+        opacity: 0.6;
+        border-color: var(--text-muted);
+    }
+
+    .offer-card-header {
+        padding: 16px 20px;
+        background: rgba(16, 185, 129, 0.1);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .offer-card-header.available {
+        background: rgba(16, 185, 129, 0.15);
+    }
+
+    .offer-card-header.taken {
+        background: rgba(107, 114, 128, 0.15);
+    }
+
+    .offer-id {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--background-secondary);
+        padding: 4px 10px;
+        border-radius: 6px;
+    }
+
+    .offer-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .offer-status.available {
+        color: var(--success);
+    }
+
+    .offer-status.taken {
+        color: var(--text-muted);
+    }
+
+    .offer-card-body {
+        padding: 20px;
+    }
+
+    .offer-info-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+
+    .offer-info-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .offer-info-icon {
+        width: 32px;
+        height: 32px;
+        background: var(--background-secondary);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-light);
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .offer-info-content {
+        flex: 1;
+    }
+
+    .offer-info-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+
+    .offer-info-value {
+        font-size: 14px;
+        color: var(--text-primary);
+    }
+
+    .offer-card-footer {
+        padding: 16px 20px;
+        background: var(--background-secondary);
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .offer-posted {
+        font-size: 12px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* Trade Request Cards */
+    .trade-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .trade-card:hover {
+        border-color: var(--info);
+        box-shadow: 0 8px 30px rgba(59, 130, 246, 0.15);
+    }
+
+    .trade-card-header {
+        padding: 16px 20px;
+        background: rgba(59, 130, 246, 0.1);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .trade-users {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .trade-user {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .trade-user-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--gradient-1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 12px;
+    }
+
+    .trade-arrow {
+        color: var(--info);
+        font-size: 18px;
+    }
+
+    .trade-status {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .trade-status.pending {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--warning);
+    }
+
+    .trade-status.approved {
+        background: rgba(16, 185, 129, 0.15);
+        color: var(--success);
+    }
+
+    .trade-status.declined {
+        background: rgba(239, 68, 68, 0.15);
+        color: var(--danger);
+    }
+
+    .trade-status.awaiting {
+        background: rgba(59, 130, 246, 0.15);
+        color: var(--info);
+    }
+
+    .trade-card-body {
+        padding: 20px;
+    }
+
+    .trade-shifts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .trade-shift-box {
+        padding: 16px;
+        background: var(--background-secondary);
+        border-radius: 12px;
+    }
+
+    .trade-shift-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .trade-shift-value {
+        font-size: 14px;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    .trade-reason {
+        margin-top: 16px;
+        padding: 12px 16px;
+        background: var(--background-secondary);
+        border-radius: 10px;
+        border-left: 3px solid var(--info);
+    }
+
+    .trade-reason-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+
+    .trade-reason-text {
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    .trade-card-footer {
+        padding: 16px 20px;
+        background: var(--background-secondary);
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    /* Shift Log Timeline */
+    .log-timeline {
+        position: relative;
+    }
+
+    .log-entry {
+        display: flex;
+        gap: 20px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border);
+        position: relative;
+    }
+
+    .log-entry:last-child {
+        border-bottom: none;
+    }
+
+    .log-time {
+        width: 100px;
+        flex-shrink: 0;
+        text-align: right;
+    }
+
+    .log-time-date {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .log-time-hour {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+
+    .log-indicator {
+        width: 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .log-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--border);
+        position: relative;
+        z-index: 1;
+    }
+
+    .log-dot.start {
+        background: var(--success);
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    }
+
+    .log-dot.end {
+        background: var(--danger);
+        box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    }
+
+    .log-line {
+        flex: 1;
+        width: 2px;
+        background: var(--border);
+        margin-top: 4px;
+    }
+
+    .log-content {
+        flex: 1;
+    }
+
+    .log-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+    }
+
+    .log-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: var(--gradient-1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .log-user-name {
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .log-action {
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .log-action.start {
+        background: rgba(16, 185, 129, 0.15);
+        color: var(--success);
+    }
+
+    .log-action.end {
+        background: rgba(239, 68, 68, 0.15);
+        color: var(--danger);
+    }
+
+    .log-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    .log-detail {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .log-detail i {
+        color: var(--text-muted);
+    }
+
+    /* Settings Section */
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+
+    .settings-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+    }
+
+    .settings-card h4 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .settings-card h4 i {
+        color: var(--primary-light);
+    }
+
+    .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .setting-row:last-child {
+        border-bottom: none;
+    }
+
+    .setting-label {
+        font-size: 14px;
+        color: var(--text-secondary);
+    }
+
+    /* Time Off Section */
+    .timeoff-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+    }
+
+    .timeoff-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.3s;
+    }
+
+    .timeoff-card:hover {
+        border-color: var(--primary);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .timeoff-card.approved {
+        border-color: var(--success);
+    }
+
+    .timeoff-card.declined {
+        border-color: var(--danger);
+        opacity: 0.7;
+    }
+
+    .timeoff-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .timeoff-dates {
+        font-weight: 600;
+        font-size: 15px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .timeoff-dates i {
+        color: var(--primary-light);
+    }
+
+    .timeoff-status {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .timeoff-status.status-pending {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+
+    .timeoff-status.status-approved {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .timeoff-status.status-declined {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .timeoff-body p {
+        margin-bottom: 8px;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .timeoff-body p i {
+        color: var(--text-muted);
+        margin-top: 3px;
+    }
+
+    .timeoff-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+
+    .timeoff-actions .btn {
+        flex: 1;
+    }
+
+    /* Workers Table */
+    .workers-table-container {
+        overflow-x: auto;
+    }
+
+    .worker-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .worker-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: white;
+        font-size: 16px;
+        overflow: hidden;
+    }
+
+    .worker-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .status-badge.status-active {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .status-badge.status-inactive {
+        background: rgba(107, 114, 128, 0.15);
+        color: #9ca3af;
+    }
+
+    /* Quick Stats */
+    .shift-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .shift-stat {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.2s;
+    }
+
+    .shift-stat:hover {
+        border-color: var(--primary);
+        transform: translateY(-2px);
+    }
+
+    .shift-stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+    }
+
+    .shift-stat-icon.purple {
+        background: rgba(124, 58, 237, 0.15);
+        color: var(--primary-light);
+    }
+
+    .shift-stat-icon.green {
+        background: rgba(16, 185, 129, 0.15);
+        color: var(--success);
+    }
+
+    .shift-stat-icon.blue {
+        background: rgba(59, 130, 246, 0.15);
+        color: var(--info);
+    }
+
+    .shift-stat-icon.gold {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--warning);
+    }
+
+    /* LionShiftGG Calendar Styles */
+    .calendar-day-header {
+        text-align: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding: 8px 4px;
+        text-transform: uppercase;
+    }
+    
+    .calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s;
+        position: relative;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+    }
+    
+    .calendar-day:hover:not(.disabled):not(.empty) {
+        background: rgba(245, 158, 11, 0.2);
+    }
+    
+    .calendar-day.today {
+        font-weight: 700;
+        color: #f59e0b;
+    }
+    
+    .calendar-day.today::after {
+        content: '';
+        position: absolute;
+        bottom: 4px;
+        width: 4px;
+        height: 4px;
+        background: #f59e0b;
+        border-radius: 50%;
+    }
+    
+    .calendar-day.start-date {
+        background: #f59e0b !important;
+        color: white !important;
+        font-weight: 600;
+    }
+    
+    .calendar-day.end-date {
+        background: #d97706 !important;
+        color: white !important;
+        font-weight: 600;
+    }
+    
+    .calendar-day.in-range {
+        background: rgba(245, 158, 11, 0.25);
+        border-radius: 0;
+    }
+    
+    .calendar-day.in-range.start-date {
+        border-radius: 8px 0 0 8px;
+    }
+    
+    .calendar-day.in-range.end-date {
+        border-radius: 0 8px 8px 0;
+    }
+    
+    .calendar-day.disabled {
+        color: var(--text-muted);
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+    
+    .calendar-day.empty {
+        cursor: default;
+    }
+
+    /* LionShiftGG Accent Colors */
+    .lionshift-accent {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
+    .lionshift-text {
+        color: #f59e0b;
+    }
+
+    .shift-stat-info {
+        flex: 1;
+    }
+
+    .shift-stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+
+    .shift-stat-label {
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    /* Modal Styles */
+    .modal-wide {
+        max-width: 600px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .schedule-preview {
+        margin-top: 16px;
+        padding: 16px;
+        background: var(--background-secondary);
+        border-radius: 10px;
+        border-left: 3px solid #f59e0b;
+    }
+
+    .schedule-preview h5 {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+    }
+
+    .schedule-preview p {
+        font-size: 14px;
+        color: var(--text-primary);
+    }
+
+    /* LionShiftGG Dashboard Header */
+    .lionshift-header {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .lionshift-header-icon {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .lionshift-header-icon img {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+    }
+
+    .lionshift-header-content h2 {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+    }
+
+    .lionshift-header-content p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin: 0;
+    }
+
+    /* ============ INTERACTIVE CALENDAR STYLES ============ */
+    .calendar-dashboard {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 24px;
+        margin-bottom: 32px;
+    }
+
+    @media (max-width: 1200px) {
+        .calendar-dashboard {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .calendar-container {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .calendar-header {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        padding: 24px 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .calendar-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -20%;
+        width: 60%;
+        height: 200%;
+        background: rgba(255, 255, 255, 0.08);
+        transform: rotate(20deg);
+    }
+
+    .calendar-nav {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .calendar-nav-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        font-size: 16px;
+    }
+
+    .calendar-nav-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(1.05);
+    }
+
+    .calendar-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .calendar-today-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        z-index: 1;
+    }
+
+    .calendar-today-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    .calendar-body {
+        padding: 24px;
+    }
+
+    .calendar-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+        margin-bottom: 12px;
+    }
+
+    .calendar-weekday {
+        text-align: center;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 12px 0;
+    }
+
+    .calendar-days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+    }
+
+    .calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background: var(--background-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        border: 2px solid transparent;
+    }
+
+    .calendar-day:hover {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--text-primary);
+        transform: scale(1.02);
+    }
+
+    .calendar-day.other-month {
+        opacity: 0.3;
+        background: transparent;
+    }
+
+    .calendar-day.today {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.15));
+        color: #f59e0b;
+        font-weight: 700;
+        border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .calendar-day.has-schedule {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
+        color: #10b981;
+        border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .calendar-day.has-schedule.today {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        font-weight: 700;
+        border-color: #f59e0b;
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+    }
+
+    .calendar-day.active-schedule {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        font-weight: 700;
+        border-color: #10b981;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+    }
+
+    .calendar-day .schedule-dot {
+        position: absolute;
+        bottom: 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+    }
+
+    .calendar-day.today .schedule-dot,
+    .calendar-day.active-schedule .schedule-dot {
+        background: white;
+    }
+
+    /* Active Schedule Sidebar */
+    .schedule-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .active-schedule-card {
+        background: linear-gradient(145deg, #12161c 0%, #0d1117 100%);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: 20px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .active-schedule-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #10b981, #34d399, #10b981);
+    }
+
+    .active-schedule-header {
+        padding: 20px 24px;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), transparent);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .active-schedule-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #10b981;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+    }
+
+    .active-schedule-label .pulse-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        animation: pulse-active 2s infinite;
+    }
+
+    @keyframes pulse-active {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+        50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    }
+
+    .active-schedule-name {
+        font-size: 20px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 8px;
+    }
+
+    .active-schedule-dates {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--text-secondary);
+    }
+
+    .active-schedule-dates i {
+        color: #10b981;
+    }
+
+    .active-schedule-body {
+        padding: 20px 24px;
+    }
+
+    .active-schedule-progress {
+        margin-bottom: 20px;
+    }
+
+    .progress-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+    }
+
+    .progress-bar-container {
+        height: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #10b981, #34d399);
+        border-radius: 10px;
+        transition: width 0.5s ease;
+    }
+
+    .active-schedule-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    .schedule-action-btn {
+        flex: 1;
+        padding: 14px;
+        border-radius: 12px;
+        border: none;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.2s;
+    }
+
+    .schedule-action-btn.primary {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+    }
+
+    .schedule-action-btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    }
+
+    .schedule-action-btn.secondary {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-secondary);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .schedule-action-btn.secondary:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+    }
+
+    /* Quick Stats Card */
+    .quick-stats-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+    }
+
+    .quick-stats-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .quick-stats-title i {
+        color: #f59e0b;
+    }
+
+    .quick-stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .quick-stat-item {
+        background: var(--background-secondary);
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        transition: all 0.2s;
+    }
+
+    .quick-stat-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .quick-stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+
+    .quick-stat-value.orange { color: #f59e0b; }
+    .quick-stat-value.green { color: #10b981; }
+    .quick-stat-value.blue { color: #3b82f6; }
+    .quick-stat-value.purple { color: #8b5cf6; }
+
+    .quick-stat-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Schedule Legend */
+    .calendar-legend {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        padding: 16px 24px;
+        background: var(--background-secondary);
+        border-top: 1px solid var(--border);
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+    }
+
+    .legend-dot.today {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+
+    .legend-dot.schedule {
+        background: linear-gradient(135deg, #10b981, #059669);
+    }
+
+    .legend-dot.active {
+        background: linear-gradient(135deg, #10b981, #059669);
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3);
+    }
+
+    /* No Schedule State */
+    .no-schedule-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px;
+        text-align: center;
+    }
+
+    .no-schedule-icon {
+        width: 64px;
+        height: 64px;
+        background: rgba(107, 114, 128, 0.1);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+        font-size: 24px;
+        color: var(--text-muted);
+    }
+
+    .no-schedule-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+    }
+
+    .no-schedule-text {
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- LionShiftGG Dashboard Header -->
+<div class="lionshift-header">
+    <div class="lionshift-header-icon">
+        <img src="{{ url_for('static', filename='images/LionShiftGGLogo.png') }}" alt="LionShiftGG" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-clock\' style=\'font-size: 28px; color: white;\'></i>';">
+    </div>
+    <div class="lionshift-header-content">
+        <h2>🦁 LionShiftGG Shift Management</h2>
+        <p>Manage student worker schedules, shift offers, trades, and time off requests</p>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="shift-stats">
+    <div class="shift-stat" style="border-left: 3px solid #f59e0b;">
+        <div class="shift-stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+            <i class="fas fa-calendar-alt"></i>
+        </div>
+        <div class="shift-stat-info">
+            <div class="shift-stat-value" id="stat-schedules">0</div>
+            <div class="shift-stat-label">Active Schedules</div>
+        </div>
+    </div>
+    <div class="shift-stat" style="border-left: 3px solid #10b981;">
+        <div class="shift-stat-icon green">
+            <i class="fas fa-hand-paper"></i>
+        </div>
+        <div class="shift-stat-info">
+            <div class="shift-stat-value" id="stat-available">0</div>
+            <div class="shift-stat-label">Available Shifts</div>
+        </div>
+    </div>
+    <div class="shift-stat" style="border-left: 3px solid #3b82f6;">
+        <div class="shift-stat-icon blue">
+            <i class="fas fa-exchange-alt"></i>
+        </div>
+        <div class="shift-stat-info">
+            <div class="shift-stat-value" id="stat-trades">0</div>
+            <div class="shift-stat-label">Pending Trades</div>
+        </div>
+    </div>
+    <div class="shift-stat" style="border-left: 3px solid #d97706;">
+        <div class="shift-stat-icon gold">
+            <i class="fas fa-clock"></i>
+        </div>
+        <div class="shift-stat-info">
+            <div class="shift-stat-value" id="stat-logs">0</div>
+            <div class="shift-stat-label">Shift Logs Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="shift-header">
+    <div class="shift-tabs">
+        <button class="shift-tab {% if active_tab == 'schedules' or active_tab == 'dashboard' %}active{% endif %}" data-tab="schedules">
+            <i class="fas fa-calendar-alt"></i>
+            Schedules
+            <span class="count" id="tab-count-schedules">0</span>
+        </button>
+        <button class="shift-tab {% if active_tab == 'offers' %}active{% endif %}" data-tab="offers">
+            <i class="fas fa-hand-paper"></i>
+            Shift Offers
+            <span class="count" id="tab-count-offers">0</span>
+        </button>
+        <button class="shift-tab {% if active_tab == 'trades' %}active{% endif %}" data-tab="trades">
+            <i class="fas fa-exchange-alt"></i>
+            Trade Requests
+            <span class="count" id="tab-count-trades">0</span>
+        </button>
+        <button class="shift-tab {% if active_tab == 'timeoff' %}active{% endif %}" data-tab="timeoff">
+            <i class="fas fa-calendar-minus"></i>
+            Time Off
+            <span class="count" id="tab-count-timeoff">0</span>
+        </button>
+        <button class="shift-tab {% if active_tab == 'workers' %}active{% endif %}" data-tab="workers">
+            <i class="fas fa-user-tie"></i>
+            Workers
+            <span class="count" id="tab-count-workers">0</span>
+        </button>
+        <button class="shift-tab {% if active_tab == 'logs' %}active{% endif %}" data-tab="logs">
+            <i class="fas fa-history"></i>
+            Shift Logs
+        </button>
+        <button class="shift-tab {% if active_tab == 'settings' %}active{% endif %}" data-tab="settings">
+            <i class="fas fa-cog"></i>
+            Settings
+        </button>
+    </div>
+    <div class="header-actions">
+        <button class="btn" onclick="openAddScheduleModal()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none;">
+            <i class="fas fa-plus"></i>
+            Add Schedule
+        </button>
+    </div>
+</div>
+
+<!-- Tab Content: Schedules -->
+<div class="tab-content {% if active_tab == 'schedules' or active_tab == 'dashboard' %}active{% endif %}" id="tab-schedules">
+    <!-- Interactive Calendar Dashboard -->
+    <div class="calendar-dashboard">
+        <!-- Main Calendar -->
+        <div class="calendar-container">
+            <div class="calendar-header">
+                <div class="calendar-nav">
+                    <button class="calendar-nav-btn" onclick="navigateCalendar(-1)" title="Previous Month">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <span class="calendar-title" id="calendar-month-year">January 2025</span>
+                    <button class="calendar-nav-btn" onclick="navigateCalendar(1)" title="Next Month">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                <button class="calendar-today-btn" onclick="goToToday()">
+                    <i class="fas fa-calendar-day"></i> Today
+                </button>
+            </div>
+            <div class="calendar-body">
+                <div class="calendar-weekdays">
+                    <div class="calendar-weekday">Sun</div>
+                    <div class="calendar-weekday">Mon</div>
+                    <div class="calendar-weekday">Tue</div>
+                    <div class="calendar-weekday">Wed</div>
+                    <div class="calendar-weekday">Thu</div>
+                    <div class="calendar-weekday">Fri</div>
+                    <div class="calendar-weekday">Sat</div>
+                </div>
+                <div class="calendar-days" id="calendar-days">
+                    <!-- Days will be generated by JavaScript -->
+                </div>
+            </div>
+            <div class="calendar-legend">
+                <div class="legend-item">
+                    <div class="legend-dot today"></div>
+                    <span>Today</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot schedule"></div>
+                    <span>Has Schedule</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot active"></div>
+                    <span>Active Schedule</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule Sidebar -->
+        <div class="schedule-sidebar">
+            <!-- Active Schedule Card -->
+            <div class="active-schedule-card" id="active-schedule-card">
+                <div class="active-schedule-header">
+                    <div class="active-schedule-label">
+                        <div class="pulse-dot"></div>
+                        Current Active Schedule
+                    </div>
+                    <div class="active-schedule-name" id="active-schedule-name">Loading...</div>
+                    <div class="active-schedule-dates">
+                        <i class="fas fa-calendar"></i>
+                        <span id="active-schedule-dates">--</span>
+                    </div>
+                </div>
+                <div class="active-schedule-body">
+                    <div class="active-schedule-progress">
+                        <div class="progress-label">
+                            <span>Schedule Progress</span>
+                            <span id="active-schedule-progress-text">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="active-schedule-progress" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="active-schedule-actions">
+                        <button class="schedule-action-btn primary" onclick="viewActiveSchedule()">
+                            <i class="fas fa-eye"></i>
+                            View Schedule
+                        </button>
+                        <button class="schedule-action-btn secondary" onclick="openAddScheduleModal()">
+                            <i class="fas fa-plus"></i>
+                            New
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- No Active Schedule State -->
+            <div class="no-schedule-card" id="no-schedule-card" style="display: none;">
+                <div class="no-schedule-icon">
+                    <i class="fas fa-calendar-times"></i>
+                </div>
+                <div class="no-schedule-title">No Active Schedule</div>
+                <div class="no-schedule-text">No schedule is currently active. Add a new schedule to get started.</div>
+                <button class="schedule-action-btn primary" onclick="openAddScheduleModal()" style="margin-top: 16px;">
+                    <i class="fas fa-plus"></i>
+                    Add Schedule
+                </button>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats-card">
+                <div class="quick-stats-title">
+                    <i class="fas fa-chart-bar"></i>
+                    Quick Overview
+                </div>
+                <div class="quick-stats-grid">
+                    <div class="quick-stat-item">
+                        <div class="quick-stat-value orange" id="sidebar-stat-schedules">0</div>
+                        <div class="quick-stat-label">Schedules</div>
+                    </div>
+                    <div class="quick-stat-item">
+                        <div class="quick-stat-value green" id="sidebar-stat-offers">0</div>
+                        <div class="quick-stat-label">Offers</div>
+                    </div>
+                    <div class="quick-stat-item">
+                        <div class="quick-stat-value blue" id="sidebar-stat-trades">0</div>
+                        <div class="quick-stat-label">Trades</div>
+                    </div>
+                    <div class="quick-stat-item">
+                        <div class="quick-stat-value purple" id="sidebar-stat-workers">0</div>
+                        <div class="quick-stat-label">Workers</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Schedules List -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-list"></i>
+                All Schedules
+            </h3>
+            <button class="btn btn-sm btn-secondary" onclick="refreshSchedules()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="schedule-grid" id="schedules-grid">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading schedules...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Shift Offers -->
+<div class="tab-content {% if active_tab == 'offers' %}active{% endif %}" id="tab-offers">
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-hand-paper"></i>
+                Available Shift Offers
+            </h3>
+            <div class="flex items-center gap-2">
+                <select class="form-select" id="offer-filter" style="width: auto; padding: 8px 32px 8px 12px;">
+                    <option value="all">All Offers</option>
+                    <option value="available">Available Only</option>
+                    <option value="taken">Taken Only</option>
+                </select>
+                <button class="btn btn-sm btn-secondary" onclick="refreshOffers()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="offer-grid" id="offers-grid">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading shift offers...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Trade Requests -->
+<div class="tab-content {% if active_tab == 'trades' %}active{% endif %}" id="tab-trades">
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-exchange-alt"></i>
+                Shift Trade Requests
+            </h3>
+            <div class="flex items-center gap-2">
+                <select class="form-select" id="trade-filter" style="width: auto; padding: 8px 32px 8px 12px;">
+                    <option value="all">All Trades</option>
+                    <option value="pending">Pending Approval</option>
+                    <option value="awaiting">Awaiting Response</option>
+                    <option value="approved">Approved</option>
+                    <option value="declined">Declined</option>
+                </select>
+                <button class="btn btn-sm btn-secondary" onclick="refreshTrades()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="offer-grid" id="trades-grid">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading trade requests...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Shift Logs -->
+<div class="tab-content {% if active_tab == 'logs' %}active{% endif %}" id="tab-logs">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-history"></i>
+                Shift Activity Log
+            </h3>
+            <div class="flex items-center gap-2">
+                <input type="date" class="form-input" id="log-date-filter" style="width: auto;">
+                <button class="btn btn-sm btn-secondary" onclick="refreshLogs()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="log-timeline" id="logs-timeline">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading shift logs...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Settings -->
+<div class="tab-content {% if active_tab == 'settings' %}active{% endif %}" id="tab-settings">
+    <div class="settings-grid">
+        <div class="settings-card">
+            <h4><i class="fas fa-bell" style="color: #f59e0b;"></i> Notifications</h4>
+            <div class="setting-row">
+                <span class="setting-label">Notify on new shift offers</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="setting-notify-offers" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Notify on trade requests</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="setting-notify-trades" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Notify director on changes</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="setting-notify-director" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="settings-card">
+            <h4><i class="fas fa-link" style="color: #f59e0b;"></i> External Links</h4>
+            <div class="form-group">
+                <label class="form-label">Purdue WebClock URL</label>
+                <input type="url" class="form-input" id="setting-webclock-url" placeholder="https://one.purdue.edu/...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Opening Form URL</label>
+                <input type="url" class="form-input" id="setting-opening-form" placeholder="https://forms.microsoft.com/...">
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Closing Form URL</label>
+                <input type="url" class="form-input" id="setting-closing-form" placeholder="https://forms.microsoft.com/...">
+            </div>
+        </div>
+
+        <div class="settings-card">
+            <h4><i class="fas fa-hashtag" style="color: #f59e0b;"></i> Discord Integration</h4>
+            <div class="form-group">
+                <label class="form-label">Shift Log Channel ID</label>
+                <input type="text" class="form-input" id="setting-log-channel" placeholder="Channel ID">
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Student Worker Role ID</label>
+                <input type="text" class="form-input" id="setting-worker-role" placeholder="Role ID">
+            </div>
+            <button class="btn mt-2" onclick="saveShiftSettings()" style="width: 100%; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none;">
+                <i class="fas fa-save"></i>
+                Save Settings
+            </button>
+        </div>
+
+        <div class="settings-card" style="border: 1px solid rgba(245, 158, 11, 0.3);">
+            <h4><i class="fas fa-robot" style="color: #f59e0b;"></i> LionShiftGG Bot Status</h4>
+            <div class="setting-row">
+                <span class="setting-label">Bot Status</span>
+                <div class="bot-status" id="shift-bot-status">
+                    <div class="status-dot"></div>
+                    <span>Checking...</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">Last Sync</span>
+                <span class="text-secondary" id="shift-bot-sync">--</span>
+            </div>
+            <button class="btn btn-secondary mt-2" onclick="syncShiftBot()" style="width: 100%;">
+                <i class="fas fa-sync-alt"></i>
+                Sync Now
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Time Off Requests -->
+<div class="tab-content {% if active_tab == 'timeoff' %}active{% endif %}" id="tab-timeoff">
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-calendar-minus"></i>
+                Time Off Requests
+            </h3>
+            <button class="btn btn-sm btn-secondary" onclick="refreshTimeOff()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="timeoff-grid" id="timeoff-grid">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading time off requests...</p>
+                </div>
+            </div>
+            <div class="empty-state" id="timeoff-empty" style="display: none;">
+                <i class="fas fa-calendar-check"></i>
+                <h3>No Time Off Requests</h3>
+                <p>There are no pending time off requests.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Student Workers -->
+<div class="tab-content {% if active_tab == 'workers' %}active{% endif %}" id="tab-workers">
+    <!-- Worker Analytics Summary -->
+    <div class="stats-grid mb-3">
+        <div class="stat-card" style="--accent: #f59e0b;">
+            <div class="stat-header">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                    <i class="fas fa-users"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="analytics-workers">--</div>
+            <div class="stat-label">Total Workers</div>
+        </div>
+        <div class="stat-card" style="--accent: #10b981;">
+            <div class="stat-header">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="analytics-shifts">--</div>
+            <div class="stat-label">Total Shifts</div>
+        </div>
+        <div class="stat-card" style="--accent: #3b82f6;">
+            <div class="stat-header">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">
+                    <i class="fas fa-clock"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="analytics-peak-hour">--</div>
+            <div class="stat-label">Peak Hour</div>
+        </div>
+        <div class="stat-card" style="--accent: #8b5cf6;">
+            <div class="stat-header">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+                    <i class="fas fa-trophy"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="analytics-top-worker">--</div>
+            <div class="stat-label">Top Worker</div>
+        </div>
+    </div>
+
+    <!-- Analytics Charts Row -->
+    <div class="grid-2 gap-3 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-bar" style="color: #f59e0b;"></i>
+                    Worker Performance
+                </h3>
+            </div>
+            <div class="card-body">
+                <div style="height: 280px;">
+                    <canvas id="workerPerformanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-line" style="color: #10b981;"></i>
+                    Daily Activity
+                </h3>
+            </div>
+            <div class="card-body">
+                <div style="height: 280px;">
+                    <canvas id="dailyActivityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shift Type Distribution & Hourly Heatmap -->
+    <div class="grid-2 gap-3 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-pie" style="color: #8b5cf6;"></i>
+                    Shift Type Distribution
+                </h3>
+            </div>
+            <div class="card-body">
+                <div style="height: 250px; display: flex; justify-content: center;">
+                    <canvas id="shiftTypeChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-fire" style="color: #ef4444;"></i>
+                    Hourly Activity
+                </h3>
+            </div>
+            <div class="card-body">
+                <div style="height: 250px;">
+                    <canvas id="hourlyHeatmapChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workers List -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-user-tie"></i>
+                Student Workers
+            </h3>
+            <button class="btn btn-sm btn-secondary" onclick="refreshWorkers()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="workers-table-container">
+                <table class="table" id="workers-table">
+                    <thead>
+                        <tr>
+                            <th>Worker</th>
+                            <th>Discord ID</th>
+                            <th>Status</th>
+                            <th>Total Shifts</th>
+                            <th>Shift Types</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workers-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary">
+                                <i class="fas fa-spinner fa-spin"></i> Loading workers...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="empty-state" id="workers-empty" style="display: none;">
+                <i class="fas fa-users"></i>
+                <h3>No Student Workers</h3>
+                <p>Configure the Student Worker Role ID in Settings to see workers here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Schedule Modal - Enhanced -->
+<div class="modal-overlay" id="add-schedule-modal">
+    <div class="modal" style="max-width: 700px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 16px 16px 0 0;">
+            <h3 class="modal-title" style="color: white;"><i class="fas fa-calendar-plus"></i> Create New Schedule</h3>
+            <button class="modal-close" onclick="closeAddScheduleModal()" style="color: white;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+            <!-- Schedule Name -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-tag" style="color: #f59e0b; margin-right: 6px;"></i>Schedule Name</label>
+                <input type="text" class="form-input" id="schedule-name" placeholder="e.g., Week of Jan 20 - Jan 26" style="font-size: 15px;">
+                <small style="color: var(--text-muted); font-size: 12px;">Optional - helps identify the schedule quickly</small>
+            </div>
+
+            <!-- Calendar Date Selection -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-calendar-alt" style="color: #f59e0b; margin-right: 6px;"></i>Schedule Period</label>
+                <div class="schedule-calendar-wrapper" style="background: var(--background-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--border);">
+                    <div class="calendar-nav" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="changeCalendarMonth(-1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <h4 id="calendar-month-year" style="margin: 0; font-size: 16px; font-weight: 600;"></h4>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="changeCalendarMonth(1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="calendar-grid" id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;">
+                        <!-- Days will be generated by JS -->
+                    </div>
+                    <div class="calendar-legend" style="display: flex; gap: 16px; margin-top: 16px; font-size: 12px; color: var(--text-secondary);">
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #f59e0b; border-radius: 3px; margin-right: 4px;"></span>Start Date</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #d97706; border-radius: 3px; margin-right: 4px;"></span>End Date</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: rgba(245, 158, 11, 0.3); border-radius: 3px; margin-right: 4px;"></span>Selected Range</span>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: 12px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 12px;">Start Date</label>
+                        <input type="date" class="form-input" id="schedule-start-date" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 12px;">End Date</label>
+                        <input type="date" class="form-input" id="schedule-end-date" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schedule Link -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-link" style="color: #f59e0b; margin-right: 6px;"></i>Schedule Link</label>
+                <div style="position: relative;">
+                    <input type="url" class="form-input" id="schedule-link" placeholder="https://docs.google.com/spreadsheets/..." required style="padding-left: 40px;">
+                    <i class="fas fa-external-link-alt" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                </div>
+                <small style="color: var(--text-muted); font-size: 12px;">Link to Google Sheets, WhenToWork, or other scheduling platform</small>
+            </div>
+
+            <!-- Announcement Settings -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-bullhorn" style="color: #f59e0b; margin-right: 6px;"></i>Announcement Settings</label>
+                <div style="background: var(--background-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--border);">
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="schedule-send-announcement" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span>Send announcement when schedule is created</span>
+                        </label>
+                    </div>
+                    <div id="announcement-options" style="padding-left: 10px; border-left: 3px solid #f59e0b;">
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label class="form-label" style="font-size: 13px;">Announcement Channel ID</label>
+                            <div style="position: relative;">
+                                <input type="text" class="form-input" id="schedule-announcement-channel" placeholder="Right-click channel → Copy Channel ID" style="padding-left: 40px;">
+                                <i class="fas fa-hashtag" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                            </div>
+                            <small style="color: var(--text-muted); font-size: 11px;">Enter the Channel ID where the announcement will be posted. This will be saved for future use.</small>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label" style="font-size: 13px;">Custom Message (Optional)</label>
+                            <textarea class="form-input" id="schedule-announcement-message" rows="2" placeholder="Add a custom message to include with the announcement..." style="resize: vertical;"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Options -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-cog" style="color: #f59e0b; margin-right: 6px;"></i>Options</label>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="schedule-allow-offers" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Allow shift offers for this schedule</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="schedule-notify-workers" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Notify all student workers via DM</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Preview Card -->
+            <div class="schedule-preview-card" id="schedule-preview" style="display: none; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 16px; margin-top: 8px;">
+                <h5 style="font-size: 13px; color: #f59e0b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas fa-eye"></i> Preview
+                </h5>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-calendar-alt" style="color: white; font-size: 20px;"></i>
+                    </div>
+                    <div>
+                        <p id="preview-name" style="font-weight: 600; margin-bottom: 2px;"></p>
+                        <p id="preview-dates" style="font-size: 13px; color: var(--text-secondary); margin: 0;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="background: var(--background-secondary); border-radius: 0 0 16px 16px; padding: 16px 24px;">
+            <button class="btn btn-secondary" onclick="closeAddScheduleModal()">Cancel</button>
+            <button class="btn" onclick="addSchedule()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none;">
+                <i class="fas fa-plus"></i>
+                Create Schedule
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Schedule Modal -->
+<div class="modal-overlay" id="edit-schedule-modal">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 16px 16px 0 0;">
+            <h3 class="modal-title" style="color: white; display: flex; align-items: center; gap: 10px;">
+                <i class="fas fa-edit"></i> Edit Schedule
+            </h3>
+            <button class="modal-close" onclick="closeEditScheduleModal()" style="color: white;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 24px;">
+            <input type="hidden" id="edit-schedule-index">
+            
+            <!-- Date Range -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-calendar-alt" style="color: #f59e0b; margin-right: 6px;"></i>Schedule Period</label>
+                <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label class="form-label" style="font-size: 12px; color: var(--text-muted);">Start Date</label>
+                        <input type="date" class="form-input" id="edit-schedule-start-date" required>
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 12px; color: var(--text-muted);">End Date</label>
+                        <input type="date" class="form-input" id="edit-schedule-end-date" required>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Schedule Link -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-link" style="color: #f59e0b; margin-right: 6px;"></i>Schedule Link</label>
+                <div style="position: relative;">
+                    <input type="url" class="form-input" id="edit-schedule-link" required style="padding-left: 40px;">
+                    <i class="fas fa-external-link-alt" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                </div>
+            </div>
+            
+            <!-- Options -->
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-cog" style="color: #f59e0b; margin-right: 6px;"></i>Options</label>
+                <div style="background: var(--background-secondary); border-radius: 12px; padding: 16px; border: 1px solid var(--border);">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="edit-schedule-allow-offers">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Allow shift offers for this schedule</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="background: var(--background-secondary); border-radius: 0 0 16px 16px; padding: 16px 24px; display: flex; justify-content: space-between;">
+            <button class="btn btn-danger" onclick="deleteSchedule()">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeEditScheduleModal()">Cancel</button>
+                <button class="btn" onclick="updateSchedule()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none;">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trade Approval Modal -->
+<div class="modal-overlay" id="trade-approval-modal">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h3 class="modal-title"><i class="fas fa-gavel"></i> Trade Approval</h3>
+            <button class="modal-close" onclick="closeTradeApprovalModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="trade-approval-content">
+            <!-- Dynamic content -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="declineTrade()">
+                <i class="fas fa-times"></i>
+                Decline
+            </button>
+            <button class="btn btn-success" onclick="approveTrade()">
+                <i class="fas fa-check"></i>
+                Approve Trade
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Worker Details Modal -->
+<div class="modal-overlay" id="worker-details-modal">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
+            <h3 class="modal-title"><i class="fas fa-user-tie"></i> <span id="worker-modal-name">Worker Details</span></h3>
+            <button class="modal-close" onclick="closeWorkerModal()" style="background: rgba(255,255,255,0.2); border: none;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="worker-modal-content" style="padding: 24px;">
+            <div class="text-center" style="padding: 40px;">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p style="margin-top: 12px;">Loading worker details...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast-notification" id="toast">
+    <i class="fas fa-check-circle"></i>
+    <span id="toast-message">Action completed successfully</span>
+</div>
+
+<script>
+    // ============ Global State ============
+    let schedules = [];
+    let shiftOffers = {};
+    let tradeRequests = [];
+    let shiftLogs = [];
+    let currentTradeId = null;
+    
+    // For calendar sidebar stats
+    let offersData = [];
+    let tradesData = [];
+    let workersData = [];
+
+    // ============ Tab Navigation ============
+    document.querySelectorAll('.shift-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Update active tab
+            document.querySelectorAll('.shift-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Show corresponding content
+            const tabName = tab.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        });
+    });
+
+    // ============ Data Loading ============
+    async function loadAllData() {
+        await Promise.all([
+            loadSchedules(),
+            loadOffers(),
+            loadTrades(),
+            loadTimeOff(),
+            loadWorkers(),
+            loadLogs(),
+            loadSettings()
+        ]);
+        updateStats();
+    }
+
+    async function loadSchedules() {
+        try {
+            const response = await fetch('/api/shifts/schedules');
+            const data = await response.json();
+            schedules = data.schedules || [];
+            schedulesData = schedules; // Store for calendar
+            renderSchedules();
+            renderMainCalendar(); // Render the interactive calendar
+            updateActiveScheduleCard(); // Update the active schedule sidebar
+            document.getElementById('tab-count-schedules').textContent = schedules.length;
+            document.getElementById('stat-schedules').textContent = schedules.length;
+        } catch (error) {
+            console.error('Failed to load schedules:', error);
+            document.getElementById('schedules-grid').innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Failed to load schedules</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+    }
+
+    async function loadOffers() {
+        try {
+            const response = await fetch('/api/shifts/offers');
+            const data = await response.json();
+            shiftOffers = data.shift_board || {};
+            offersData = Object.values(shiftOffers); // Store for calendar stats
+            renderOffers();
+            updateActiveScheduleCard(); // Update sidebar stats
+            const availableCount = Object.values(shiftOffers).filter(o => !o.taken).length;
+            document.getElementById('tab-count-offers').textContent = Object.keys(shiftOffers).length;
+            document.getElementById('stat-available').textContent = availableCount;
+        } catch (error) {
+            console.error('Failed to load offers:', error);
+            document.getElementById('offers-grid').innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Failed to load shift offers</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+    }
+
+    async function loadTrades() {
+        try {
+            const response = await fetch('/api/shifts/trades');
+            const data = await response.json();
+            tradeRequests = data.trades || [];
+            tradesData = tradeRequests; // Store for calendar stats
+            renderTrades();
+            updateActiveScheduleCard(); // Update sidebar stats
+            const pendingCount = tradeRequests.filter(t => t.status === 'pending' || t.status === 'awaiting').length;
+            document.getElementById('tab-count-trades').textContent = tradeRequests.length;
+            document.getElementById('stat-trades').textContent = pendingCount;
+        } catch (error) {
+            console.error('Failed to load trades:', error);
+            document.getElementById('trades-grid').innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Failed to load trade requests</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+    }
+
+    // Time Off Requests
+    let timeOffRequests = [];
+    
+    async function loadTimeOff() {
+        try {
+            const response = await fetch('/api/shifts/timeoff');
+            const data = await response.json();
+            timeOffRequests = data.requests || [];
+            renderTimeOff();
+            const pendingCount = timeOffRequests.filter(r => r.status === 'pending').length;
+            document.getElementById('tab-count-timeoff').textContent = pendingCount;
+        } catch (error) {
+            console.error('Failed to load time off requests:', error);
+            document.getElementById('timeoff-grid').innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Failed to load time off requests</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+    }
+
+    function renderTimeOff() {
+        const grid = document.getElementById('timeoff-grid');
+        const emptyState = document.getElementById('timeoff-empty');
+        
+        if (timeOffRequests.length === 0) {
+            grid.style.display = 'none';
+            emptyState.style.display = 'flex';
+            return;
+        }
+        
+        grid.style.display = 'grid';
+        emptyState.style.display = 'none';
+        
+        grid.innerHTML = timeOffRequests.map(request => `
+            <div class="timeoff-card ${request.status || 'pending'}">
+                <div class="timeoff-header">
+                    <span class="timeoff-dates">
+                        <i class="fas fa-calendar"></i>
+                        ${request.from_date} - ${request.to_date}
+                    </span>
+                    <span class="timeoff-status status-${request.status || 'pending'}">
+                        ${(request.status || 'pending').charAt(0).toUpperCase() + (request.status || 'pending').slice(1)}
+                    </span>
+                </div>
+                <div class="timeoff-body">
+                    <p class="timeoff-requester">
+                        <i class="fas fa-user"></i>
+                        <strong>Requested by:</strong> ${request.user_name || 'User ' + request.user_id}
+                    </p>
+                    <p class="timeoff-reason">
+                        <i class="fas fa-comment"></i>
+                        ${request.reason || 'No reason provided'}
+                    </p>
+                    ${request.submitted_at ? `<p class="timeoff-submitted text-secondary"><small>Submitted: ${new Date(request.submitted_at).toLocaleString()}</small></p>` : ''}
+                </div>
+                ${request.status === 'pending' ? `
+                <div class="timeoff-actions">
+                    <button class="btn btn-sm btn-success" onclick="approveTimeOff('${request.id}')">
+                        <i class="fas fa-check"></i> Approve
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="declineTimeOff('${request.id}')">
+                        <i class="fas fa-times"></i> Decline
+                    </button>
+                </div>
+                ` : ''}
+            </div>
+        `).join('');
+    }
+
+    async function approveTimeOff(requestId) {
+        try {
+            const response = await fetch(`/api/shifts/timeoff/${requestId}/approve`, { method: 'POST' });
+            if (response.ok) {
+                showToast('Time off request approved', 'success');
+                await loadTimeOff();
+            } else {
+                showToast('Failed to approve request', 'error');
+            }
+        } catch (error) {
+            console.error('Error approving time off:', error);
+            showToast('Failed to approve request', 'error');
+        }
+    }
+
+    async function declineTimeOff(requestId) {
+        const reason = prompt('Reason for declining (optional):');
+        try {
+            const response = await fetch(`/api/shifts/timeoff/${requestId}/decline`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: reason || '' })
+            });
+            if (response.ok) {
+                showToast('Time off request declined', 'success');
+                await loadTimeOff();
+            } else {
+                showToast('Failed to decline request', 'error');
+            }
+        } catch (error) {
+            console.error('Error declining time off:', error);
+            showToast('Failed to decline request', 'error');
+        }
+    }
+
+    function refreshTimeOff() {
+        loadTimeOff();
+    }
+
+    // Student Workers & Analytics
+    let workers = [];
+    let workerAnalytics = [];
+    let workerPerformanceChart = null;
+    let dailyActivityChart = null;
+    let shiftTypeChart = null;
+    let hourlyHeatmapChart = null;
+    
+    async function loadWorkers() {
+        try {
+            const response = await fetch('/api/shifts/workers');
+            const data = await response.json();
+            workers = data.workers || [];
+            workersData = workers; // Store for calendar stats
+            
+            // Also load analytics
+            await loadWorkerAnalytics();
+            
+            renderWorkers();
+            updateActiveScheduleCard(); // Update sidebar stats
+            document.getElementById('tab-count-workers').textContent = workers.length;
+        } catch (error) {
+            console.error('Failed to load workers:', error);
+            document.getElementById('workers-table-body').innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-secondary">
+                        <i class="fas fa-exclamation-circle"></i> Failed to load workers
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    async function loadWorkerAnalytics() {
+        try {
+            const response = await fetch('/api/shifts/workers/analytics');
+            const data = await response.json();
+            workerAnalytics = data.workers || [];
+            
+            // Update summary stats
+            document.getElementById('analytics-workers').textContent = data.summary?.total_workers || workers.length;
+            document.getElementById('analytics-shifts').textContent = data.summary?.total_shifts || 0;
+            
+            const peakHour = data.summary?.peak_hour;
+            if (peakHour !== undefined) {
+                const h = parseInt(peakHour);
+                document.getElementById('analytics-peak-hour').textContent = 
+                    h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h-12} PM`;
+            } else {
+                document.getElementById('analytics-peak-hour').textContent = '--';
+            }
+            
+            // Top worker
+            if (workerAnalytics.length > 0) {
+                const topWorker = workerAnalytics[0];
+                document.getElementById('analytics-top-worker').textContent = 
+                    topWorker.user_name?.split(' ')[0] || 'N/A';
+            }
+            
+            // Render charts
+            renderWorkerPerformanceChart(workerAnalytics);
+            renderDailyActivityChart(data.daily_activity || {});
+            renderShiftTypeChart(workerAnalytics);
+            renderHourlyHeatmapChart(data.hourly_activity || {});
+        } catch (error) {
+            console.error('Failed to load worker analytics:', error);
+        }
+    }
+
+    function renderWorkerPerformanceChart(analytics) {
+        const ctx = document.getElementById('workerPerformanceChart');
+        if (!ctx) return;
+        
+        if (workerPerformanceChart) workerPerformanceChart.destroy();
+        
+        const top10 = analytics.slice(0, 10);
+        workerPerformanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: top10.map(w => w.user_name?.length > 15 ? w.user_name.substring(0, 15) + '...' : w.user_name || 'Unknown'),
+                datasets: [{
+                    label: 'Total Shifts',
+                    data: top10.map(w => w.total_shifts),
+                    backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                    borderColor: 'rgba(245, 158, 11, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => top10[items[0].dataIndex]?.user_name || '',
+                            label: (item) => `${item.raw} shifts`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderDailyActivityChart(dailyActivity) {
+        const ctx = document.getElementById('dailyActivityChart');
+        if (!ctx) return;
+        
+        if (dailyActivityChart) dailyActivityChart.destroy();
+        
+        const dates = Object.keys(dailyActivity).sort().slice(-14);
+        const values = dates.map(d => dailyActivity[d] || 0);
+        
+        if (dates.length === 0) {
+            // No data - show empty state
+            ctx.parentElement.innerHTML = `
+                <div class="empty-state" style="height: 280px; display: flex; align-items: center; justify-content: center;">
+                    <div style="text-align: center; color: var(--text-secondary);">
+                        <i class="fas fa-chart-line" style="font-size: 32px; margin-bottom: 8px; opacity: 0.5;"></i>
+                        <p>No activity data yet</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        dailyActivityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates.map(d => {
+                    const date = new Date(d);
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }),
+                datasets: [{
+                    label: 'Shift Actions',
+                    data: values,
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#10b981',
+                    pointBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    function renderShiftTypeChart(analytics) {
+        const ctx = document.getElementById('shiftTypeChart');
+        if (!ctx) return;
+        
+        if (shiftTypeChart) shiftTypeChart.destroy();
+        
+        // Aggregate shift types across all workers
+        const totals = { opener: 0, mid: 0, closer: 0 };
+        analytics.forEach(w => {
+            if (w.shift_types) {
+                totals.opener += w.shift_types.opener || 0;
+                totals.mid += w.shift_types.mid || 0;
+                totals.closer += w.shift_types.closer || 0;
+            }
+        });
+        
+        const total = totals.opener + totals.mid + totals.closer;
+        if (total === 0) {
+            ctx.parentElement.innerHTML = `
+                <div class="empty-state" style="height: 250px; display: flex; align-items: center; justify-content: center;">
+                    <div style="text-align: center; color: var(--text-secondary);">
+                        <i class="fas fa-chart-pie" style="font-size: 32px; margin-bottom: 8px; opacity: 0.5;"></i>
+                        <p>No shift type data</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        shiftTypeChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Opener', 'Mid-Shift', 'Closer'],
+                datasets: [{
+                    data: [totals.opener, totals.mid, totals.closer],
+                    backgroundColor: ['#f59e0b', '#3b82f6', '#8b5cf6'],
+                    borderColor: 'var(--surface)',
+                    borderWidth: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#9ca3af', padding: 15 }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderHourlyHeatmapChart(hourlyActivity) {
+        const ctx = document.getElementById('hourlyHeatmapChart');
+        if (!ctx) return;
+        
+        if (hourlyHeatmapChart) hourlyHeatmapChart.destroy();
+        
+        const labels = Array.from({length: 24}, (_, i) => {
+            if (i === 0) return '12AM';
+            if (i === 12) return '12PM';
+            return i < 12 ? `${i}AM` : `${i-12}PM`;
+        });
+        const values = Array.from({length: 24}, (_, i) => hourlyActivity[i] || 0);
+        const maxVal = Math.max(...values, 1);
+        
+        const colors = values.map(v => {
+            const intensity = v / maxVal;
+            if (intensity === 0) return 'rgba(55, 65, 81, 0.5)';
+            if (intensity < 0.25) return 'rgba(245, 158, 11, 0.3)';
+            if (intensity < 0.5) return 'rgba(245, 158, 11, 0.5)';
+            if (intensity < 0.75) return 'rgba(245, 158, 11, 0.7)';
+            return 'rgba(245, 158, 11, 1)';
+        });
+        
+        hourlyHeatmapChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderRadius: 4,
+                    barPercentage: 0.9,
+                    categoryPercentage: 0.9
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (item) => `${item.raw} actions` } }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af', font: { size: 10 } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    function renderWorkers() {
+        const tbody = document.getElementById('workers-table-body');
+        const emptyState = document.getElementById('workers-empty');
+        
+        // Merge workers with analytics data
+        const workersWithAnalytics = workers.map(worker => {
+            const analytics = workerAnalytics.find(a => a.user_id === worker.id || a.user_id === worker.discord_id);
+            return { ...worker, analytics };
+        });
+        
+        if (workersWithAnalytics.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'flex';
+            return;
+        }
+        
+        emptyState.style.display = 'none';
+        
+        tbody.innerHTML = workersWithAnalytics.map(worker => {
+            const a = worker.analytics;
+            const shiftTypes = a?.shift_types || {};
+            return `
+            <tr>
+                <td>
+                    <div class="worker-info">
+                        <div class="worker-avatar" style="background: var(--gradient-2);">
+                            ${worker.avatar_url ? `<img src="${worker.avatar_url}" alt="${worker.name}">` : worker.name?.charAt(0)?.toUpperCase() || '?'}
+                        </div>
+                        <div>
+                            <strong>${worker.name || 'Unknown'}</strong>
+                            <span class="text-secondary">${worker.username || ''}</span>
+                        </div>
+                    </div>
+                </td>
+                <td><code>${worker.id || worker.discord_id || 'N/A'}</code></td>
+                <td>
+                    <span class="status-badge ${worker.clocked_in ? 'status-active' : 'status-inactive'}">
+                        ${worker.clocked_in ? 'Clocked In' : 'Off Duty'}
+                    </span>
+                </td>
+                <td>
+                    <span class="badge badge-primary">${a?.total_shifts || 0}</span>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        ${shiftTypes.opener > 0 ? `<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; font-size: 10px;">O: ${shiftTypes.opener}</span>` : ''}
+                        ${shiftTypes.mid > 0 ? `<span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; font-size: 10px;">M: ${shiftTypes.mid}</span>` : ''}
+                        ${shiftTypes.closer > 0 ? `<span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #8b5cf6; font-size: 10px;">C: ${shiftTypes.closer}</span>` : ''}
+                        ${(!shiftTypes.opener && !shiftTypes.mid && !shiftTypes.closer) ? '<span class="text-secondary" style="font-size: 12px;">No data</span>' : ''}
+                    </div>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="viewWorkerDetails('${worker.id || worker.discord_id}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            </tr>
+        `}).join('');
+    }
+
+    function viewWorkerDetails(workerId) {
+        // Normalize workerId to string for comparison
+        const normalizedId = String(workerId);
+        
+        // Find worker data from loaded workers and analytics
+        const worker = workers.find(w => String(w.id || w.discord_id) === normalizedId);
+        const analytics = workerAnalytics.find(a => String(a.user_id) === normalizedId);
+        
+        // Open modal and show loading first
+        document.getElementById('worker-details-modal').classList.add('active');
+        document.getElementById('worker-modal-name').textContent = 'Loading...';
+        document.getElementById('worker-modal-content').innerHTML = `
+            <div class="text-center" style="padding: 40px;">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p style="margin-top: 12px;">Loading worker details...</p>
+            </div>
+        `;
+        
+        if (!worker && !analytics) {
+            document.getElementById('worker-modal-name').textContent = 'Worker Not Found';
+            document.getElementById('worker-modal-content').innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <i class="fas fa-user-slash" style="font-size: 48px; color: var(--text-secondary); margin-bottom: 16px;"></i>
+                    <h4 style="color: var(--text-primary); margin-bottom: 8px;">Worker Data Not Available</h4>
+                    <p style="color: var(--text-secondary); font-size: 14px;">
+                        Unable to find data for this worker.<br>
+                        Worker ID: ${normalizedId}
+                    </p>
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-top: 16px;">
+                        <i class="fas fa-info-circle"></i> This may happen if:
+                    </p>
+                    <ul style="text-align: left; display: inline-block; color: var(--text-secondary); font-size: 12px; margin-top: 8px;">
+                        <li>The worker cache hasn't been synced recently</li>
+                        <li>The worker no longer has the Student Worker role</li>
+                        <li>No shift activity has been recorded yet</li>
+                    </ul>
+                </div>
+            `;
+            return;
+        }
+        
+        const workerName = worker?.name || worker?.user_name || analytics?.user_name || 'Unknown Worker';
+        document.getElementById('worker-modal-name').textContent = workerName;
+        
+        // Get worker logs
+        const workerLogs = shiftLogs.filter(log => String(log.user_id) === normalizedId).slice(0, 10);
+        
+        const stats = analytics || {
+            total_shifts: 0,
+            shifts_started: 0,
+            shifts_ended: 0,
+            shift_types: { opener: 0, mid: 0, closer: 0 }
+        };
+        
+        const shiftTypes = stats.shift_types || { opener: 0, mid: 0, closer: 0 };
+        const totalTypeShifts = shiftTypes.opener + shiftTypes.mid + shiftTypes.closer;
+        
+        document.getElementById('worker-modal-content').innerHTML = `
+            <!-- Worker Header -->
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
+                <div style="width: 64px; height: 64px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: 600;">
+                    ${workerName.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                    <h4 style="margin: 0; font-size: 18px; color: var(--text-primary);">${workerName}</h4>
+                    <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">
+                        <i class="fas fa-fingerprint"></i> ${workerId}
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Stats Grid -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px;">
+                <div style="background: var(--background-secondary); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 24px; font-weight: 700; color: var(--primary-light);">${stats.total_shifts || 0}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Total Shifts</div>
+                </div>
+                <div style="background: var(--background-secondary); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 24px; font-weight: 700; color: var(--success);">${stats.shifts_started || 0}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Started</div>
+                </div>
+                <div style="background: var(--background-secondary); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 24px; font-weight: 700; color: var(--info);">${stats.shifts_ended || 0}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Ended</div>
+                </div>
+            </div>
+            
+            <!-- Shift Types Breakdown -->
+            <div style="margin-bottom: 24px;">
+                <h5 style="font-size: 14px; margin-bottom: 12px; color: var(--text-primary);">
+                    <i class="fas fa-chart-pie" style="color: #f59e0b;"></i> Shift Types
+                </h5>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 80px; background: rgba(245, 158, 11, 0.1); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: 600; color: #f59e0b;">${shiftTypes.opener || 0}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Opener</div>
+                    </div>
+                    <div style="flex: 1; min-width: 80px; background: rgba(59, 130, 246, 0.1); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: 600; color: #3b82f6;">${shiftTypes.mid || 0}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Mid</div>
+                    </div>
+                    <div style="flex: 1; min-width: 80px; background: rgba(139, 92, 246, 0.1); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: 600; color: #8b5cf6;">${shiftTypes.closer || 0}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Closer</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div>
+                <h5 style="font-size: 14px; margin-bottom: 12px; color: var(--text-primary);">
+                    <i class="fas fa-history" style="color: #f59e0b;"></i> Recent Activity
+                </h5>
+                ${workerLogs.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${workerLogs.map(log => {
+                            const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown';
+                            const actionIcon = log.action === 'start' ? 'play-circle' : 'stop-circle';
+                            const actionColor = log.action === 'start' ? 'var(--success)' : 'var(--danger)';
+                            return `
+                                <div style="display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--background-secondary); border-radius: 8px; margin-bottom: 8px;">
+                                    <i class="fas fa-${actionIcon}" style="color: ${actionColor}; font-size: 16px;"></i>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 13px; color: var(--text-primary);">
+                                            ${log.action === 'start' ? 'Started shift' : 'Ended shift'}
+                                            ${log.shift_type ? `<span class="badge" style="font-size: 10px; margin-left: 6px;">${log.shift_type}</span>` : ''}
+                                        </div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">${timestamp}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : `
+                    <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                        <i class="fas fa-inbox" style="font-size: 24px; display: block; margin-bottom: 8px;"></i>
+                        No recent activity
+                    </div>
+                `}
+            </div>
+        `;
+        
+        document.getElementById('worker-details-modal').classList.add('active');
+    }
+    
+    function closeWorkerModal() {
+        const modal = document.getElementById('worker-details-modal');
+        modal.classList.remove('active');
+    }
+
+    function refreshWorkers() {
+        loadWorkers();
+    }
+
+    async function loadLogs() {
+        try {
+            const dateFilter = document.getElementById('log-date-filter').value;
+            const url = dateFilter ? `/api/shifts/logs?date=${dateFilter}` : '/api/shifts/logs';
+            const response = await fetch(url);
+            const data = await response.json();
+            shiftLogs = data.logs || [];
+            renderLogs();
+            
+            // Count today's logs
+            const today = new Date().toISOString().split('T')[0];
+            const todayLogs = shiftLogs.filter(log => log.timestamp && log.timestamp.startsWith(today)).length;
+            document.getElementById('stat-logs').textContent = todayLogs;
+        } catch (error) {
+            console.error('Failed to load logs:', error);
+            document.getElementById('logs-timeline').innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Failed to load shift logs</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+    }
+
+    async function loadSettings() {
+        try {
+            const response = await fetch('/api/shifts/settings');
+            const data = await response.json();
+            
+            // Populate settings fields
+            if (data.log_channel_id) {
+                document.getElementById('setting-log-channel').value = data.log_channel_id;
+            }
+            if (data.webclock_url) {
+                document.getElementById('setting-webclock-url').value = data.webclock_url;
+            }
+            if (data.opening_form_url) {
+                document.getElementById('setting-opening-form').value = data.opening_form_url;
+            }
+            if (data.closing_form_url) {
+                document.getElementById('setting-closing-form').value = data.closing_form_url;
+            }
+            if (data.worker_role_id) {
+                document.getElementById('setting-worker-role').value = data.worker_role_id;
+            }
+            
+            // Update bot status
+            updateShiftBotStatus(data.bot_status || 'unknown');
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+        }
+    }
+
+    // ============ Rendering Functions ============
+    function renderSchedules() {
+        const grid = document.getElementById('schedules-grid');
+        
+        if (schedules.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="fas fa-calendar-times"></i>
+                    <h3>No Schedules Found</h3>
+                    <p>Add a new schedule to get started</p>
+                    <button class="btn btn-primary mt-2" onclick="openAddScheduleModal()">
+                        <i class="fas fa-plus"></i> Add Schedule
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = schedules.map((schedule, index) => `
+            <div class="schedule-card">
+                <div class="schedule-card-header">
+                    <h3><i class="fas fa-calendar-week"></i> Work Schedule</h3>
+                    <div class="date-range">
+                        <i class="fas fa-calendar-day"></i>
+                        ${schedule.start_date} to ${schedule.end_date}
+                    </div>
+                </div>
+                <div class="schedule-card-body">
+                    <a href="${escapeHtml(schedule.schedule_link)}" target="_blank" class="schedule-link">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View Full Schedule</span>
+                        <i class="fas fa-chevron-right" style="margin-left: auto;"></i>
+                    </a>
+                    <div class="schedule-options">
+                        <div class="offer-toggle">
+                            <label class="toggle-switch">
+                                <input type="checkbox" ${schedule.allow_offers ? 'checked' : ''} onchange="toggleScheduleOffers(${index}, this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span>Allow Offers</span>
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="openEditScheduleModal(${index})">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderOffers() {
+        const grid = document.getElementById('offers-grid');
+        const filter = document.getElementById('offer-filter').value;
+        
+        let offers = Object.entries(shiftOffers);
+        
+        if (filter === 'available') {
+            offers = offers.filter(([id, offer]) => !offer.taken);
+        } else if (filter === 'taken') {
+            offers = offers.filter(([id, offer]) => offer.taken);
+        }
+
+        if (offers.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="fas fa-hand-paper"></i>
+                    <h3>No Shift Offers</h3>
+                    <p>No shifts have been offered yet</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = offers.map(([id, offer]) => `
+            <div class="offer-card ${offer.taken ? 'taken' : ''}">
+                <div class="offer-card-header ${offer.taken ? 'taken' : 'available'}">
+                    <span class="offer-id">ID: #${id}</span>
+                    <div class="offer-status ${offer.taken ? 'taken' : 'available'}">
+                        <i class="fas ${offer.taken ? 'fa-check-circle' : 'fa-circle'}"></i>
+                        ${offer.taken ? 'Taken' : 'Available'}
+                    </div>
+                </div>
+                <div class="offer-card-body">
+                    <div class="offer-info-row">
+                        <div class="offer-info-icon">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="offer-info-content">
+                            <div class="offer-info-label">Offered By</div>
+                            <div class="offer-info-value">${escapeHtml(offer.name || 'Unknown')}</div>
+                        </div>
+                    </div>
+                    <div class="offer-info-row">
+                        <div class="offer-info-icon">
+                            <i class="fas fa-calendar-day"></i>
+                        </div>
+                        <div class="offer-info-content">
+                            <div class="offer-info-label">Date</div>
+                            <div class="offer-info-value">${escapeHtml(offer.date || 'N/A')}</div>
+                        </div>
+                    </div>
+                    <div class="offer-info-row">
+                        <div class="offer-info-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="offer-info-content">
+                            <div class="offer-info-label">Time</div>
+                            <div class="offer-info-value">${escapeHtml(offer.time || 'N/A')}</div>
+                        </div>
+                    </div>
+                    <div class="offer-info-row">
+                        <div class="offer-info-icon">
+                            <i class="fas fa-comment"></i>
+                        </div>
+                        <div class="offer-info-content">
+                            <div class="offer-info-label">Reason</div>
+                            <div class="offer-info-value">${escapeHtml(offer.reason || 'No reason provided')}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="offer-card-footer">
+                    <div class="offer-posted">
+                        <i class="fas fa-clock"></i>
+                        ${offer.posted_at ? formatDate(offer.posted_at) : 'Unknown'}
+                    </div>
+                    ${!offer.taken ? `
+                        <button class="btn btn-sm btn-danger" onclick="removeOffer(${id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    ` : `
+                        <span class="badge badge-success">
+                            <i class="fas fa-user-check"></i>
+                            ${offer.taken_by || 'Taken'}
+                        </span>
+                    `}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderTrades() {
+        const grid = document.getElementById('trades-grid');
+        const filter = document.getElementById('trade-filter').value;
+        
+        let trades = [...tradeRequests];
+        
+        if (filter !== 'all') {
+            trades = trades.filter(t => t.status === filter);
+        }
+
+        if (trades.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="fas fa-exchange-alt"></i>
+                    <h3>No Trade Requests</h3>
+                    <p>No shift trade requests have been made</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = trades.map(trade => `
+            <div class="trade-card">
+                <div class="trade-card-header">
+                    <div class="trade-users">
+                        <div class="trade-user">
+                            <div class="trade-user-avatar">${(trade.requester_name || 'R').charAt(0).toUpperCase()}</div>
+                            <span>${escapeHtml(trade.requester_name || 'Requester')}</span>
+                        </div>
+                        <i class="fas fa-exchange-alt trade-arrow"></i>
+                        <div class="trade-user">
+                            <div class="trade-user-avatar" style="background: var(--gradient-2);">${(trade.target_name || 'T').charAt(0).toUpperCase()}</div>
+                            <span>${escapeHtml(trade.target_name || 'Target')}</span>
+                        </div>
+                    </div>
+                    <span class="trade-status ${trade.status}">${capitalizeFirst(trade.status)}</span>
+                </div>
+                <div class="trade-card-body">
+                    <div class="trade-shifts">
+                        <div class="trade-shift-box">
+                            <div class="trade-shift-label">
+                                <i class="fas fa-arrow-right" style="color: var(--danger);"></i>
+                                Offering
+                            </div>
+                            <div class="trade-shift-value">${escapeHtml(trade.your_shift || 'N/A')}</div>
+                        </div>
+                        <div class="trade-shift-box">
+                            <div class="trade-shift-label">
+                                <i class="fas fa-arrow-left" style="color: var(--success);"></i>
+                                Wants
+                            </div>
+                            <div class="trade-shift-value">${escapeHtml(trade.wanted_shift || 'N/A')}</div>
+                        </div>
+                    </div>
+                    ${trade.reason ? `
+                        <div class="trade-reason">
+                            <div class="trade-reason-label">Reason</div>
+                            <div class="trade-reason-text">${escapeHtml(trade.reason)}</div>
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="trade-card-footer">
+                    <span class="offer-posted">
+                        <i class="fas fa-clock"></i>
+                        ${trade.created_at ? formatDate(trade.created_at) : 'Unknown'}
+                    </span>
+                    ${trade.status === 'pending' ? `
+                        <div class="flex gap-2">
+                            <button class="btn btn-sm btn-danger" onclick="openDeclineTradeModal('${trade.id}')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="openApproveTradeModal('${trade.id}')">
+                                <i class="fas fa-check"></i>
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderLogs() {
+        const timeline = document.getElementById('logs-timeline');
+
+        if (shiftLogs.length === 0) {
+            timeline.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-history"></i>
+                    <h3>No Shift Logs</h3>
+                    <p>Shift activity will appear here</p>
+                </div>
+            `;
+            return;
+        }
+
+        timeline.innerHTML = shiftLogs.map(log => {
+            const date = new Date(log.timestamp);
+            const isStart = log.action === 'start';
+            
+            return `
+                <div class="log-entry">
+                    <div class="log-time">
+                        <div class="log-time-date">${date.toLocaleDateString()}</div>
+                        <div class="log-time-hour">${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                    </div>
+                    <div class="log-indicator">
+                        <div class="log-dot ${isStart ? 'start' : 'end'}"></div>
+                        <div class="log-line"></div>
+                    </div>
+                    <div class="log-content">
+                        <div class="log-header">
+                            <div class="log-avatar">${(log.user_name || 'U').charAt(0).toUpperCase()}</div>
+                            <span class="log-user-name">${escapeHtml(log.user_name || 'Unknown User')}</span>
+                            <span class="log-action ${isStart ? 'start' : 'end'}">
+                                ${isStart ? 'Started Shift' : 'Ended Shift'}
+                            </span>
+                        </div>
+                        <div class="log-details">
+                            <div class="log-detail">
+                                <i class="fas fa-tag"></i>
+                                <span>${capitalizeFirst(log.shift_type || 'Unknown')}</span>
+                            </div>
+                            ${log.schedule ? `
+                                <div class="log-detail">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>${log.schedule.start_date} - ${log.schedule.end_date}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // ============ Schedule Actions (Enhanced with Calendar) ============
+    let calendarDate = new Date();
+    let selectedStartDate = null;
+    let selectedEndDate = null;
+    let selectingEndDate = false;
+    let discordChannels = [];
+
+    async function openAddScheduleModal() {
+        document.getElementById('add-schedule-modal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Set default dates
+        const today = new Date();
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        selectedStartDate = today;
+        selectedEndDate = nextWeek;
+        calendarDate = new Date(today);
+        
+        document.getElementById('schedule-start-date').value = today.toISOString().split('T')[0];
+        document.getElementById('schedule-end-date').value = nextWeek.toISOString().split('T')[0];
+        document.getElementById('schedule-name').value = '';
+        document.getElementById('schedule-link').value = '';
+        document.getElementById('schedule-announcement-message').value = '';
+        document.getElementById('schedule-allow-offers').checked = true;
+        document.getElementById('schedule-send-announcement').checked = true;
+        document.getElementById('schedule-notify-workers').checked = true;
+        
+        // Load saved announcement channel ID from settings
+        try {
+            const response = await fetch('/api/shifts/settings');
+            if (response.ok) {
+                const settings = await response.json();
+                if (settings.announcement_channel_id) {
+                    document.getElementById('schedule-announcement-channel').value = settings.announcement_channel_id;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+        }
+        
+        // Render calendar
+        renderCalendar();
+        updateSchedulePreview();
+        updateAnnouncementOptions();
+    }
+
+    function closeAddScheduleModal() {
+        document.getElementById('add-schedule-modal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+    
+    // Calendar Functions
+    function renderCalendar() {
+        const grid = document.getElementById('calendar-grid');
+        const monthYear = document.getElementById('calendar-month-year');
+        
+        const year = calendarDate.getFullYear();
+        const month = calendarDate.getMonth();
+        
+        monthYear.textContent = calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        
+        // Day headers
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        let html = days.map(d => `<div class="calendar-day-header">${d}</div>`).join('');
+        
+        // First day of month
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        // Empty cells before first day
+        for (let i = 0; i < firstDay.getDay(); i++) {
+            html += '<div class="calendar-day empty"></div>';
+        }
+        
+        // Days of month
+        for (let d = 1; d <= lastDay.getDate(); d++) {
+            const date = new Date(year, month, d);
+            date.setHours(0,0,0,0);
+            
+            let classes = ['calendar-day'];
+            
+            if (date.getTime() === today.getTime()) {
+                classes.push('today');
+            }
+            
+            if (selectedStartDate && date.getTime() === new Date(selectedStartDate).setHours(0,0,0,0)) {
+                classes.push('start-date', 'in-range');
+            }
+            
+            if (selectedEndDate && date.getTime() === new Date(selectedEndDate).setHours(0,0,0,0)) {
+                classes.push('end-date', 'in-range');
+            }
+            
+            if (selectedStartDate && selectedEndDate) {
+                const start = new Date(selectedStartDate).setHours(0,0,0,0);
+                const end = new Date(selectedEndDate).setHours(0,0,0,0);
+                if (date.getTime() > start && date.getTime() < end) {
+                    classes.push('in-range');
+                }
+            }
+            
+            html += `<button type="button" class="${classes.join(' ')}" onclick="selectCalendarDate(${year}, ${month}, ${d})">${d}</button>`;
+        }
+        
+        grid.innerHTML = html;
+    }
+    
+    function changeCalendarMonth(delta) {
+        calendarDate.setMonth(calendarDate.getMonth() + delta);
+        renderCalendar();
+    }
+    
+    function selectCalendarDate(year, month, day) {
+        const date = new Date(year, month, day);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        if (!selectingEndDate) {
+            // Selecting start date
+            selectedStartDate = date;
+            selectedEndDate = null;
+            selectingEndDate = true;
+            document.getElementById('schedule-start-date').value = dateStr;
+            document.getElementById('schedule-end-date').value = '';
+        } else {
+            // Selecting end date
+            if (date < selectedStartDate) {
+                // If clicked date is before start, swap
+                selectedEndDate = selectedStartDate;
+                selectedStartDate = date;
+                document.getElementById('schedule-start-date').value = dateStr;
+                document.getElementById('schedule-end-date').value = selectedEndDate.toISOString().split('T')[0];
+            } else {
+                selectedEndDate = date;
+                document.getElementById('schedule-end-date').value = dateStr;
+            }
+            selectingEndDate = false;
+        }
+        
+        renderCalendar();
+        updateSchedulePreview();
+    }
+    
+    // Load Discord channels for announcement
+    async function loadDiscordChannels() {
+        try {
+            const response = await fetch('/api/discord/channels');
+            if (response.ok) {
+                const data = await response.json();
+                discordChannels = data.channels || [];
+                populateChannelSelect();
+            }
+        } catch (error) {
+            console.error('Failed to load channels:', error);
+            // Fallback - show settings channel input
+            const select = document.getElementById('schedule-announcement-channel');
+            select.innerHTML = '<option value="">Enter channel ID in settings</option>';
+        }
+    }
+    
+    function populateChannelSelect() {
+        const select = document.getElementById('schedule-announcement-channel');
+        let html = '<option value="">Select a channel...</option>';
+        
+        // Group by category
+        const categories = {};
+        discordChannels.forEach(ch => {
+            const cat = ch.category || 'No Category';
+            if (!categories[cat]) categories[cat] = [];
+            categories[cat].push(ch);
+        });
+        
+        for (const [cat, channels] of Object.entries(categories)) {
+            html += `<optgroup label="${cat}">`;
+            channels.forEach(ch => {
+                const icon = ch.type === 'text' ? '#' : '🔊';
+                html += `<option value="${ch.id}">${icon} ${ch.name}</option>`;
+            });
+            html += '</optgroup>';
+        }
+        
+        select.innerHTML = html;
+    }
+    
+    // Toggle announcement options visibility
+    function updateAnnouncementOptions() {
+        const checkbox = document.getElementById('schedule-send-announcement');
+        const options = document.getElementById('announcement-options');
+        options.style.display = checkbox.checked ? 'block' : 'none';
+    }
+    
+    document.getElementById('schedule-send-announcement')?.addEventListener('change', updateAnnouncementOptions);
+
+    async function addSchedule() {
+        const startDate = document.getElementById('schedule-start-date').value;
+        const endDate = document.getElementById('schedule-end-date').value;
+        const link = document.getElementById('schedule-link').value;
+        const allowOffers = document.getElementById('schedule-allow-offers').checked;
+        const scheduleName = document.getElementById('schedule-name').value;
+        const sendAnnouncement = document.getElementById('schedule-send-announcement').checked;
+        const announcementChannel = document.getElementById('schedule-announcement-channel').value;
+        const announcementMessage = document.getElementById('schedule-announcement-message').value;
+        const notifyWorkers = document.getElementById('schedule-notify-workers').checked;
+
+        if (!startDate || !endDate || !link) {
+            showToast('Please fill in all required fields', 'error');
+            return;
+        }
+        
+        if (sendAnnouncement && !announcementChannel) {
+            showToast('Please select an announcement channel', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/shifts/schedules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: scheduleName,
+                    start_date: startDate,
+                    end_date: endDate,
+                    schedule_link: link,
+                    allow_offers: allowOffers,
+                    send_announcement: sendAnnouncement,
+                    announcement_channel_id: announcementChannel,
+                    announcement_message: announcementMessage,
+                    notify_workers: notifyWorkers
+                })
+            });
+
+            if (response.ok) {
+                showToast('Schedule created successfully!', 'success');
+                closeAddScheduleModal();
+                loadSchedules();
+                
+                // Save the channel ID to settings for future use
+                if (announcementChannel) {
+                    try {
+                        await fetch('/api/shifts/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ announcement_channel_id: announcementChannel })
+                        });
+                    } catch (e) {
+                        console.error('Failed to save channel setting:', e);
+                    }
+                }
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Failed to add schedule', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to add schedule', 'error');
+        }
+    }
+
+    function openEditScheduleModal(index) {
+        const schedule = schedules[index];
+        document.getElementById('edit-schedule-index').value = index;
+        document.getElementById('edit-schedule-start-date').value = schedule.start_date;
+        document.getElementById('edit-schedule-end-date').value = schedule.end_date;
+        document.getElementById('edit-schedule-link').value = schedule.schedule_link;
+        document.getElementById('edit-schedule-allow-offers').checked = schedule.allow_offers;
+        document.getElementById('edit-schedule-modal').classList.add('active');
+    }
+
+    function closeEditScheduleModal() {
+        document.getElementById('edit-schedule-modal').classList.remove('active');
+    }
+
+    async function updateSchedule() {
+        const index = document.getElementById('edit-schedule-index').value;
+        const startDate = document.getElementById('edit-schedule-start-date').value;
+        const endDate = document.getElementById('edit-schedule-end-date').value;
+        const link = document.getElementById('edit-schedule-link').value;
+        const allowOffers = document.getElementById('edit-schedule-allow-offers').checked;
+
+        try {
+            const response = await fetch(`/api/shifts/schedules/${index}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    start_date: startDate,
+                    end_date: endDate,
+                    schedule_link: link,
+                    allow_offers: allowOffers
+                })
+            });
+
+            if (response.ok) {
+                showToast('Schedule updated successfully', 'success');
+                closeEditScheduleModal();
+                loadSchedules();
+            } else {
+                showToast('Failed to update schedule', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to update schedule', 'error');
+        }
+    }
+
+    async function deleteSchedule() {
+        const index = document.getElementById('edit-schedule-index').value;
+        
+        if (!confirm('Are you sure you want to delete this schedule?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/shifts/schedules/${index}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                showToast('Schedule deleted successfully', 'success');
+                closeEditScheduleModal();
+                loadSchedules();
+            } else {
+                showToast('Failed to delete schedule', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to delete schedule', 'error');
+        }
+    }
+
+    async function toggleScheduleOffers(index, enabled) {
+        try {
+            const schedule = schedules[index];
+            await fetch(`/api/shifts/schedules/${index}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...schedule,
+                    allow_offers: enabled
+                })
+            });
+            showToast(`Offers ${enabled ? 'enabled' : 'disabled'} for schedule`, 'success');
+        } catch (error) {
+            showToast('Failed to update schedule', 'error');
+        }
+    }
+
+    // ============ Offer Actions ============
+    async function removeOffer(id) {
+        if (!confirm('Are you sure you want to remove this shift offer?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/shifts/offers/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                showToast('Shift offer removed', 'success');
+                loadOffers();
+            } else {
+                showToast('Failed to remove offer', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to remove offer', 'error');
+        }
+    }
+
+    // ============ Trade Actions ============
+    function openApproveTradeModal(tradeId) {
+        currentTradeId = tradeId;
+        const trade = tradeRequests.find(t => t.id === tradeId);
+        
+        if (!trade) return;
+        
+        document.getElementById('trade-approval-content').innerHTML = `
+            <div class="alert alert-info mb-2">
+                <i class="fas fa-info-circle"></i>
+                <span>Approving this trade will notify both students.</span>
+            </div>
+            <div class="trade-shifts">
+                <div class="trade-shift-box">
+                    <div class="trade-shift-label">
+                        <i class="fas fa-user"></i>
+                        ${escapeHtml(trade.requester_name || 'Requester')} gives up
+                    </div>
+                    <div class="trade-shift-value">${escapeHtml(trade.your_shift)}</div>
+                </div>
+                <div class="trade-shift-box">
+                    <div class="trade-shift-label">
+                        <i class="fas fa-user"></i>
+                        ${escapeHtml(trade.target_name || 'Target')} gives up
+                    </div>
+                    <div class="trade-shift-value">${escapeHtml(trade.wanted_shift)}</div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('trade-approval-modal').classList.add('active');
+    }
+
+    function openDeclineTradeModal(tradeId) {
+        currentTradeId = tradeId;
+        // For now, just confirm decline
+        if (confirm('Are you sure you want to decline this trade request?')) {
+            declineTrade();
+        }
+    }
+
+    function closeTradeApprovalModal() {
+        document.getElementById('trade-approval-modal').classList.remove('active');
+        currentTradeId = null;
+    }
+
+    async function approveTrade() {
+        if (!currentTradeId) return;
+
+        try {
+            const response = await fetch(`/api/shifts/trades/${currentTradeId}/approve`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                showToast('Trade approved successfully', 'success');
+                closeTradeApprovalModal();
+                loadTrades();
+            } else {
+                showToast('Failed to approve trade', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to approve trade', 'error');
+        }
+    }
+
+    async function declineTrade() {
+        if (!currentTradeId) return;
+
+        try {
+            const response = await fetch(`/api/shifts/trades/${currentTradeId}/decline`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                showToast('Trade declined', 'success');
+                closeTradeApprovalModal();
+                loadTrades();
+            } else {
+                showToast('Failed to decline trade', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to decline trade', 'error');
+        }
+    }
+
+    // ============ Settings Actions ============
+    async function saveShiftSettings() {
+        const settings = {
+            log_channel_id: document.getElementById('setting-log-channel').value,
+            webclock_url: document.getElementById('setting-webclock-url').value,
+            opening_form_url: document.getElementById('setting-opening-form').value,
+            closing_form_url: document.getElementById('setting-closing-form').value,
+            worker_role_id: document.getElementById('setting-worker-role').value
+        };
+
+        try {
+            const response = await fetch('/api/shifts/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                showToast('Settings saved successfully', 'success');
+            } else {
+                showToast('Failed to save settings', 'error');
+            }
+        } catch (error) {
+            showToast('Failed to save settings', 'error');
+        }
+    }
+
+    function updateShiftBotStatus(status) {
+        const statusEl = document.getElementById('shift-bot-status');
+        const dotEl = statusEl.querySelector('.status-dot');
+        const textEl = statusEl.querySelector('span');
+        
+        if (status === 'online') {
+            statusEl.classList.remove('offline');
+            dotEl.classList.remove('offline');
+            textEl.textContent = 'Online';
+        } else {
+            statusEl.classList.add('offline');
+            dotEl.classList.add('offline');
+            textEl.textContent = 'Offline';
+        }
+    }
+
+    async function syncShiftBot() {
+        showToast('Syncing with LionShiftGG bot...', 'info');
+        await loadAllData();
+        document.getElementById('shift-bot-sync').textContent = new Date().toLocaleTimeString();
+        showToast('Sync complete', 'success');
+    }
+
+    // ============ Refresh Functions ============
+    function refreshSchedules() { loadSchedules(); }
+    function refreshOffers() { loadOffers(); }
+    function refreshTrades() { loadTrades(); }
+    function refreshLogs() { loadLogs(); }
+
+    // ============ Utility Functions ============
+    function updateStats() {
+        // Stats are updated in individual load functions
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function formatDate(dateStr) {
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        } catch {
+            return dateStr;
+        }
+    }
+
+    function capitalizeFirst(str) {
+        if (!str) return '';
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    function showToast(message, type = 'success') {
+        const toast = document.getElementById('toast');
+        const messageEl = document.getElementById('toast-message');
+        const icon = toast.querySelector('i');
+        
+        messageEl.textContent = message;
+        
+        // Update icon and class based on type
+        toast.className = `toast-notification toast-${type}`;
+        icon.className = type === 'success' ? 'fas fa-check-circle' :
+                        type === 'error' ? 'fas fa-exclamation-circle' :
+                        type === 'warning' ? 'fas fa-exclamation-triangle' :
+                        'fas fa-info-circle';
+        
+        toast.classList.add('show');
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3000);
+    }
+
+    // ============ Event Listeners ============
+    document.getElementById('offer-filter').addEventListener('change', renderOffers);
+    document.getElementById('trade-filter').addEventListener('change', renderTrades);
+    document.getElementById('log-date-filter').addEventListener('change', loadLogs);
+
+    // Schedule preview - enhanced
+    document.getElementById('schedule-start-date').addEventListener('change', function() {
+        selectedStartDate = this.value ? new Date(this.value) : null;
+        renderModalCalendar();
+        updateSchedulePreview();
+    });
+    document.getElementById('schedule-end-date').addEventListener('change', function() {
+        selectedEndDate = this.value ? new Date(this.value) : null;
+        selectingEndDate = false;
+        renderModalCalendar();
+        updateSchedulePreview();
+    });
+    document.getElementById('schedule-name')?.addEventListener('input', updateSchedulePreview);
+
+    function updateSchedulePreview() {
+        const startDate = document.getElementById('schedule-start-date').value;
+        const endDate = document.getElementById('schedule-end-date').value;
+        const name = document.getElementById('schedule-name')?.value;
+        const preview = document.getElementById('schedule-preview');
+        
+        if (startDate && endDate) {
+            preview.style.display = 'block';
+            
+            // Format dates nicely
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const startFormatted = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const endFormatted = end.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            
+            document.getElementById('preview-name').textContent = name || `Schedule: ${startFormatted} - ${endFormatted}`;
+            document.getElementById('preview-dates').textContent = `${startFormatted} → ${endFormatted}`;
+        } else {
+            preview.style.display = 'none';
+        }
+    }
+
+    // ============ INTERACTIVE CALENDAR ============
+    let mainCalendarDate = new Date();
+    let schedulesData = [];
+
+    function renderMainCalendar() {
+        const calendarDays = document.getElementById('calendar-days');
+        const monthYearEl = document.getElementById('calendar-month-year');
+        
+        if (!calendarDays) return;
+
+        const year = mainCalendarDate.getFullYear();
+        const month = mainCalendarDate.getMonth();
+        
+        // Update header
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+        monthYearEl.textContent = `${monthNames[month]} ${year}`;
+        
+        // Get first day of month and total days
+        const firstDay = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const prevMonthDays = new Date(year, month, 0).getDate();
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        let html = '';
+        
+        // Previous month days
+        for (let i = firstDay - 1; i >= 0; i--) {
+            const day = prevMonthDays - i;
+            const date = new Date(year, month - 1, day);
+            const hasSchedule = isDateInSchedule(date);
+            const isActive = isDateInActiveSchedule(date);
+            
+            html += `<div class="calendar-day other-month ${hasSchedule ? 'has-schedule' : ''} ${isActive ? 'active-schedule' : ''}" 
+                         data-date="${formatDateISO(date)}" onclick="handleCalendarDayClick(this)">
+                        ${day}
+                        ${hasSchedule ? '<span class="schedule-dot"></span>' : ''}
+                     </div>`;
+        }
+        
+        // Current month days
+        for (let day = 1; day <= totalDays; day++) {
+            const date = new Date(year, month, day);
+            const isToday = date.getTime() === today.getTime();
+            const hasSchedule = isDateInSchedule(date);
+            const isActive = isDateInActiveSchedule(date);
+            
+            let classes = 'calendar-day';
+            if (isToday) classes += ' today';
+            if (hasSchedule) classes += ' has-schedule';
+            if (isActive) classes += ' active-schedule';
+            
+            html += `<div class="${classes}" data-date="${formatDateISO(date)}" onclick="handleCalendarDayClick(this)">
+                        ${day}
+                        ${hasSchedule ? '<span class="schedule-dot"></span>' : ''}
+                     </div>`;
+        }
+        
+        // Next month days to fill the grid
+        const totalCells = firstDay + totalDays;
+        const remainingCells = 42 - totalCells; // 6 rows * 7 days
+        
+        for (let day = 1; day <= remainingCells; day++) {
+            const date = new Date(year, month + 1, day);
+            const hasSchedule = isDateInSchedule(date);
+            const isActive = isDateInActiveSchedule(date);
+            
+            html += `<div class="calendar-day other-month ${hasSchedule ? 'has-schedule' : ''} ${isActive ? 'active-schedule' : ''}" 
+                         data-date="${formatDateISO(date)}" onclick="handleCalendarDayClick(this)">
+                        ${day}
+                        ${hasSchedule ? '<span class="schedule-dot"></span>' : ''}
+                     </div>`;
+        }
+        
+        calendarDays.innerHTML = html;
+    }
+
+    function formatDateISO(date) {
+        return date.toISOString().split('T')[0];
+    }
+
+    function isDateInSchedule(date) {
+        const dateStr = formatDateISO(date);
+        return schedulesData.some(schedule => {
+            const start = schedule.start_date;
+            const end = schedule.end_date;
+            return dateStr >= start && dateStr <= end;
+        });
+    }
+
+    function isDateInActiveSchedule(date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dateStr = formatDateISO(date);
+        const todayStr = formatDateISO(today);
+        
+        return schedulesData.some(schedule => {
+            const start = schedule.start_date;
+            const end = schedule.end_date;
+            // Check if today is within this schedule and if the clicked date is also within
+            return todayStr >= start && todayStr <= end && dateStr >= start && dateStr <= end;
+        });
+    }
+
+    function getActiveSchedule() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = formatDateISO(today);
+        
+        return schedulesData.find(schedule => {
+            return todayStr >= schedule.start_date && todayStr <= schedule.end_date;
+        });
+    }
+
+    function updateActiveScheduleCard() {
+        const activeCard = document.getElementById('active-schedule-card');
+        const noScheduleCard = document.getElementById('no-schedule-card');
+        const activeSchedule = getActiveSchedule();
+        
+        if (activeSchedule) {
+            activeCard.style.display = 'block';
+            noScheduleCard.style.display = 'none';
+            
+            document.getElementById('active-schedule-name').textContent = activeSchedule.name;
+            
+            const startDate = new Date(activeSchedule.start_date);
+            const endDate = new Date(activeSchedule.end_date);
+            const startFormatted = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const endFormatted = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            document.getElementById('active-schedule-dates').textContent = `${startFormatted} - ${endFormatted}`;
+            
+            // Calculate progress
+            const today = new Date();
+            const totalDays = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
+            const daysElapsed = Math.min(Math.max((today - startDate) / (1000 * 60 * 60 * 24) + 1, 0), totalDays);
+            const progressPercent = Math.round((daysElapsed / totalDays) * 100);
+            
+            document.getElementById('active-schedule-progress').style.width = progressPercent + '%';
+            document.getElementById('active-schedule-progress-text').textContent = progressPercent + '%';
+        } else {
+            activeCard.style.display = 'none';
+            noScheduleCard.style.display = 'block';
+        }
+        
+        // Update sidebar stats
+        document.getElementById('sidebar-stat-schedules').textContent = schedulesData.length;
+        document.getElementById('sidebar-stat-offers').textContent = offersData?.length || 0;
+        document.getElementById('sidebar-stat-trades').textContent = tradesData?.length || 0;
+        document.getElementById('sidebar-stat-workers').textContent = workersData?.length || 0;
+    }
+
+    function viewActiveSchedule() {
+        const activeSchedule = getActiveSchedule();
+        if (activeSchedule && activeSchedule.schedule_link) {
+            window.open(activeSchedule.schedule_link, '_blank');
+        } else {
+            showToast('No schedule link available', 'warning');
+        }
+    }
+
+    function navigateCalendar(direction) {
+        mainCalendarDate.setMonth(mainCalendarDate.getMonth() + direction);
+        renderMainCalendar();
+    }
+
+    function goToToday() {
+        mainCalendarDate = new Date();
+        renderMainCalendar();
+    }
+
+    function handleCalendarDayClick(element) {
+        const dateStr = element.dataset.date;
+        const clickedDate = new Date(dateStr);
+        
+        // Find schedule for this date
+        const schedule = schedulesData.find(s => {
+            return dateStr >= s.start_date && dateStr <= s.end_date;
+        });
+        
+        if (schedule) {
+            // Show schedule info or open the schedule
+            if (schedule.schedule_link) {
+                if (confirm(`View schedule "${schedule.name}"?`)) {
+                    window.open(schedule.schedule_link, '_blank');
+                }
+            } else {
+                showToast(`Schedule: ${schedule.name}`, 'info');
+            }
+        }
+    }
+
+    // Rename the existing modal calendar function to avoid conflict
+    function renderModalCalendar() {
+        renderCalendar(); // This is the existing modal calendar
+    }
+
+    // ============ Initialize ============
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAllData();
+        
+        // Set today's date as default for log filter
+        document.getElementById('log-date-filter').value = new Date().toISOString().split('T')[0];
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block page_title %}Analytics Dashboard{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+    <!-- Summary Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-1);">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="stat-info">
+                <h3 id="total-members">--</h3>
+                <p>Total Members</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-3);">
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="stat-info">
+                <h3 id="human-members">--</h3>
+                <p>Human Members</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-2);">
+                <i class="fas fa-robot"></i>
+            </div>
+            <div class="stat-info">
+                <h3 id="bot-members">--</h3>
+                <p>Bots</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: var(--gradient-4);">
+                <i class="fas fa-user-clock"></i>
+            </div>
+            <div class="stat-info">
+                <h3 id="guest-count">--</h3>
+                <p>Active Guests</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+        <!-- Moderation Stats -->
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-shield-alt"></i> Moderation Statistics</h2>
+            </div>
+            <div class="card-body">
+                <div class="chart-container" style="display: flex; flex-direction: column; gap: 20px;">
+                    <div class="stat-bar">
+                        <div class="stat-bar-label">
+                            <span>Warnings</span>
+                            <span id="warning-count">0</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill warning" id="warning-bar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="stat-bar">
+                        <div class="stat-bar-label">
+                            <span>Kicks</span>
+                            <span id="kick-count">0</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill danger" id="kick-bar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="stat-bar">
+                        <div class="stat-bar-label">
+                            <span>Bans</span>
+                            <span id="ban-count">0</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill critical" id="ban-bar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="stat-summary" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+                        <p><strong id="users-with-records">0</strong> users have moderation records</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Varsity Stats -->
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-trophy"></i> Varsity Registrations</h2>
+            </div>
+            <div class="card-body">
+                <div class="varsity-stats">
+                    <div class="varsity-stat pending">
+                        <div class="varsity-stat-number" id="varsity-pending">0</div>
+                        <div class="varsity-stat-label">Pending</div>
+                    </div>
+                    <div class="varsity-stat approved">
+                        <div class="varsity-stat-number" id="varsity-approved">0</div>
+                        <div class="varsity-stat-label">Approved</div>
+                    </div>
+                    <div class="varsity-stat denied">
+                        <div class="varsity-stat-number" id="varsity-denied">0</div>
+                        <div class="varsity-stat-label">Denied</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Roles -->
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-tags"></i> Top Roles by Members</h2>
+        </div>
+        <div class="card-body">
+            <div id="roles-list" class="roles-grid">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i> Loading roles...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 24px;
+        margin-bottom: 24px;
+    }
+
+    .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        transition: all 0.3s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .stat-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: white;
+    }
+
+    .stat-info h3 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+
+    .stat-info p {
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+
+    .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .card-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .card-header h2 {
+        font-size: 18px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-header h2 i {
+        color: var(--primary-light);
+    }
+
+    .card-body {
+        padding: 24px;
+    }
+
+    .stat-bar {
+        margin-bottom: 8px;
+    }
+
+    .stat-bar-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .progress-bar {
+        height: 10px;
+        background: var(--background-secondary);
+        border-radius: 5px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        border-radius: 5px;
+        transition: width 0.5s ease;
+    }
+
+    .progress-fill.warning {
+        background: var(--warning);
+    }
+
+    .progress-fill.danger {
+        background: var(--danger);
+    }
+
+    .progress-fill.critical {
+        background: #dc2626;
+    }
+
+    .varsity-stats {
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+    }
+
+    .varsity-stat {
+        text-align: center;
+        padding: 30px;
+        border-radius: 12px;
+        flex: 1;
+    }
+
+    .varsity-stat.pending {
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .varsity-stat.approved {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .varsity-stat.denied {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .varsity-stat-number {
+        font-size: 48px;
+        font-weight: 700;
+    }
+
+    .varsity-stat.pending .varsity-stat-number {
+        color: var(--warning);
+    }
+
+    .varsity-stat.approved .varsity-stat-number {
+        color: var(--success);
+    }
+
+    .varsity-stat.denied .varsity-stat-number {
+        color: var(--danger);
+    }
+
+    .varsity-stat-label {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin-top: 8px;
+    }
+
+    .roles-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    .role-card {
+        background: var(--background-secondary);
+        padding: 16px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: all 0.2s;
+    }
+
+    .role-card:hover {
+        background: var(--surface-hover);
+    }
+
+    .role-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+
+    .role-info {
+        flex: 1;
+    }
+
+    .role-name {
+        font-weight: 500;
+        font-size: 14px;
+    }
+
+    .role-count {
+        color: var(--text-secondary);
+        font-size: 13px;
+    }
+
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+    }
+
+    .loading-spinner i {
+        margin-right: 8px;
+    }
+
+    @media (max-width: 768px) {
+        .row {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
+
+<script>
+    async function loadAnalytics() {
+        try {
+            const response = await fetch('/api/analytics');
+            const data = await response.json();
+            
+            // Update member stats
+            document.getElementById('total-members').textContent = data.members.total.toLocaleString();
+            document.getElementById('human-members').textContent = data.members.humans.toLocaleString();
+            document.getElementById('bot-members').textContent = data.members.bots.toLocaleString();
+            document.getElementById('guest-count').textContent = data.members.guests.toLocaleString();
+            
+            // Update moderation stats
+            const maxMod = Math.max(data.moderation.total_warnings, data.moderation.total_kicks, data.moderation.total_bans, 1);
+            document.getElementById('warning-count').textContent = data.moderation.total_warnings;
+            document.getElementById('kick-count').textContent = data.moderation.total_kicks;
+            document.getElementById('ban-count').textContent = data.moderation.total_bans;
+            document.getElementById('warning-bar').style.width = (data.moderation.total_warnings / maxMod * 100) + '%';
+            document.getElementById('kick-bar').style.width = (data.moderation.total_kicks / maxMod * 100) + '%';
+            document.getElementById('ban-bar').style.width = (data.moderation.total_bans / maxMod * 100) + '%';
+            document.getElementById('users-with-records').textContent = data.moderation.users_with_records;
+            
+            // Update varsity stats
+            document.getElementById('varsity-pending').textContent = data.varsity.pending;
+            document.getElementById('varsity-approved').textContent = data.varsity.approved;
+            document.getElementById('varsity-denied').textContent = data.varsity.denied;
+            
+            // Update roles
+            const rolesContainer = document.getElementById('roles-list');
+            if (data.roles.top_roles.length > 0) {
+                rolesContainer.innerHTML = data.roles.top_roles.map(role => `
+                    <div class="role-card">
+                        <div class="role-color" style="background: var(--primary);"></div>
+                        <div class="role-info">
+                            <div class="role-name">${escapeHtml(role.name)}</div>
+                            <div class="role-count">${role.count} members</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                rolesContainer.innerHTML = '<p style="color: var(--text-secondary);">No role data available</p>';
+            }
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Load on page load
+    document.addEventListener('DOMContentLoaded', loadAnalytics);
+    
+    // Refresh every 60 seconds
+    setInterval(loadAnalytics, 60000);
+</script>
+{% endblock %}
