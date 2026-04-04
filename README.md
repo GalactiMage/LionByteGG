@@ -1,31 +1,66 @@
-# LionByteGG — PNW Esports System
+<p align="center">
+  <img src="LionbyteGGLogo.png" alt="LionByteGG" width="150"/>
+</p>
 
-> **System created and founded by Jay Moon for Purdue University**
+<h1 align="center">LionByteGG — PNW Esports System</h1>
 
-A complete esports management system built for **Purdue University Northwest (PNW)** — consisting of four Discord bots and a web dashboard that handle everything from student onboarding and moderation to shift management, music, and Minecraft server integration.
+<p align="center">
+  <strong>System created and founded by Jay Moon for Purdue University</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?logo=javascript&logoColor=black" alt="JavaScript"/>
+  <img src="https://img.shields.io/badge/Java-17+-ED8B00?logo=openjdk&logoColor=white" alt="Java"/>
+  <img src="https://img.shields.io/badge/HTML%2FCSS-Jinja2-E34F26?logo=html5&logoColor=white" alt="HTML"/>
+  <img src="https://img.shields.io/badge/SQL-SQLite3-003B57?logo=sqlite&logoColor=white" alt="SQL"/>
+  <img src="https://img.shields.io/badge/discord.py-2.3+-5865F2?logo=discord&logoColor=white" alt="discord.py"/>
+  <img src="https://img.shields.io/badge/discord.js-14-5865F2?logo=discord&logoColor=white" alt="discord.js"/>
+  <img src="https://img.shields.io/badge/Flask-2.3+-000000?logo=flask&logoColor=white" alt="Flask"/>
+</p>
 
 ---
 
-## System Overview
+A complete esports management system built for **Purdue University Northwest (PNW)** — four Discord bots and a full web dashboard that handle student onboarding, moderation, shift management, music, Minecraft server integration, and more.
 
-| Component | Language | Purpose |
+---
+
+## 🏗 System Overview
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="LionbyteGGLogo.png" width="80"/><br/><strong>LionByteGG</strong><br/><sub>Main Bot + Web Dashboard</sub><br/><code>Python · Flask · HTML · CSS · JS · SQL</code></td>
+    <td align="center" width="25%"><img src="LionShiftGGLogo.png" width="80"/><br/><strong>LionShiftGG</strong><br/><sub>Shift Management</sub><br/><code>Python · discord.py</code></td>
+    <td align="center" width="25%"><img src="purduenetworklogo.PNG" width="80"/><br/><strong>BoilerCraftGG</strong><br/><sub>Minecraft Server Bot</sub><br/><code>Python · discord.py · SQL</code></td>
+    <td align="center" width="25%"><img src="LionBeatsGGLogo.png" width="80"/><br/><strong>LionBeatsGG</strong><br/><sub>Music Bot</sub><br/><code>JavaScript · Node.js · Java</code></td>
+  </tr>
+</table>
+
+### Tech Stack
+
+| Layer | Technologies |
+|---|---|
+| **Backend** | Python 3.11, Flask, discord.py 2.3+, Node.js, discord.js 14 |
+| **Frontend** | HTML5 (Jinja2 templates), CSS3, JavaScript, Chart.js, Font Awesome |
+| **Databases** | SQLite3 (auth, equipment, Minecraft data), JSON (config, runtime state) |
+| **Audio** | Lavalink (Java 17+) — audio streaming server for music bot |
+| **APIs** | Discord API v10, GGLeap API, Mojang API, mcsrvstat.us |
+| **Hosting** | Windows batch scripts (local), Railway-ready (Procfile + railway.toml) |
+
+---
+
+## 📋 Requirements
+
+| Requirement | Version | Used By |
 |---|---|---|
-| **LionByteGG** | Python (discord.py) | Main esports bot + Flask web dashboard |
-| **LionShiftGG** | Python (discord.py) | Student worker shift management |
-| **BoilerCraftGG** | Python (discord.py) | Purdue Network Minecraft server bot |
-| **LionBeatsGG** | Node.js (discord.js) | Music bot with Lavalink audio server |
+| **Python** | 3.11 | LionByteGG, LionShiftGG, BoilerCraftGG |
+| **Node.js** | 18+ | LionBeatsGG |
+| **Java** | 17+ | Lavalink (audio server for LionBeatsGG) |
+| **Git** | Latest | Pulling updates |
 
 ---
 
-## Requirements
-
-- **Python 3.11** (for LionByteGG, LionShiftGG, BoilerCraftGG)
-- **Node.js 18+** (for LionBeatsGG)
-- **Java 17+** (for Lavalink audio server)
-
----
-
-## Setup
+## 🚀 Setup
 
 ### 1. Clone the Repository
 
@@ -102,23 +137,152 @@ LionBeatsGG\start-all.bat
 
 ---
 
-## Updating the System
+## 🔄 Updating the System
 
-Use the update scripts to pull the latest code **without touching any student data or databases**:
+### Quick Update (recommended)
+
+Use the included batch scripts to pull the latest code **without touching any student data, databases, or `.env` files**:
 
 ```bash
-# Pull latest code changes
+# Pull latest code only
 update_code.bat
 
-# Or update and restart all bots
+# Pull latest code AND restart all bots
 update_and_restart.bat
 ```
 
-These scripts only update source code files — they never modify `.env` files, databases, user records, or any data files.
+### Manual Update
+
+```bash
+cd G:\LionByteGG
+git pull origin main
+```
+
+Then restart the bots that were changed.
+
+### Pushing Your Own Changes
+
+After modifying code locally:
+
+```bash
+git add -A
+git commit -m "Brief description of what you changed"
+git push
+```
+
+> **The `.gitignore` automatically blocks all student data, databases, `.env` files, and caches from ever being committed.** You cannot accidentally push personal information.
 
 ---
 
-## LionByteGG — Main Bot Commands
+## 🛠 How to Modify the System
+
+This section explains where to make changes when you need to add features, fix bugs, or update behavior.
+
+### Understanding the Languages Used
+
+| Language | Where It's Used | What It Does |
+|---|---|---|
+| **Python** | Bot logic (`main.py`, `cogs/`, `utils/`, `views/`) | Discord bot commands, event handlers, API integrations |
+| **HTML + Jinja2** | `web/templates/*.html` | Web dashboard pages — Jinja2 is Python's templating language embedded in HTML |
+| **CSS** | `web/static/css/custom.css` + inline in templates | Dashboard styling and layout |
+| **JavaScript** | `web/static/js/main.js` + inline in templates | Dashboard interactivity, charts, AJAX calls to Flask API |
+| **SQL (SQLite)** | `web/auth_db.py`, `web/equipment_db.py` | User authentication, equipment tracking, BoilerCraft data |
+| **Java** | Lavalink server (`LionBeatsGG/lavalink/`) | Audio streaming engine — you don't modify this, just update the `.jar` |
+| **JavaScript (Node.js)** | `LionBeatsGG/bot/src/` | Music bot commands and Lavalink client |
+
+### Adding a New Bot Command
+
+Bot commands live in **cogs** (modular command files). Each bot has a `cogs/` folder.
+
+**Example — adding a new command to LionByteGG:**
+
+1. Open `LionByteGG/cogs/admin_commands.py` (or create a new cog file)
+2. Add your command:
+   ```python
+   @app_commands.command(name="my-command", description="What this command does")
+   async def my_command(self, interaction: discord.Interaction):
+       await interaction.response.send_message("Hello!")
+   ```
+3. If you created a new cog file, register it in `main.py`:
+   ```python
+   await bot.load_extension("cogs.my_new_cog")
+   ```
+4. Restart the bot. Run `/sync` in Discord if commands don't appear.
+
+### Modifying the Web Dashboard
+
+The dashboard is a **Flask** app using **Jinja2 HTML templates** with inline **CSS** and **JavaScript**.
+
+| What You Want to Change | Where to Look |
+|---|---|
+| Add a new page | Create a template in `web/templates/`, add a route in `web/app.py` |
+| Change page layout/style | Edit the HTML template + CSS in `web/static/css/custom.css` |
+| Add interactive features | Add JavaScript in the template's `{% block extra_scripts %}` block |
+| Change navigation/sidebar | Edit `web/templates/base.html` — all pages inherit from this |
+| Add a new API endpoint | Add a `@app.route()` function in `web/app.py` |
+| Change login/permissions | Edit `web/auth_db.py` and `web/oauth_routes.py` |
+| Modify database tables | Edit `web/auth_db.py` or `web/equipment_db.py` (SQLite) |
+
+**Example — adding a new dashboard page:**
+
+1. Create `web/templates/my_page.html`:
+   ```html
+   {% extends "base.html" %}
+   {% block page_title %}My Page{% endblock %}
+   {% block content %}
+   <div class="content-container">
+       <h2>My New Page</h2>
+       <p>Content goes here</p>
+   </div>
+   {% endblock %}
+   ```
+
+2. Add a route in `web/app.py`:
+   ```python
+   @app.route('/my-page')
+   def my_page():
+       return render_template('my_page.html')
+   ```
+
+3. Add a link in `web/templates/base.html` sidebar.
+
+### Modifying Bot Behavior (Events, Automation)
+
+| What You Want to Change | Where to Look |
+|---|---|
+| Welcome messages / onboarding | `LionByteGG/views/setup_view.py` |
+| Ticket system | `LionByteGG/views/ticket_view.py` and `cogs/ticket_commands.py` |
+| Varsity registration flow | `LionByteGG/views/varsity_view.py` |
+| Moderation (warn/kick/ban) | `LionByteGG/cogs/moderation.py` |
+| Reaction roles | `LionByteGG/cogs/reaction_roles.py` |
+| Voice channel auto-create | `LionByteGG/cogs/vc-system.py` |
+| Shift clock in/out flow | `LionShiftGG/cogs/shift-management.py` |
+| Shift offers and trades | `LionShiftGG/cogs/offer-trade.py` |
+| Minecraft verification | `BoilerCraftGG/cogs/verification.py` |
+| Minecraft chat monitoring | `BoilerCraftGG/cogs/chat_monitor.py` |
+| Music playback commands | `LionBeatsGG/bot/src/commands/play.js` |
+| Music panel buttons | `LionBeatsGG/bot/src/music/controls.js` |
+
+### Updating External Dependencies
+
+```bash
+# Python bots — check for updates
+pip install --upgrade discord.py flask requests
+
+# LionBeatsGG — check for updates
+cd LionBeatsGG/bot
+npm update
+
+# Lavalink — download newest .jar from:
+# https://github.com/lavalink-devs/Lavalink/releases
+# Replace LionBeatsGG/lavalink/Lavalink.jar
+```
+
+> **Warning:** Always test after updating dependencies. Major version bumps (e.g., discord.py 2.x → 3.x) may require code changes.
+
+---
+
+## 🤖 LionByteGG — Main Bot Commands
 
 ### General Commands (Everyone)
 
@@ -174,7 +338,7 @@ These scripts only update source code files — they never modify `.env` files, 
 
 ---
 
-## LionShiftGG — Shift Management Commands
+## ⏰ LionShiftGG — Shift Management Commands
 
 | Command | Description |
 |---|---|
@@ -193,7 +357,7 @@ These scripts only update source code files — they never modify `.env` files, 
 
 ---
 
-## BoilerCraftGG — Minecraft Bot Commands
+## ⛏️ BoilerCraftGG — Minecraft Bot Commands
 
 ### General Commands (Everyone)
 
@@ -253,7 +417,7 @@ These scripts only update source code files — they never modify `.env` files, 
 
 ---
 
-## LionBeatsGG — Music Bot Commands
+## 🎵 LionBeatsGG — Music Bot Commands
 
 ### General Commands (Everyone)
 
@@ -283,7 +447,7 @@ These scripts only update source code files — they never modify `.env` files, 
 
 ---
 
-## Web Dashboard
+## 🌐 Web Dashboard
 
 The web dashboard provides a browser-based control panel for managing the entire system. Access requires Discord OAuth2 login with appropriate permissions.
 
@@ -318,7 +482,7 @@ The web dashboard provides a browser-based control panel for managing the entire
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 LionByteGG/              ← Main bot + web dashboard
@@ -354,17 +518,25 @@ LionBeatsGG/             ← Music bot
 
 ---
 
-## Important Notes
+## ⚠️ Important Notes
 
-- **Student data is NOT stored in this repository.** All user records, databases, caches, and logs are generated at runtime and excluded via `.gitignore`.
+- **Student data is NOT stored in this repository.** All user records, databases, caches, and logs are generated at runtime and excluded via `.gitignore`. This is required by Purdue policy.
 - **Never commit `.env` files.** They contain Discord tokens and API keys. Use `.env.example` as a template.
 - **Python version:** All Python bots are built for and tested on Python 3.11. Do not upgrade without testing.
 - **Lavalink:** The music bot requires a running Lavalink server. Download `Lavalink.jar` from [the Lavalink releases page](https://github.com/lavalink-devs/Lavalink/releases) and place it in `LionBeatsGG/lavalink/`.
+- **Data safety:** All JSON writes use atomic file operations (write to temp file → swap). This prevents data loss from crashes or power failures.
+- **Secrets:** Bot tokens and API keys are loaded from `.env` files at runtime via `python-dotenv`. Never hardcode secrets in source files.
 
 ---
 
-## Contact
+## 📬 Contact
 
 For questions about this system, reach out to the PNW Esports Club staff or the system creator.
 
-**System created and founded by Jay Moon for Purdue University.**
+---
+
+<p align="center">
+  <strong>System created and founded by Jay Moon for Purdue University</strong>
+  <br/>
+  <sub>LionByteGG · LionShiftGG · BoilerCraftGG · LionBeatsGG</sub>
+</p>
