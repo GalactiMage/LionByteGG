@@ -5,8 +5,10 @@ Handles the Join to Create VC system with support for multiple generators
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import ui
+import traceback
+import asyncio
 
 from utils.embeds import EmbedBuilder
 import config
@@ -187,17 +189,19 @@ class TempVC(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        
-    async def cog_load(self):
-        """Called when the cog is loaded - cleanup orphaned channels"""
-        await self.cleanup_orphaned_channels()
+        self._ready = False
         
     async def cleanup_orphaned_channels(self):
         """Clean up temp VCs that exist in database but not in Discord"""
         try:
+            await self.bot.db.ensure_connection()
             all_temp_vcs = await self.bot.db.get_all_temp_vcs()
             cleaned = 0
             
+            if not self.bot.guilds:
+                print("[TEMP VC] Skipping cleanup — guild cache not populated yet")
+                return
+
             for temp_vc in all_temp_vcs:
                 channel_found = False
                 for guild in self.bot.guilds:
@@ -206,10 +210,13 @@ class TempVC(commands.Cog):
                         # Channel exists, check if it's empty
                         if len(channel.members) == 0:
                             try:
-                                await channel.delete(reason="Temp VC cleanup - empty channel")
+                                await channel.delete(reason="Temp VC cleanup — empty channel")
                                 await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
                                 cleaned += 1
-                            except:
+                            except discord.NotFound:
+                                await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
+                                cleaned += 1
+                            except Exception:
                                 pass
                         channel_found = True
                         break
@@ -218,6 +225,8 @@ class TempVC(commands.Cog):
                     # Channel doesn't exist anymore, remove from database
                     await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
                     cleaned += 1
+
+                await asyncio.sleep(0.3)
                     
             if cleaned > 0:
                 print(f"[TEMP VC] Cleaned up {cleaned} orphaned temp VC(s)")
@@ -225,7 +234,88 @@ class TempVC(commands.Cog):
                 print(f"[TEMP VC] No orphaned channels to clean up")
         except Exception as e:
             print(f"[TEMP VC] Error during cleanup: {e}")
+            traceback.print_exc()
         
+    # ==================== Lifecycle Events ====================
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Runs after bot cache is fully populated — safe to access guilds/channels"""
+        print("[TEMP VC] on_ready fired — running startup cleanup")
+        self._ready = True
+        await self.cleanup_orphaned_channels()
+        # Start periodic cleanup if not already running
+        if not self.periodic_cleanup.is_running():
+            self.periodic_cleanup.start()
+            print("[TEMP VC] Periodic cleanup task started")
+
+    @commands.Cog.listener()
+    async def on_resumed(self):
+        """Runs when bot resumes a dropped gateway connection"""
+        print("[TEMP VC] Resumed Discord connection")
+        await self.bot.db.ensure_connection()
+        if not self.periodic_cleanup.is_running():
+            print("[TEMP VC] Restarting periodic cleanup after resume")
+            self.periodic_cleanup.start()
+
+    @commands.Cog.listener()
+    async def on_disconnect(self):
+        print("[TEMP VC] WARNING: Disconnected from Discord gateway")
+
+    # ==================== Periodic Cleanup ====================
+
+    @tasks.loop(minutes=3)
+    async def periodic_cleanup(self):
+        """Periodically clean up empty temp VCs that the event handler might have missed"""
+        try:
+            await self.bot.db.ensure_connection()
+            all_temp_vcs = await self.bot.db.get_all_temp_vcs()
+            cleaned = 0
+
+            for temp_vc in all_temp_vcs:
+                channel_found = False
+                for guild in self.bot.guilds:
+                    channel = guild.get_channel(temp_vc["channel_id"])
+                    if channel:
+                        if len(channel.members) == 0:
+                            try:
+                                await channel.delete(reason="Periodic cleanup — empty temp VC")
+                                await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
+                                cleaned += 1
+                            except discord.NotFound:
+                                await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
+                                cleaned += 1
+                            except Exception:
+                                pass
+                        channel_found = True
+                        break
+
+                if not channel_found:
+                    await self.bot.db.remove_temp_vc(temp_vc["channel_id"])
+                    cleaned += 1
+
+                await asyncio.sleep(0.3)
+
+            if cleaned > 0:
+                print(f"[TEMP VC] Periodic cleanup: removed {cleaned} channel(s)")
+        except Exception as e:
+            print(f"[TEMP VC] Periodic cleanup error: {e}")
+
+    @periodic_cleanup.before_loop
+    async def _before_cleanup(self):
+        await self.bot.wait_until_ready()
+
+    @periodic_cleanup.error
+    async def _cleanup_error(self, error):
+        print(f"[TEMP VC] Periodic cleanup crashed: {error}")
+        traceback.print_exc()
+        await asyncio.sleep(15)
+        if not self.periodic_cleanup.is_running():
+            print("[TEMP VC] Restarting periodic cleanup after crash")
+            self.periodic_cleanup.start()
+
+    # ==================== Voice State Handler ====================
+
     @commands.Cog.listener()
     async def on_voice_state_update(
         self, 
@@ -234,22 +324,27 @@ class TempVC(commands.Cog):
         after: discord.VoiceState
     ):
         """Handle voice state updates for temp VC creation/deletion"""
-        
-        # User joined a voice channel - check if it's a generator
-        if after.channel:
-            # Get all configured generators
-            generators = await self.bot.db.get_all_generators()
-            
-            for generator in generators:
-                if after.channel.id == generator["join_channel_id"]:
-                    # User joined a Join to Create channel
-                    category = member.guild.get_channel(generator["category_id"])
-                    await self.create_temp_vc(member, after.channel, category)
-                    break
-            
-        # User left a voice channel - check if it should be deleted
-        if before.channel and before.channel != after.channel:
-            await self.check_delete_temp_vc(before.channel)
+        try:
+            # Ensure DB connection is alive
+            await self.bot.db.ensure_connection()
+
+            # User joined a voice channel - check if it's a generator
+            if after.channel:
+                generators = await self.bot.db.get_all_generators()
+                
+                for generator in generators:
+                    if after.channel.id == generator["join_channel_id"]:
+                        category = member.guild.get_channel(generator["category_id"])
+                        await self.create_temp_vc(member, after.channel, category)
+                        break
+                
+            # User left a voice channel - check if it should be deleted
+            if before.channel and before.channel != after.channel:
+                await self.check_delete_temp_vc(before.channel)
+
+        except Exception as e:
+            print(f"[TEMP VC] ERROR in on_voice_state_update: {e}")
+            traceback.print_exc()
             
     async def create_temp_vc(self, member: discord.Member, trigger_channel: discord.VoiceChannel, category: discord.CategoryChannel = None):
         """Create a temporary voice channel for a user"""
@@ -309,8 +404,17 @@ class TempVC(commands.Cog):
             # Add to database
             await self.bot.db.add_temp_vc(new_channel.id, member.id)
             
-            # Move user to new channel
-            await member.move_to(new_channel)
+            # Move user to new channel — if this fails, clean up
+            try:
+                await member.move_to(new_channel)
+            except Exception as e:
+                print(f"[TEMP VC] move_to failed for {member.name}, cleaning up: {e}")
+                try:
+                    await new_channel.delete(reason="Cleanup: move_to failed")
+                except Exception:
+                    pass
+                await self.bot.db.remove_temp_vc(new_channel.id)
+                return
             
             # Send control panel in the VC's text chat
             embed = discord.Embed(
@@ -334,25 +438,30 @@ class TempVC(commands.Cog):
             print(f"[TEMP VC] No permission to create channel for {member.name}")
         except Exception as e:
             print(f"[TEMP VC] Error creating channel: {e}")
+            traceback.print_exc()
             
     async def check_delete_temp_vc(self, channel: discord.VoiceChannel):
         """Check if a temp VC should be deleted (empty)"""
-        
-        # Check if this is a temp VC
-        temp_vc = await self.bot.db.get_temp_vc(channel.id)
-        if not temp_vc:
-            return
-            
-        # Check if channel is empty
-        if len(channel.members) == 0:
-            try:
-                await channel.delete(reason="Temp VC empty - auto deleted")
-                await self.bot.db.remove_temp_vc(channel.id)
-                print(f"[TEMP VC] Deleted empty channel: {channel.name}")
-            except discord.NotFound:
-                await self.bot.db.remove_temp_vc(channel.id)
-            except Exception as e:
-                print(f"[TEMP VC] Error deleting channel: {e}")
+        try:
+            # Check if this is a temp VC
+            temp_vc = await self.bot.db.get_temp_vc(channel.id)
+            if not temp_vc:
+                return
+                
+            # Check if channel is empty (or only bots)
+            humans = [m for m in channel.members if not m.bot]
+            if not humans:
+                try:
+                    await channel.delete(reason="Temp VC empty — auto deleted")
+                    await self.bot.db.remove_temp_vc(channel.id)
+                    print(f"[TEMP VC] Deleted empty channel: {channel.name}")
+                except discord.NotFound:
+                    await self.bot.db.remove_temp_vc(channel.id)
+                except Exception as e:
+                    print(f"[TEMP VC] Error deleting channel: {e}")
+        except Exception as e:
+            print(f"[TEMP VC] Error in check_delete_temp_vc: {e}")
+            traceback.print_exc()
                 
     # ==================== VC Commands Group ====================
     

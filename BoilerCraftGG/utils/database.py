@@ -22,8 +22,31 @@ class Database:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         
         self.connection = await aiosqlite.connect(self.db_path)
+        # Enable WAL mode for better concurrent access and resilience
+        await self.connection.execute("PRAGMA journal_mode=WAL")
+        await self.connection.execute("PRAGMA busy_timeout=5000")
         await self._create_tables()
-        print(f"[DATABASE] Connected to {self.db_path}")
+        print(f"[DATABASE] Connected to {self.db_path} (WAL mode)")
+
+    async def ensure_connection(self):
+        """Check database connection health and reconnect if needed"""
+        try:
+            if self.connection is None:
+                raise Exception("No connection")
+            # Quick health check
+            async with self.connection.execute("SELECT 1") as cursor:
+                await cursor.fetchone()
+        except Exception as e:
+            print(f"[DATABASE] Connection lost ({e}), reconnecting...")
+            try:
+                if self.connection:
+                    await self.connection.close()
+            except Exception:
+                pass
+            self.connection = await aiosqlite.connect(self.db_path)
+            await self.connection.execute("PRAGMA journal_mode=WAL")
+            await self.connection.execute("PRAGMA busy_timeout=5000")
+            print("[DATABASE] Reconnected successfully")
         
     async def _create_tables(self):
         """Create all necessary tables"""
