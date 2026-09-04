@@ -289,11 +289,48 @@ encrypting the field or moving that data into SQLite.
 
 ---
 
-## 11.11 Where to Go From Here
+## 11.11 More Gotchas Worth Knowing
+
+A few additional, smaller lessons that don't fit neatly into §11.4 but are worth remembering:
+
+### "A varsity registration DM never got answered, and the recruit says they finished it"
+Almost always the schedule-photo step — see
+[Chapter 4 §4.5.4](04_lionbytegg_bot.md#454-step-5--the-schedule-photo). The recruit has
+only **180 seconds** after submitting the third modal to DM the bot a photo of their class
+schedule; if they miss that window, the whole registration silently fails to save anywhere.
+There's no partial-save and no automatic retry — just send them a brand-new registration
+link and remind them to have their schedule photo ready *before* they start this time.
+
+### "Two different service scripts both seem to think a bot is/isn't running"
+This can happen if a bot process was killed abruptly (e.g., Task Manager, a power loss)
+rather than through its own stop script — the PID file it wrote on startup (`data/bot.pid`
+for LionByteGG) can go stale. Prefer the provided stop scripts over manually killing
+processes whenever possible, and if you do have to kill something manually, expect to
+double-check with the Master Terminal or a process list afterward.
+
+### "A CSV export (rosters, BoilerCraft analytics) opens with garbled special characters in Excel"
+This is a classic UTF-8-without-BOM-vs-Excel issue, not a bug in the export itself — if you
+hit it, open the CSV in a text editor first to confirm the underlying data is correct UTF-8,
+then import it into Excel via Data → From Text/CSV (which lets you explicitly pick UTF-8)
+rather than double-clicking to open it directly.
+
+### "I want to test a change without affecting real production data"
+There's no built-in "staging mode" in this system — everything reads and writes the same
+live data files and databases. The safest way to test a risky change is on a separate clone
+of the repository pointed at its own `data/` folder, never directly against the arena's live
+`data/` directory.
+
+---
+
+## 11.12 Where to Go From Here
 
 If you've read this whole manual and still can't find your answer, the next-best places to
 look are: the relevant bot's own cog/util source file (this manual tells you exactly which
 file to open for almost every feature), the unified Activity Log inside Nova
 (`/logs` — it records who did what and when for nearly everything), and the
 [docs/NOVA_COMPLETE_GUIDE.md](../NOVA_COMPLETE_GUIDE.md) companion document for a friendlier,
-narrative walkthrough of daily usage.
+narrative walkthrough of daily usage. And remember the golden rule that applies to nearly
+every "it's not working" report in this whole system: **restart the relevant service, hard
+refresh the browser, and check the Activity Log** before assuming something is broken at a
+deeper level — the overwhelming majority of reported issues in this project's history have
+turned out to be exactly one of those three things.

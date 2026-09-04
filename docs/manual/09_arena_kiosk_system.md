@@ -249,3 +249,98 @@ slides — was fully built, briefly tested with real live data, and then **compl
 at the requester's decision before it was ever polished or deployed. If a similar feature is
 requested again, confirm the exact scope carefully before building — this exact idea has
 already been built once and fully scrapped.
+
+---
+
+## 9.13 Example Data Shapes
+
+**`arena_kiosk_config.json` (abbreviated, showing the shape not every key)**
+```json
+{
+  "arena_name": "PNW Esports Arena",
+  "day_hours": [
+    { "open": true,  "start": "10:00", "end": "17:00" },
+    { "open": true,  "start": "10:00", "end": "17:00" },
+    { "open": true,  "start": "10:00", "end": "17:00" },
+    { "open": true,  "start": "10:00", "end": "17:00" },
+    { "open": true,  "start": "10:00", "end": "17:00" },
+    { "open": false, "start": "10:00", "end": "17:00" },
+    { "open": true,  "start": "10:00", "end": "14:00" }
+  ],
+  "announcement": { "enabled": true, "text": "Tournament tonight at 7pm!", "color": "#CFB991", "scroll": true },
+  "signin_guard": { "enabled": true, "cooldown_minutes": 0, "max_per_day": 0, "max_active_pc": 1, "ban_message": "You are not permitted to sign in at this time." },
+  "pc_lock_enabled": true, "pc_hold_minutes": 10, "ggleap_paused": false,
+  "kiosks": {
+    "kiosk-1": { "label": "Main Kiosk", "room": "Island Room", "type": "pc" },
+    "kiosk-2": { "label": "Console Kiosk", "room": "Console Room", "type": "console" }
+  }
+}
+```
+
+**A sign-in record (`arena.db`, decrypted view — non-PII columns shown alongside)**
+```json
+{
+  "id": "sign_9f2a1c", "kiosk_id": "kiosk-1", "room": "Island Room",
+  "name": "Alex Smith", "email": "asmith@purdue.edu",
+  "reason": null, "checked_in_by": null,
+  "signed_in_at": "2026-09-04T15:02:00Z", "accepted_rules": true
+}
+```
+
+**A signin-guard flag (`arena.db`)**
+```json
+{
+  "id": 118, "at": "2026-09-04T15:10:00Z", "kind": "watch", "severity": "med",
+  "kiosk_id": "kiosk-1", "kiosk_label": "Main Kiosk", "reason": "Email is on the watch list"
+}
+```
+
+**`GET /api/arena/pcs` response (abbreviated)**
+```json
+{
+  "available": 18, "in_use": 5, "offline": 1, "total": 24,
+  "pcs": [
+    { "uuid": "abc-123", "name": "Island1S1", "status": "available", "area": "Island 1", "state": "ReadyForUser", "locked": false }
+  ],
+  "error": null, "last_updated": "2026-09-04T15:11:00Z"
+}
+```
+
+---
+
+## 9.14 Frequently Asked Questions
+
+**"A guest says they can't sign in and the kiosk shows a generic error."**
+Check three things in order: is the arena actually configured as open right now for today's
+`day_hours` entry, is their email on the ban/watch list (a ban blocks outright with the
+configured `ban_message`), and has the sign-in guard's `cooldown_minutes`/`max_per_day`
+kicked in for them specifically (only relevant if those are set above `0`).
+
+**"The floor map shows a PC as available but a guest walked up and it was actually in use."**
+This is almost always a brief staleness window — the shared GGLeap cache refreshes every 15
+seconds while the arena is open, so there's up to a 15-second lag between a PC's real state
+changing and the kiosk reflecting it. This is an intentional trade-off to stay within
+GGLeap's API rate limits (see §9.2) — it is not a bug, just the cost of not hammering the
+API every second.
+
+**"Can I make a specific PC completely unavailable to guests without turning it off?"**
+Not directly through the kiosk system today — the closest option is placing an ongoing hold
+on it (which is normally guest-driven) or coordinating with GGLeap directly to mark it in
+maintenance mode there, since that state isn't something Nova's config exposes a toggle for.
+
+**"An incident report I filed isn't showing up for another staff member."**
+That's expected behavior, not a bug — by default, incident reports are only visible to the
+staff member who filed them, unless the viewer has `arena.reports_all`. Confirm the other
+staff member actually holds that permission if they're meant to see everyone's reports.
+
+**"Why does the Live Feed sometimes show the same person twice in a row?"**
+Duplicate check-ins are allowed on purpose (see §9.5) — if a guest taps the kiosk twice by
+accident, or a staff member manually signs someone in who already used the kiosk themselves
+minutes earlier, both attempts show up as separate, real entries. This was a deliberate
+design choice so staff can see every individual tap, not a de-duplicated summary.
+
+**"How do I completely wipe a specific kiosk's local state (test data, stuck holds, etc.)?"**
+There's no single "reset kiosk" button — holds are in-memory and clear themselves on the
+next server restart or naturally expire after `pc_hold_minutes`; sign-in records need to be
+removed at the student-profile level (`DELETE /api/arena/student?email=...`) if they were
+test data that shouldn't count toward analytics.

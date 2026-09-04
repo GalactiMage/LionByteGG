@@ -158,3 +158,73 @@ directly from Settings. `POST /api/bot/control/restart` and `POST /api/bot/contr
 queue a restart/stop request for the LionByteGG bot to pick up and act on within seconds —
 remember the golden rule from the [Troubleshooting guide](11_troubleshooting_and_operations_guide.md):
 **never trigger one of these while a bulk sync job is mid-flight.**
+
+---
+
+## 5.7 Example Data Shapes
+
+**A dashboard user record (`GET /api/admin/users` entry)**
+```json
+{
+  "id": 4, "username": "jkim", "display_name": "Jordan Kim",
+  "is_admin": false, "is_active": true, "group_id": 2,
+  "created_at": "2026-02-10T00:00:00Z", "last_login": "2026-09-04T14:02:00Z"
+}
+```
+
+**A group record (`GET /api/admin/groups` entry)**
+```json
+{
+  "id": 2, "name": "Arena Staff", "description": "Front-desk arena workers",
+  "permissions": ["page.dashboard", "section.arena", "page.arena_live", "page.arena_sessions", "arena.manage"],
+  "member_count": 6
+}
+```
+
+**An activity log entry (`GET /api/activity-log`)**
+```json
+{
+  "timestamp": "2026-09-04T18:00:00Z",
+  "user": { "type": "dashboard", "name": "Jordan Kim", "id": 4 },
+  "ip_address": "10.0.0.42",
+  "action": "warn_user", "category": "moderation", "success": true,
+  "details": "Issued a warning to SomeUser for spam",
+  "target_id": "123456789012345678", "target_name": "SomeUser",
+  "source": "website", "path": "/api/warn-user", "method": "POST"
+}
+```
+
+---
+
+## 5.8 Frequently Asked Questions
+
+**"I'm an admin but I still get a 403 on some action — why?"**
+Full-access users bypass `@page_permission_required`/`@api_perm_required` checks
+automatically, so a genuine admin account (or the legacy login) should never see this. If it
+does happen, double-check the account actually has `is_admin: true` set — a dashboard user
+in an "Administrators"-named group without the literal `is_admin` flag ticked is **not**
+treated as full-access; the group name is cosmetic, only the flag matters.
+
+**"Can one person belong to more than one group?"**
+No — each dashboard user belongs to exactly one group at a time (`group_id` is a single
+value, not a list). If someone needs a blend of two roles' permissions, either create a new
+combined group, or add the extra individual permission keys they need directly (if the admin
+UI supports per-user overrides in your version) — otherwise, the practical approach is a
+purpose-built group for that hybrid role.
+
+**"How do I find out who has admin.panel access, for a security review?"**
+`/admin`'s Groups view + `/api/admin/groups` lets you see which groups include
+`admin.panel`, and `/api/admin/users` shows each user's assigned group — cross-reference the
+two, or just check each user's `is_admin` flag directly since that's the actual gate that
+matters, independent of group permissions.
+
+**"I changed a group's permissions — does an already-logged-in user see the change immediately?"**
+Not necessarily. `session['dashboard_permissions']` is set at login time; a user who's
+already logged in when you change their group's permissions may need to log out and back in
+(or wait for their session to naturally expire and refresh) before the new permissions take
+effect, **except** when the update happens to their own account through the admin panel's
+self-edit path, which explicitly refreshes the current session immediately.
+
+**"What's the actual session timeout?"**
+12 hours (`PERMANENT_SESSION_LIFETIME`), after which a user is automatically logged out and
+needs to sign back in.

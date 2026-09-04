@@ -171,3 +171,70 @@ actually running, and that nothing else on the machine is using port 3847.
 | `bot/data/music-stats.json` | Aggregated top songs/requesters + hourly/daily activity |
 | `bot/data/bot-settings.json` | Presence text/type, volume defaults, auto-disconnect minutes, DJ role |
 | `bot/data/quiz-songs.json` | The full quiz question bank, organized by genre |
+
+### Example Shapes
+
+**`bot/data/music-panels.json`**
+```json
+{
+  "944996290343886868": { "channelId": "1403788867424747620", "messageId": "1429893450811314257" }
+}
+```
+
+**A single `bot/data/play-history.json` entry**
+```json
+{
+  "title": "Song Title", "author": "Artist Name",
+  "requester": { "id": "123456789012345678", "username": "SomeUser" },
+  "guildId": "944996290343886868", "guildName": "PNW Esports",
+  "artworkUrl": "https://i.ytimg.com/vi/.../maxresdefault.jpg",
+  "playedAt": "2026-09-04T20:15:00.000Z"
+}
+```
+
+**`bot/data/quiz-songs.json` (one genre's worth)**
+```json
+{
+  "anime": [
+    { "title": "Song Title", "artist": "Artist Name", "anime": "Show Name", "search": "optional override search query" }
+  ]
+}
+```
+The optional `search` field lets you give the bot a more precise YouTube/Spotify search
+string than "title + artist" alone would produce — useful for songs where the obvious search
+terms turn up a cover or the wrong version.
+
+---
+
+## 2.8 Frequently Asked Questions
+
+**"`/play` says it can't find anything, even for a song I know exists."**
+Check Lavalink is actually running first (this is the single most common cause) — if the
+bot's own process is up but Lavalink isn't, searches fail silently rather than throwing an
+obvious error. Second most common cause: the exact search phrase matched something
+region-locked or removed on YouTube; try a more generic search term or a direct URL instead.
+
+**"The bot joined the voice channel but no audio is playing."**
+This almost always means Lavalink started but never fully finished initializing (check its
+own console window for errors), or the `LAVALINK_PASSWORD` in the bot's `.env` doesn't match
+the `password` field in `lavalink/application.yml` — a mismatch here causes the bot to
+"connect" at the network level but fail to authenticate, which can look like audio just never
+starting.
+
+**"Can I change the bot's default volume or auto-disconnect time permanently?"**
+Yes — `PUT /api/music/settings` (from Nova's Music Dashboard, see
+[Chapter 7](07_nova_web_music_tickets.md)) or directly `PUT` to the bot's own
+`/api/settings` endpoint updates `defaultVolume`, `maxVolume`, and `autoDisconnectMinutes` in
+`bot-settings.json` — no restart required, it's read live.
+
+**"Someone keeps spamming `/play` and filling the queue with junk."**
+Set a `djRoleId` in bot settings — once configured, only members with that role (plus
+admins) can queue/skip/control playback; everyone else can still listen but not touch the
+controls. (This is an opt-in feature; by default anyone can queue songs.)
+
+**"The quiz says a correct answer was wrong."**
+The fuzzy-match tolerance is intentionally generous but not infinite — roughly 20% character
+edit-distance. A genuinely very different spelling, or an answer that only names part of a
+multi-word title without any of the "significant" words the matcher looks for, can still miss.
+This is a deliberate trade-off between allowing typos and not accepting answers that are too
+loosely related to be a fair guess.

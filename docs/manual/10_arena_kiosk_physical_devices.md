@@ -119,3 +119,38 @@ Each physical device's browser should be pointed at Nova's live route —
 browser. Do **not** point a real device at the standalone prototype files in `Arena Kiosks/`;
 those are historical references only and have no connection to live sign-in data, PC status,
 or any of the automation described in [Chapter 9](09_arena_kiosk_system.md).
+
+---
+
+## 10.7 Frequently Asked Questions
+
+**"The kiosk browser shows the sign-in form for a split second before the lockout screen appears."**
+This should not happen — the pre-render lockout check is specifically designed to prevent
+that flash. If you see it, check whether the kiosk's browser cache is serving a stale copy of
+the page from before the lockout check was added; a hard-refresh or clearing the browser
+cache on that specific device should resolve it.
+
+**"Can I use a phone instead of a tablet/laptop for a kiosk?"**
+Nothing technically prevents it — the page is responsive — but it isn't the intended form
+factor. The floor-map seat picker in particular is designed and tested for tablet/laptop-size
+screens; on a phone-size viewport it will still function but will feel cramped compared to
+the intended experience.
+
+**"How do I know which physical kiosk maps to which `kiosk-N` ID?"**
+Check Nova's Kiosk Manager (`/arena/controls`) — each configured kiosk shows its assigned
+`label` and `room`, along with a direct "Open" link showing the exact URL that device should
+be pointed at. When in doubt, open that link on the device itself and confirm the on-screen
+label matches the physical room.
+
+**"A kiosk got stuck in the trapped/fullscreen state and staff can't get to the admin panel."**
+The admin panel is opened via the on-screen admin button (top-right corner) even while
+trapped — the trap only blocks page *navigation* (back button, reload, closing the tab), not
+in-page UI. If the admin button itself is somehow unresponsive, the safe fallback is a full
+device restart, which will re-run the kiosk's boot sequence from scratch.
+
+**"Do I need to reboot a kiosk device after a Nova config change (e.g. new hours)?"**
+No — kiosks poll their config live (roughly every 5 seconds for the config endpoint), so
+hours, announcements, and most settings changes appear within a few seconds without any
+action on the physical device at all. Only a change to the kiosk *template code itself*
+(`arena_kiosk1.html`/`arena_kiosk2.html`) requires the Nova web server to be restarted and the
+device's browser to be refreshed.

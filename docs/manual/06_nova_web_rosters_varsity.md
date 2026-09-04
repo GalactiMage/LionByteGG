@@ -85,21 +85,50 @@ a spinner that might be stuck or might just be slow.
 
 This is the same flow described from the bot's side in
 [Chapter 4 §4.5](04_lionbytegg_bot.md#45-varsity--jv-team-registration), but here's what it
-looks like from the dashboard:
+looks like from the dashboard, plus what the actual form looks like on the recruit's end —
+worth reading both halves together if you're the one sending these out.
 
 1. `POST /api/rosters/send-registration` queues a DM to a specific person and hands you back
    a `job_id` so you can poll `GET /api/rosters/registration-status/<job_id>` and confirm the
-   DM actually delivered (Discord DMs silently fail if someone has them turned off).
-2. Once they've filled out the form on their end, it shows up as a **pending registration**
-   in Rosters.
-3. `POST /api/rosters/approve` decrypts the submitted PII, adds the player to the roster, and
+   DM actually delivered (Discord DMs silently fail if someone has them turned off — a
+   `job_id` stuck at "pending" or "failed" instead of "delivered" is exactly that scenario).
+2. The recruit receives a DM with a **"Start Registration"** button, picks their primary
+   game from a dropdown (pulled live from whatever's configured in Settings → Esports Games),
+   and then works through **15 questions across 3 separate pop-up forms** — full name, both
+   a Purdue and a personal email, phone, PUID, GPA, hometown, year in school, major, jersey
+   size/name, in-game name, rank, primary role, a stats-tracker link, and an optional
+   free-text notes field. See [Chapter 4 §4.5.3](04_lionbytegg_bot.md#453-steps-24--the-three-modals-every-default-question-in-order)
+   for the complete question-by-question list with the exact wording shown to the recruit.
+3. **There's one more step after the forms that's easy to forget about:** the recruit is
+   asked to DM the bot a photo of their class schedule, with a strict 3-minute window to do
+   so. If they miss that window, the registration silently never completes — nothing shows
+   up in Rosters at all, and no error is shown to you. If someone insists they finished the
+   form but you don't see a pending registration for them, this is almost always why —
+   re-send them a fresh link rather than troubleshooting further.
+4. Once they do send the schedule photo, it shows up as a **pending registration** in
+   Rosters, along with a matching post in the `#varsity-registrations` Discord channel with
+   its own Approve/Deny buttons — either surface can be used to review it, they both operate
+   on the same underlying record.
+5. `POST /api/rosters/approve` decrypts the submitted PII, adds the player to the roster, and
    queues the correct Discord role assignment. `POST /api/rosters/deny` marks it denied with
-   a reason and queues a denial DM.
+   a reason and queues a denial DM back to the recruit explaining why.
+
+### Changing What Gets Asked
+The 15 default questions are **not configurable from Nova** — there's no settings page or
+config file for this. They're hardcoded Discord modal forms defined directly in the
+LionByteGG bot's source code (`views/varsity_view.py`). If your organization needs to
+add, remove, or reword a question, that requires a code change and a bot restart — the exact
+steps (including Discord's hard 5-fields-per-modal limit and where to also update the review
+embed so reviewers can actually see a newly added answer) are documented in
+[Chapter 4 §4.5.7](04_lionbytegg_bot.md#457-how-to-change-the-registration-questions).
 
 > **The other Rule to Live By that lives here:** only send one registration DM to a given
 > person at a time. Check their pending status before clicking Send again — a second link
 > sent while the first is still pending just creates confusion about which one is current,
-> and can race against the first submission.
+> and can race against the first submission. This matters even more now that you know the
+> schedule-photo step has a hard timeout — a recruit who's slow to respond to the first link
+> might still complete it after you've already sent a second one, and now there are two
+> competing registrations to sort out.
 
 ---
 
@@ -175,3 +204,85 @@ plaintext PII in a JSON file anywhere in this project, that's a bug — flag it 
 | Comms | `GET/POST/DELETE /api/rosters/announcements`, `GET/POST /api/rosters/notification-settings`, `POST /api/rosters/send-webhook`, `POST /api/rosters/dm-players` |
 | Import/Export | `GET /api/rosters/export/csv`, `POST /api/rosters/import/csv` |
 | Audit | `GET /api/rosters/audit-log` |
+
+---
+
+## 6.10 Example Data Shapes
+
+**A player record (`rosters.json`, decrypted view)**
+```json
+{
+  "id": "player_9f2a", "name": "Alex Smith", "ign": "ProGamer123",
+  "game": "Valorant", "rank": "Diamond 2",
+  "team_ids": ["team_3_1725480000"], "team_id": "team_3_1725480000",
+  "player_type": "varsity", "position": "Duelist", "status": "active",
+  "is_captain": false,
+  "encrypted_pii": "gAAAAABm...(Fernet ciphertext, truncated)..."
+}
+```
+The PII fields you'd see if you decrypted `encrypted_pii` for the record above:
+```json
+{
+  "purdue_email": "asmith@purdue.edu", "personal_email": "alexsmith@gmail.com",
+  "puid": "0012345678", "phone": "123-456-7890",
+  "hometown": "Hammond, IN", "year_in_school": "Sophomore",
+  "major": "Computer Science", "gpa": "3.4",
+  "jersey_details": "Large - SMITH"
+}
+```
+
+**A team record (`teams.json`)**
+```json
+{
+  "id": "team_3_1725480000", "name": "Valorant Varsity A", "game": "Valorant",
+  "logo_url": "https://.../valorant-logo.png", "coach": "555666777888999000",
+  "members": ["player_9f2a", "player_1b3c"], "created_at": "2026-01-15T00:00:00Z"
+}
+```
+
+**A match history entry (`match_history.json`)**
+```json
+{
+  "id": "match_0042", "team_id": "team_3_1725480000", "opponent": "Rival University",
+  "result": "win", "date": "2026-09-01",
+  "player_stats": [
+    { "player_id": "player_9f2a", "kills": 22, "deaths": 14, "assists": 5, "mvp": true }
+  ]
+}
+```
+
+---
+
+## 6.11 Frequently Asked Questions
+
+**"I approved a registration but the player didn't get any Discord roles."**
+Check `data/team_role_settings.json` actually has a mapping entry for that player's specific
+game — if the game name doesn't exactly match a key in `mapping`, the sync has nothing to
+apply for the game-specific varsity/JV role (they'd still get the general `varsity_role_id`,
+but not the per-game one). Game names are matched by exact string, so a typo or casing
+mismatch between the roster's `game` field and the settings mapping is the most common cause.
+
+**"Can I un-approve someone after the fact?"**
+There's no dedicated "un-approve" endpoint — removing someone from the team entirely is done
+via `DELETE /api/rosters/player`, and reversing their Discord roles would need a manual
+`sync-roles` pass after removing them from every `team_ids` entry (since the sync only grants
+roles for teams they're currently on).
+
+**"What happens to match stats if I delete a player?"**
+`match_history.json` records reference players by `player_id`, and deleting a player doesn't
+retroactively scrub historical match entries — their past stats remain in the match history
+(useful for season records), they just won't appear in the live roster or current
+leaderboard rankings tied to an active player.
+
+**"Does the CSV export include encrypted PII in plain text?"**
+Yes, intentionally — the export is meant for legitimate administrative use (e.g., handing a
+real roster to a coach), so PII fields are decrypted for the export. Treat exported CSV
+files with the same care as any other document containing personal information; they are
+**not** automatically re-encrypted or protected once outside the system.
+
+**"Why does `sync-roles/preview` sometimes show a role change I didn't expect?"**
+It's genuinely comparing every player's *current* Discord roles against what they *should*
+have based on today's roster/team-settings configuration — if `team_role_settings.json` was
+edited recently (e.g. a role ID changed), the preview will show a full recalculation against
+the new mapping, including changes unrelated to whatever specific edit you just made. Read
+the whole preview before executing a bulk sync, not just the part you expected to change.

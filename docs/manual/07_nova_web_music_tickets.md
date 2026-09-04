@@ -94,3 +94,48 @@ click the button in Nova — that's the queue being processed, not a bug.
 `tickets.close`, `tickets.blacklist`, `tickets.delete_closed`, `tickets.send_message`,
 `tickets.assign` — each gates one specific button, so you can give someone the ability to
 reply inside tickets without also giving them the ability to permanently delete history.
+
+---
+
+## Part 3 — Example Data & Frequently Asked Questions
+
+**A `GET /api/music/status` response**
+```json
+{
+  "status": "online",
+  "players": [ { "guildId": "944996290343886868", "listenerCount": 5 } ],
+  "tracksToday": 42, "totalListeners": 15, "error": null
+}
+```
+
+**A ticket message queue entry (`discord_notification_queue.json`)**
+```json
+{
+  "type": "ticket_message", "status": "pending", "queued_at": "2026-09-04T18:30:00Z",
+  "channel_name": "ticket-0042", "message": "Thanks for the report — looking into it now.",
+  "mention_user": true, "user_id": "123456789012345678", "sender": "StaffName"
+}
+```
+
+**"The Music Dashboard says offline but I can hear music playing in Discord right now."**
+This is almost always a **port/host mismatch**, not the bot actually being down — double
+check `MUSIC_BOT_API_URL` (or the default `http://127.0.0.1:3847`) is reachable from wherever
+Nova itself is running. If Nova and the music bot are on different machines, `127.0.0.1`
+won't work at all; it needs the actual host address of the machine running LionBeatsGG.
+
+**"I closed a ticket in Nova but the Discord channel is still there."**
+Give it a few seconds — the actual channel deletion happens when the LionByteGG bot's
+`process_discord_notifications` loop (10-second poll) picks up the queued `close_ticket`
+entry, not instantly when you click the button in Nova. If it's been over a minute, check
+that the bot itself is running (see [Chapter 11](11_troubleshooting_and_operations_guide.md)).
+
+**"Can I reopen a ticket after closing it?"**
+Not directly — there's no "reopen" action. The practical workaround is to have the user open
+a brand-new ticket referencing the old one; the old ticket's full transcript remains
+available in the `#mc-ticket-logs`-style archive channel (or the closed list in Nova) for
+context.
+
+**"Why does deleting a closed ticket in Nova feel so final?"**
+Because it is — `DELETE /api/tickets/closed/<id>/delete` removes the record entirely from
+`ticket_log.json` with no undo, no recycle bin, and no confirmation beyond the button click
+itself. Only grant `tickets.delete_closed` to people who understand that.

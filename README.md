@@ -604,6 +604,32 @@ LionBeatsGG/             ← Music bot
 
 ---
 
+## ❓ Frequently Asked Questions
+
+**Where do I find every command, route, and setting documented in full detail?**
+[docs/manual/](docs/manual/00_index.md) — 12 chapters, plus a searchable
+[Find It Fast index](docs/manual/00_index.md#-find-it-fast--search-the-manual-by-topic) at
+the top for jumping straight to a specific topic.
+
+**How do the varsity/JV registration questions work, and can I change them?**
+Yes, and it's fully documented — see
+[docs/manual/04_lionbytegg_bot.md § 4.5](docs/manual/04_lionbytegg_bot.md#45-varsity--jv-team-registration)
+for the complete list of default questions (there are 15, across 3 pop-up forms, plus a
+required schedule-photo upload step) and the exact steps to add, remove, or reword any of
+them.
+
+**Something broke — where do I start?**
+[docs/manual/11_troubleshooting_and_operations_guide.md](docs/manual/11_troubleshooting_and_operations_guide.md)
+— it covers starting/stopping every service, what to do if the host machine itself needs a
+restart, and a running list of every known issue this project has hit with its fix.
+
+**Do I need to restart anything after pulling new code?**
+Yes — see the [Updating the System](#-updating-the-system) section above. Nova specifically
+has no hot-reload in production, so a code/template change needs a server restart plus a
+browser hard-refresh to actually show up.
+
+---
+
 ## 📬 Contact
 
 For questions about this system, reach out to the PNW Esports Club staff or the system creator.

@@ -143,3 +143,61 @@ physical inventory audit would need in one file.
 ### Permission Keys
 `equipment.manage` (add/edit/delete items, deactivate QR codes), `equipment.checkout`,
 `equipment.checkin`, `equipment.reports` (file and resolve), `equipment.export`.
+
+---
+
+## Part 4 — Example Data & Frequently Asked Questions
+
+**A `schedules.json` announcement queue entry (LionShift)**
+```json
+{
+  "type": "schedule_announcement", "status": "pending",
+  "channel_id": "1405395710500802730", "notify_workers": true,
+  "custom_message": "Here's next week's schedule!",
+  "schedule": {
+    "name": "Week of 9/8", "start_date": "2026-09-08", "end_date": "2026-09-14",
+    "allow_offers": true, "shift_count": 21, "created_by": "Dashboard Admin"
+  }
+}
+```
+
+**An equipment item (`equipment_db.py`, conceptual shape)**
+```json
+{
+  "id": "item_017", "name": "Xbox Controller #3", "category": "Console Peripherals",
+  "expected_quantity": 1, "current_quantity": 0,
+  "notes": "Black, slightly worn thumbstick", "created_by": "StaffName",
+  "created_at": "2026-01-10T00:00:00Z"
+}
+```
+
+**A BoilerCraft moderation action queue entry (`dashboard_commands.json`)**
+```json
+{
+  "type": "member_kick", "status": "pending", "queued_at": "2026-09-04T19:00:00Z",
+  "user_id": "123456789012345678", "reason": "Repeated rule violations after warnings"
+}
+```
+
+**"A schedule I published isn't showing up in Discord."**
+Check `data/lionshift_notification_queue.json` for the corresponding entry's `status` — if
+it's stuck on `pending` for more than a few seconds, the LionShiftGG bot process likely isn't
+running; if it shows `error`, the error message recorded there will usually explain why
+(commonly an invalid/missing channel ID).
+
+**"BoilerCraft server status always shows offline even though the server is up."**
+The status comes entirely from the third-party `mcsrvstat.us` public API, not a direct
+connection to the Minecraft server — if that external service is having its own outage or
+rate-limiting issue, Nova will faithfully report whatever it says, which may not reflect
+reality. This is an external dependency, not something fixable from within this codebase.
+
+**"I checked an equipment item out but now it's stuck showing as unavailable even after check-in."**
+Double-check the checkin call referenced the correct `checkout_id` (if provided) and the
+right quantity — if a partial quantity was checked back in (e.g. 1 of 2 controllers
+returned), the item will correctly still show as partially checked out until the rest comes
+back too. Use `GET /api/equipment` to see the live expected-vs-current numbers directly.
+
+**"Can a QR code be reactivated after being deactivated?"**
+No — deactivation is one-way by design (so a lost/compromised printed code can never be
+un-blocked by mistake). Generate a fresh QR code for the item instead
+(`POST /api/equipment/<id>/qrcode`); the old code's URL will permanently 404.

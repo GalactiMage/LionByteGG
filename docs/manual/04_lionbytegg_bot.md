@@ -102,20 +102,180 @@ configuration to anyone.
 
 ## 4.5 Varsity & JV Team Registration
 
-`views/varsity_view.py` runs a genuinely multi-step registration and approval pipeline:
+`views/varsity_view.py` runs a genuinely multi-step registration and approval pipeline —
+this is one of the most elaborate single workflows in the whole bot, so this section walks
+through it start to finish, including **every single question that's asked by default** and
+exactly how to change any of them.
 
-1. An admin (or a staff member via the User Info panel's "Register Varsity" button) picks a
-   player type — Varsity, JV, Substitute Varsity, or Substitute JV — for a target member.
-2. That member gets a persistent DM prompt (`PersistentVarsityRegistrationView` — built with
-   a fixed custom ID specifically so it keeps working even if the bot restarts between when
-   the DM was sent and when they respond).
-3. They fill out a multi-step form: game selection → game-specific details (rank, tracker
-   link, etc.) → personal info (name, email, phone, PUID) → a final confirmation screen.
-4. **All personal information is Fernet-encrypted** before it ever touches disk (see §4.7),
-   stored per-user under `data/varsity_registrations/{discord_id}_varsity.json`.
-5. An admin reviews it via `VarsityApproveView` — **Approve** adds them to the roster and
-   queues the correct Discord roles; **Deny** removes the pending request and DMs a reason;
-   **Request Changes** sends a follow-up form.
+### 4.5.1 How a Registration Gets Started
+
+There are two ways a registration begins:
+
+1. **An admin or staff member initiates it manually** — either directly with the
+   `PlayerTypeSelectView` dropdown (Varsity / JV / Substitute Varsity / Substitute JV), or via
+   the "Register Varsity" button inside the User Info panel (`cogs/userinfo.py`'s
+   `ClearRecordView`, see [§ moderation](#43-moderation--the-automod-bridge)).
+2. **A staff member sends it from Nova** — clicking "Send Registration" on the Rosters page
+   (see [Chapter 6 §6.3](06_nova_web_rosters_varsity.md#63-the-registration--approval-pipeline))
+   queues a `send_varsity_registration` notification, which the bot picks up and DMs to the
+   target member on the admin's behalf. In this case the "admin" on record is technically the
+   **bot itself** (its own user ID is stored as `admin_user`), which matters later — see
+   §4.5.5.
+
+Either way, the target member receives a DM containing a **persistent "Start Registration"
+button** — persistent meaning it uses a fixed `custom_id`
+(`PersistentVarsityRegistrationView`) so it keeps working even if the bot restarts between
+the moment the DM was sent and the moment the recruit actually clicks it. Without this, a bot
+restart at the wrong moment would silently break every pending registration link ever sent.
+
+### 4.5.2 Step 1 — Choosing a Game
+
+The recruit sees a dropdown (`GameSelectView`) populated live from `data/esports_games.json`
+(up to Discord's 25-option select limit) — whatever games are currently configured in Nova's
+Settings page appear here automatically, with no code change required. Selecting a game
+stores it as `"Primary Game Title"` in an in-memory dict on the bot
+(`bot.varsity_registrations[user_id]`) that accumulates every answer as the recruit
+progresses through the three modals below.
+
+### 4.5.3 Steps 2–4 — The Three Modals (Every Default Question, In Order)
+
+Discord limits a single modal to **5 text fields**, which is exactly why this registration
+is split into three separate modals rather than one long form. Here is the complete,
+unabridged list of every question asked by default, in the exact order they're presented:
+
+**Modal 1 — "Personal Information"**
+
+| # | Field label | Placeholder / hint shown | Required? |
+|---|---|---|---|
+| 1 | Full Name | *e.g. John Smith* | Yes |
+| 2 | Purdue Email Address | *e.g. smith123@purdue.edu* | Yes |
+| 3 | Personal Email Address | *e.g. johnsmith@gmail.com* | Yes |
+| 4 | Phone Number | *e.g. 123-456-7890* | Yes |
+| 5 | Purdue ID (PUID) | *e.g. 0012345678* | Yes |
+
+**Modal 2 — "Academic & Player Details"**
+
+| # | Field label | Placeholder / hint shown | Required? |
+|---|---|---|---|
+| 6 | Current GPA | *Minimum 2.5 GPA required (e.g. 3.2)* | Yes |
+| 7 | Home Town/City (State) | *e.g. Hammond, IN* | Yes |
+| 8 | Year in School | *e.g. Freshman, Sophomore, Junior, Senior* | Yes |
+| 9 | Major/Field of Study | *e.g. Computer Science* | Yes |
+| 10 | Jersey Details (Size & Name) | *e.g. Large - SMITH* (multi-line field) | Yes |
+
+**Modal 3 — "Gaming Information"**
+
+| # | Field label | Placeholder / hint shown | Required? |
+|---|---|---|---|
+| 11 | In-Game Name (IGN) | *e.g. ProGamer123* | Yes |
+| 12 | Current Rank | *e.g. Diamond 2, Immortal, Masters, Grand Champion* | Yes |
+| 13 | Primary Role in Game | *e.g. DPS, Support, Tank, Jungle, ADC, Duelist* | Yes |
+| 14 | Stats Tracker Link | *e.g. tracker.gg/valorant/profile/...* | Yes |
+| 15 | Additional Notes | *Anything else we should know?* (multi-line field) | **No** — the only optional question in the whole form |
+
+Between each modal, the recruit sees a short "great, click to continue" button
+(`VarsityContinueView`, then `VarsityFinalContinueView`) rather than the next modal opening
+automatically — Discord requires a fresh button interaction to open a *new* modal, you can't
+chain modal → modal directly.
+
+> **The "GPA minimum 2.5" and every other requirement-style hint is a soft ask, not an
+> enforced rule.** Discord modal fields can only validate length and whether a value was
+> entered at all — there's no server-side numeric or format validation on GPA, phone number,
+> tracker link, etc. A reviewing admin (or coach) is expected to catch anything that looks
+> wrong during the approval step in §4.5.6.
+
+### 4.5.4 Step 5 — The Schedule Photo
+
+After the third modal is submitted, the recruit is **not done yet** — a fourth, non-modal
+step follows: the bot asks them to send a **photo of their class schedule** as a direct
+message attachment, and literally waits for it (`bot.wait_for('message', ...)`) with a
+**180-second timeout**. If they don't send an image within 3 minutes, this wait silently
+times out and the registration is never finalized or saved anywhere — nothing gets posted to
+the review channel and nothing is written to disk. If a recruit reports "I filled out the
+form but nothing happened," this is almost always the cause: they either took too long to
+send the schedule photo, or never sent one at all. There is currently no reminder or retry
+mechanism for this specific step — if it times out, they need to be sent a fresh
+registration link and start over from §4.5.1.
+
+Once an image is received, it's downloaded and saved **permanently** to
+`data/user_records/schedule_images/` (a subfolder inside `USER_RECORDS_DIR`), named
+`{discord_id}_{timestamp}_{index}.ext`, and the original Discord CDN URL is also kept as a
+backup reference in case the local file is ever lost.
+
+### 4.5.5 Where the Data Goes
+
+Once the schedule photo comes in, everything collected across all three modals plus the game
+selection is bundled into one record and:
+
+1. **Saved to disk** at `data/user_records/varsity_registrations/{discord_id}_varsity.json` —
+   an array (a person can have more than one registration attempt over time), each entry
+   shaped like:
+   ```json
+   {
+     "type": "VarsityRegistration",
+     "status": "Pending",
+     "data": { "Full Name": "...", "Purdue Email": "...", "...": "..." },
+     "timestamp": "2026-09-04T18:22:00+00:00"
+   }
+   ```
+2. **Posted to the `#varsity-registrations` review channel** as an embed with an
+   Approve/Deny button attached (`VarsityApproveView`), so any admin watching that channel
+   can act on it immediately without needing to be the specific person who sent the
+   original DM.
+3. **Also DMed directly to whichever admin initiated it** — *unless* the registration was
+   sent from Nova (in which case the "admin" on record is the bot itself, so this DM step is
+   skipped — the review channel post and the Nova dashboard are the only places to see it).
+4. **A dashboard bell notification is queued** (`add_varsity_notification`) linking straight
+   to `/varsity` in Nova.
+
+The recruit gets one of two different confirmation messages depending on how their
+registration started — a slightly warmer "the coaching staff will review your application"
+message if it came from the website, or "please wait for approval from the recruiter" if an
+admin sent it directly — a small but deliberate touch so the message always makes sense in
+context.
+
+### 4.5.6 Step 6 — Review & Approval
+
+`VarsityApproveView` gives an admin three choices: **Approve** (adds the player to the
+roster and queues the correct Discord role assignment — see
+[Chapter 6 §6.2](06_nova_web_rosters_varsity.md#62-assigning-players-to-teams--and-how-discord-roles-stay-in-sync)
+for exactly which roles that means), **Deny** (opens `VarsityDenyReasonModal` for a reason,
+which gets DMed back to the recruit), or **Request Changes** (sends a follow-up prompt asking
+them to re-submit specific information). Player types are always shown using friendly labels
+— internally `varsity`/`jv`/`sub_varsity`/`sub_jv`/`coach` map to "Varsity" / "JV" /
+"Substitute Varsity" / "Substitute JV" / "Coach" wherever they're displayed to a human.
+
+### 4.5.7 How to Change the Registration Questions
+
+**There is no admin UI or config file for this — the 15 questions above are hardcoded
+Python code**, not data. To add, remove, reword, or reorder a question, a developer needs to
+edit `LionByteGG/views/varsity_view.py` directly:
+
+1. Find the relevant modal class — `VarsityRegistrationModal1`, `Modal2`, or `Modal3` — each
+   one is a `discord.ui.Modal` subclass with up to 5 `discord.ui.TextInput` class attributes.
+2. To add a question, add a new `discord.ui.TextInput(label="...", placeholder="...",
+   required=True/False)` line — **but remember Discord hard-caps a single modal at 5 fields**,
+   so if a modal is already full you'll need to either replace an existing question or add a
+   brand-new fourth modal (which means adding one more "continue" button/view step, following
+   the exact same pattern as the existing `VarsityContinueView` → `VarsityFinalContinueView`
+   chain).
+3. Update that modal's `on_submit()` method to save the new field into `reg_data` under
+   whatever key name you want it stored as (this is the key that will show up in the JSON
+   file and the review embed).
+4. If you want the new answer visible to reviewers, also add a line to the relevant
+   `embed.add_field(...)` call in `VarsityRegistrationModal3.on_submit()` (this is what
+   actually builds the "📝 Registration Received" embed both admins and the review channel
+   see) — an easy step to forget, which would leave the new answer saved to disk but
+   invisible to anyone reviewing the application.
+5. Restart the LionByteGG bot for the change to take effect — like everything else in this
+   suite, there's no hot-reload for cog/view code (see [Chapter 11 §11.5](11_troubleshooting_and_operations_guide.md#115-restarting-after-a-code-change)).
+
+> **A subtle existing quirk worth knowing if you go digging in this file:** Modal 1's
+> `TextInput` variable is literally named `ign` even though it collects the PUID (`Purdue ID`),
+> and Modal 3 *also* has a variable named `ign` that collects the actual in-game name. They're
+> two separate class attributes on two separate modal classes, so there's no real bug — but
+> if you're skimming the source and see `self.ign.value` twice, know that they mean two
+> completely different things depending on which modal you're looking at.
 
 This same data (`data/teams.json`, `data/rosters.json`) is what powers Nova's Rosters page —
 see [Chapter 6](06_nova_web_rosters_varsity.md) for the full multi-team assignment and
@@ -246,3 +406,89 @@ the Technician role.
 | `data/ticket_log.json` | Open/closed/blacklisted tickets |
 | `data/teams.json` / `rosters.json` | Varsity team + player data (PII encrypted) |
 | `user_records.db` | Every moderation record ever issued |
+
+---
+
+## 4.12 Example Data Shapes
+
+**A `user_records.db` row (as JSON, via `get_records()`)**
+```json
+{
+  "user_id": "123456789012345678", "type": "Warning",
+  "reason": "Spam in #general", "moderator": "StaffName", "moderator_id": "987...",
+  "source": "discord", "timestamp": "2026-09-01T18:22:00+00:00"
+}
+```
+
+**`data/watchlist.json`**
+```json
+{
+  "123456789012345678": {
+    "level": "high", "reason": "Suspected alt account of a banned user",
+    "added_by": "StaffName", "added_at": "2026-08-20T00:00:00Z",
+    "activity_log": [
+      { "type": "message", "channel": "general", "preview": "first 100 chars of the message...", "timestamp": "2026-09-01T18:00:00Z" },
+      { "type": "voice_join", "channel": "Lounge", "timestamp": "2026-09-01T18:05:00Z" }
+    ]
+  }
+}
+```
+
+**`data/flagged_words.json` (the 3-tier moderation list)**
+```json
+{
+  "bannable": ["slur1", "slur2"],
+  "kickable": ["spam_phrase"],
+  "warning": ["mild_word"]
+}
+```
+
+**`data/vc-generators.json`**
+```json
+{
+  "normal": [1403788867424747620],
+  "tryout": [1403788867424747999],
+  "generated": [1429893450811314257, 1429893450811399999]
+}
+```
+
+---
+
+## 4.13 Frequently Asked Questions
+
+**"A new member never got the Student/Guest setup DM — what happened?"**
+The onboarding prompt is posted as a channel embed in the onboarding channel (not a DM) with
+buttons on it, so first check they didn't just miss the message in a busy channel. If the
+embed itself is missing, check the bot actually has permission to post in that channel, and
+check `data/join_times.json` to see if a join event was even recorded (if it wasn't, the bot
+may have been offline at the exact moment they joined).
+
+**"Someone completed setup but immediately got auto-kicked."**
+This should only happen via `registration_timeout_check` (the 4-day incomplete-setup kick) —
+check `data/join_times.json` doesn't still have a stale entry for them after they finished
+onboarding; a record that isn't cleared properly could, in rare timing edge cases, still get
+swept up in the next hourly check. In practice this is very rare since the entry is removed
+the moment either modal is submitted.
+
+**"How long does a Guest actually have before their access expires?"**
+Exactly 30 days from when they picked "Guest Access," tracked per-user in
+`guest_times/{user_id}_guest_time.json`. `/time` lets a guest check their own countdown at
+any point, and a staff member can extend it by another 30 days from a member's profile in
+Nova (`POST /api/guests/<id>/reset`) or cancel it early (`POST /api/guests/<id>/cancel`).
+
+**"Can a Guest become a Student without waiting out their 30 days?"**
+Yes — that's exactly what `/setup_guest_transfer`'s "Migrate" button and the general
+Student/Guest setup flow are for; a Guest can convert to Student at any time, which removes
+the Guest role and clears their expiring timer entirely.
+
+**"Why did AutoMod ban someone before a human even saw the message?"**
+Any word in the `bannable` tier of `data/flagged_words.json` triggers an automatic ban the
+instant it's detected — by design, for the most severe category, there's no human-in-the-loop
+delay. If a word shouldn't be that severe, move it down to the `kickable` or `warning` tier
+with `/removeword` + `/addword`.
+
+**"The bot's presence text is stuck on something weird and won't update."**
+Check whether a custom override is currently active — `/set-activity` and Nova's Bot Activity
+control both set a *manual override* that takes priority over the automatic arena
+open/closed status. Run `/reset-activity` (or clear it from Nova) to hand control back to
+the automatic arena-hours-based presence.

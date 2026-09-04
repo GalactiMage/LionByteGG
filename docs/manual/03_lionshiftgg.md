@@ -165,3 +165,92 @@ attached to the Discord announcement embed.
 | `/restart_service` | Admin | Gracefully restarts the bot process |
 | `/about` | Everyone | Feature overview |
 | `/offer_shift` / `/pickup_shift` / `/trade_shift` | Student Worker role | See §3.3 |
+
+---
+
+## 3.9 Example Data Shapes
+
+**A `schedules.json` entry**
+```json
+{
+  "start_date": "2026-09-01", "end_date": "2026-09-07",
+  "schedule_link": "https://docs.google.com/spreadsheets/...",
+  "allow_offers": true, "status": "published",
+  "shifts": [
+    { "worker_id": "123456789012345678", "worker_name": "Alex P.", "date": "2026-09-01", "type": "opener", "start": "09:00", "end": "13:00", "room": "pc" }
+  ]
+}
+```
+
+**A `shift_board.json` open offer**
+```json
+{
+  "shift_board": {
+    "O011": {
+      "worker_id": "123456789012345678", "worker_name": "Alex P.",
+      "date": "2026-09-05", "shift_type": "mid", "start": "13:00", "end": "17:00",
+      "taken_by": null, "taken_by_name": null,
+      "reason": "Exam conflict", "status": "open",
+      "created_at": "2026-09-03T15:30:00+00:00"
+    }
+  },
+  "shift_counter": 11
+}
+```
+
+**A `trades.json` entry mid-approval**
+```json
+{
+  "id": "T1725480000042",
+  "requester_id": "123...", "requester_name": "Alex P.",
+  "target_id": "987...", "target_name": "Jordan K.",
+  "your_shift": "Sept 5, 1pm-5pm (Mid)", "wanted_shift": "Sept 7, 5pm-9pm (Closer)",
+  "reason": "Need to swap for a family event",
+  "status": "pending", "created_at": "2026-09-03T15:45:00+00:00"
+}
+```
+
+**A `shift_logs.json` clock-in entry**
+```json
+{
+  "action": "start", "user_id": "123456789012345678", "user_name": "Alex P.",
+  "shift_type": "opener", "room": "pc",
+  "schedule": { "start_date": "2026-09-01", "end_date": "2026-09-07" },
+  "timestamp": "2026-09-01T09:02:14.221000", "source": "discord_bot",
+  "tasks": ["Turn on all monitors and PC stations", "⚠️ DO NOT LEAVE THE ARENA UNATTENDED"]
+}
+```
+
+---
+
+## 3.10 Frequently Asked Questions
+
+**"A worker offered their shift but nobody's picked it up — can they take it back?"**
+There's no direct "cancel my offer" command today; the offer simply stays open in
+`shift_board.json` until someone claims it or a director manually edits the file. In
+practice, if a plan changes, have the worker coordinate directly and a director can update
+the schedule assignment manually via Nova's Schedules editor.
+
+**"Why did a worker get flagged as late when they were actually on time?"**
+The late-detection window checks for a "start" event in `shift_logs.json` roughly
+`late_alert_minutes` (default 10) after the scheduled start. If the worker clocked in through
+a different flow (e.g. they picked up the shift last-minute and their assignment hadn't
+synced yet), or the machine's clock is off, this can produce a false alert. Always
+cross-check the actual `shift_logs.json` timestamp before assuming the alert is wrong.
+
+**"Can two people be assigned the same shift at the same time?"**
+Nothing in the data model strictly prevents it — `shifts[]` is just a list, and nothing
+de-duplicates by date/time/room. It's up to whoever builds the schedule (manually or via
+Nova's Schedule Creator) not to double-book a slot. If you ever see two people showing as
+assigned to the identical shift, that's a scheduling data-entry issue, not a bug.
+
+**"Do time-off requests block someone from being scheduled?"**
+No — approving a time-off request doesn't automatically prevent that person from being
+assigned a shift during that window; it's purely a record for the director to reference while
+building the next schedule. There's no automated conflict check between `timeoff_requests.json`
+and `schedules.json` today.
+
+**"What timezone does everything use?"**
+Always **America/Chicago**, hardcoded — reminders, late-detection, and the "today" used for
+offer/pickup eligibility are all computed in Central time regardless of where the bot process
+happens to be physically hosted.

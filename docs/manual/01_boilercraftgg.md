@@ -239,3 +239,113 @@ Everything under `/chatmonitor`, plus `/stop`, `/restart`, `/reload`, `/sync`,
 no finer-grained role system inside this particular bot (that lives in Nova instead).
 Everything else (`/status`, `/help`, `/serverinfo`, `/userinfo`, `/ping`, and the whole `/vc`
 group for your own channel) is open to everyone.
+
+---
+
+## 1.9 Example Data File Contents
+
+Seeing the real shape of these files makes them much easier to reason about when
+troubleshooting. These are representative examples, not literal production data.
+
+**`data/ticket_log.json`**
+```json
+{
+  "open": [
+    {
+      "id": 42,
+      "channel_name": "mc-ticket-0042",
+      "user": "SomeUser", "user_id": "123456789012345678",
+      "type": "Player Support",
+      "minecraft_username": "SomeUser_MC", "email": "someuser@purdue.edu",
+      "explanation": "I can't claim my land plot near spawn",
+      "status": "open", "staff_assisting": null,
+      "created_at": "2026-09-01T14:22:00Z"
+    }
+  ],
+  "closed": [],
+  "blacklist": [
+    { "user_id": "999999999999999999", "reason": "Repeated spam tickets", "blacklisted_by": "AdminName", "timestamp": "2026-08-15T10:00:00Z" }
+  ]
+}
+```
+
+**`data/chat_monitor_config.json`**
+```json
+{
+  "enabled": true,
+  "alert_channel_id": 1489451801756434462,
+  "mod_role_id": 1488552558468530366,
+  "servers": {
+    "PNW": { "name": "Purdue Northwest", "console_channel_id": 1489429912564662422, "enabled": true },
+    "PWL": { "name": "Purdue West Lafayette", "console_channel_id": 1489429999999999999, "enabled": false }
+  }
+}
+```
+
+**A single `data/flagged_log.json` entry**
+```json
+{
+  "timestamp": "2026-09-01T20:14:03Z",
+  "server": "Purdue Northwest",
+  "player": "SomeMinecraftUser",
+  "discord_user": "<@123456789012345678>",
+  "message": "the flagged text goes here",
+  "type": "Public Chat",
+  "flagged_words": ["word1"]
+}
+```
+
+**`data/bot_config.json` (ticket support categories)**
+```json
+{
+  "support_categories": [
+    { "label": "Player Support", "value": "Player Support", "emoji": "🎮", "description": "General gameplay help and questions" },
+    { "label": "Server Bugs", "value": "Server Bugs", "emoji": "🐛", "description": "Report server issues or bugs" },
+    { "label": "Report a Player", "value": "Report a Player", "emoji": "🛡️", "description": "Report rule-breaking behavior" },
+    { "label": "Appeal / Unban", "value": "Appeal / Unban", "emoji": "⚖️", "description": "Appeal a ban or punishment" },
+    { "label": "General Question", "value": "General Question", "emoji": "❓", "description": "Anything else not listed above" }
+  ]
+}
+```
+Adding a new support category is as simple as appending another object to this array — no
+code change or restart needed, since `TicketSupportModal`'s dropdown reads this list live
+every time the panel is opened.
+
+---
+
+## 1.10 Frequently Asked Questions
+
+**"A member says they can't verify — Mojang keeps rejecting their username."**
+The verification modal checks the username against the real, live Mojang API, so this
+usually means one of three things: they typo'd their in-game name, they're using a Bedrock
+Edition / Xbox-linked identity that doesn't resolve the same way through the Java Edition
+Mojang API this bot queries, or Mojang's API is briefly degraded (rare, but it happens — ask
+them to try again in a few minutes).
+
+**"Someone verified with the wrong campus role — how do I fix it?"**
+Run `/unverify <user>` to clear both their verified role and campus role plus the database
+row, then have them run through `/setup_verification`'s panel again from scratch. There's no
+"edit campus" command — unverify-then-reverify is the supported path.
+
+**"Can a member have more than one open ticket at once?"**
+No — `TicketSupportModal.on_submit()` explicitly checks `data/ticket_log.json`'s `open` array
+for an existing entry from the same user_id before allowing a new one, specifically to stop
+duplicate/spam tickets.
+
+**"What happens to a temp voice channel if the owner disconnects but other people are still in it?"**
+Nothing — `check_delete_temp_vc()` only deletes a channel once it's completely empty (bots
+don't count as "not empty" either way; the check is on human members). The channel just sits
+there, unowned, until either it empties out naturally or someone uses `/vc claim`.
+
+**"I added a word with `/chatmonitor add-word` but BoilerWatch still isn't catching it."**
+Double check `/chatmonitor status` shows monitoring as enabled, and that the specific
+Minecraft server the flagged message came from is registered and enabled in
+`chat_monitor_config.json` (`/chatmonitor add-server` if it's missing). If both check out,
+confirm the exact spelling/casing wasn't accidentally different — matching is case-sensitive
+against the raw stored word list.
+
+**"Does `/mc-maintenance-announcement` actually take the Minecraft server down?"**
+No — it only posts a Discord announcement. Taking the actual Minecraft server down/back up
+is a separate, manual step outside this bot entirely (this bot has no direct control over the
+Minecraft server process itself, only its Discord-facing presence).
+

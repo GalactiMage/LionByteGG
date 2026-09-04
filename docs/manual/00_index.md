@@ -79,6 +79,8 @@ then click through to the exact chapter (and section) that covers it in full.
 | Quiz game (music bot) | [Ch. 2 §2.4](02_lionbeatsgg.md) |
 | Reaction roles | [Ch. 4 §4.9](04_lionbytegg_bot.md), [Ch. 5 §5.5](05_nova_web_auth_admin.md) |
 | Registration (varsity/JV approval flow) | [Ch. 4 §4.5](04_lionbytegg_bot.md), [Ch. 6 §6.3](06_nova_web_rosters_varsity.md) |
+| Registration questions (default list, how to change) | [Ch. 4 §4.5.3, §4.5.7](04_lionbytegg_bot.md) |
+| Registration schedule-photo step (180s timeout) | [Ch. 4 §4.5.4](04_lionbytegg_bot.md) |
 | REST API (LionBeatsGG) | [Ch. 2 §2.6](02_lionbeatsgg.md) |
 | Restarting a stuck machine/service | [Ch. 11 §11.3](11_troubleshooting_and_operations_guide.md) |
 | Rooms & shift duties (LionShift) | [Ch. 8 Part 1](08_nova_web_lionshift_boilercraft_equipment.md) |
@@ -139,3 +141,25 @@ chapters that follow.
 - **Someone debugging a specific bot** → jump straight to that bot's chapter (1–4).
 - **Someone debugging the website** → chapters 5–10 cover every page and feature area.
 - **Something broke and you need an answer fast** → [Chapter 11](11_troubleshooting_and_operations_guide.md).
+- **Sending out varsity/JV registrations** → read [Chapter 4 §4.5](04_lionbytegg_bot.md) in
+  full before sending your first one — it explains all 15 default questions, the easy-to-miss
+  schedule-photo step with its 3-minute timeout, and exactly how to customize the questions
+  if your program needs different ones.
+
+---
+
+## A Note on How This Manual Was Written
+
+Every fact in this manual was verified directly against the actual source code, not guessed
+or inferred from naming conventions alone — file paths, function names, default values,
+timeouts, and permission keys are all taken from the real files as they exist in this
+repository at the time each chapter was written. Where something is a genuine known
+limitation of a third-party platform (like GGLeap's lack of a clean PC-unlock API, see
+[Chapter 9 §9.4](09_arena_kiosk_system.md)) rather than a bug in this codebase, that
+distinction is called out explicitly rather than left ambiguous.
+
+If you make a code change that affects behavior described here, please update the relevant
+chapter in the same change — a manual that drifts out of sync with the actual system is
+worse than no manual at all. Each chapter is a plain Markdown file; there's no build step,
+no special syntax beyond standard GitHub-flavored Markdown, and no reason not to keep it
+current.

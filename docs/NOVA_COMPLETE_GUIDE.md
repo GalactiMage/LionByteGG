@@ -74,6 +74,18 @@ by default.
 - **Varsity** — the registration approval queue (pending/approved/denied), separate from
   the full roster editor.
 
+**How a registration actually works, in brief:** clicking "Send Registration" DMs the
+recruit a "Start Registration" button. They pick their primary game, then answer **15
+questions across three separate pop-up forms** — full name, Purdue email, personal email,
+phone, PUID, GPA, hometown, year in school, major, jersey size/name, in-game name, rank,
+primary role, a stats-tracker link, and an optional notes field. **Then, and this part is
+easy to miss, they have to DM the bot a photo of their class schedule within 3 minutes** or
+the whole registration silently never completes. Once the photo comes in, it's posted to the
+`#varsity-registrations` channel and shows up as pending in Rosters for you to Approve or
+Deny. The full question-by-question breakdown — including exactly how to change any of these
+questions if your program needs different ones — is in
+[docs/manual/04_lionbytegg_bot.md § 4.5](manual/04_lionbytegg_bot.md#45-varsity--jv-team-registration).
+
 ### Arena Staff
 - **Live Feed** — real-time sign-ins as they happen at the physical kiosks.
 - **Sessions** — a room map of every arena PC with live lock/unlock/power controls.
@@ -276,8 +288,43 @@ accidentally undo them:
 
 ---
 
-## 8. Where to Go Deeper
+## 8. Frequently Asked Questions
+
+**"I just got a new dashboard account and don't see anything in the sidebar."**
+You're almost certainly missing a permission group with any `page.*`/`section.*` keys —
+ask an admin to check your group assignment in `/admin`. An account with zero matching
+permissions gets bounced to `/login?error=no_dashboard_access` rather than shown a blank
+dashboard, so if you can log in but see literally nothing useful, this is the cause.
+
+**"Where do I actually send someone a varsity registration from?"**
+The Rosters page — either the "Send Registration" action on an existing player row, or a
+dedicated button for a brand-new recruit who isn't in the system yet. Only ever have **one**
+pending registration in flight per person at a time (see the Rules to Live By above).
+
+**"Can I see everything a specific staff member has done in Nova?"**
+Yes — the unified Activity Log (`/logs`) can be filtered by moderator name, which shows
+every login, moderation action, admin change, and settings edit that person has made,
+timestamped, in one place.
+
+**"What's the difference between this guide and the `docs/manual/` folder?"**
+This document (`NOVA_COMPLETE_GUIDE.md`) is the fast, narrative "how do I actually use this"
+companion — read it front to back once and you'll understand the whole system's shape. The
+`docs/manual/` folder is the exhaustive reference: 12 chapters covering every single route,
+command, cog, permission key, and settings file in full technical detail, meant to be
+searched (via the [Find It Fast index](manual/00_index.md#-find-it-fast--search-the-manual-by-topic))
+rather than read straight through.
+
+**"I found something in Nova that isn't documented anywhere — what do I do?"**
+Please add it! Both this guide and the `docs/manual/` chapters are meant to stay a living,
+accurate reflection of the real system — if you build or discover something new, a short
+addition to the relevant chapter (with a real example where possible) keeps the next person
+from having to re-discover it from scratch.
+
+---
+
+## 9. Where to Go Deeper
 
 - [docs/manual/00_index.md](manual/00_index.md) — the full deep-dive reference manual, one
-  chapter per bot/feature area, covering every route, command, cog, and setting in detail.
+  chapter per bot/feature area, covering every route, command, cog, and setting in detail,
+  plus a searchable A-Z topic index at the top.
 - [CHANGELOG.md](../CHANGELOG.md) — chronological history of what's shipped.
