@@ -1,4 +1,5 @@
 import sys
+from typing import Optional
 from discord import app_commands, Embed, Interaction
 import discord
 import importlib.util, os, inspect
@@ -7,9 +8,10 @@ from discord.ui import View, Button, Modal, TextInput
 import os
 import json
 import inspect  # NEW: used to detect sync/async setup functions
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from constants import TOKEN, DIRECTOR_ID, STUDENT_WORKER_ROLE_ID
 from safe_json import safe_json_dump
+from schedule_image import generate_schedule_image
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -23,6 +25,8 @@ OFFER_BOARD_FILE = "offer_board.json"
 SHIFT_BOARD_FILE = "shift_board.json"  # Add this for persistent shift_board
 SCHEDULES_FILE = "schedules.json"  # Add this line near other constants
 PANELS_FILE = "panels.json"  # NEW: persist panel message IDs
+AVAILABILITY_FILE = "worker_availability.json"
+SHIFT_LOGS_FILE = "shift_logs.json"
 
 # Notification queue file (from LionByteGG web dashboard)
 # Use abspath to handle cases where __file__ is a relative path
@@ -109,6 +113,29 @@ def save_timeoff_requests(requests):
     except Exception as e:
         print(f"Error saving time off requests: {e}")
 
+# ── Trades — single authoritative copy; both cogs import from here ────
+TRADES_FILE = "trades.json"
+
+def load_trades():
+    """Load trades from file"""
+    try:
+        with open(TRADES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_trades(trades):
+    """Save trades to file"""
+    try:
+        safe_json_dump(trades, TRADES_FILE, indent=2)
+    except Exception:
+        pass
+
+def _next_trade_id(prefix="T"):
+    """Timestamp + random suffix — never reuses an ID even after deletions."""
+    import time as _t, random as _r
+    return f"{prefix}{int(_t.time())}{_r.randint(10, 99)}"
+
 # Worker cache file for web dashboard
 WORKERS_CACHE_FILE = "workers_cache.json"
 
@@ -122,24 +149,54 @@ def save_workers_cache(workers):
 async def update_workers_cache():
     """Update the workers cache with current student workers"""
     try:
+        # Load existing cache to preserve clocked_in state
+        existing = {}
+        if os.path.exists(WORKERS_CACHE_FILE):
+            with open(WORKERS_CACHE_FILE, "r") as f:
+                for w in json.load(f):
+                    existing[w.get("id") or w.get("discord_id")] = w
+
         workers = []
         for guild in bot.guilds:
             role = guild.get_role(STUDENT_WORKER_ROLE_ID)
             if role:
                 for member in role.members:
+                    mid = str(member.id)
+                    prev = existing.get(mid, {})
                     workers.append({
-                        "id": str(member.id),
-                        "discord_id": str(member.id),
+                        "id": mid,
+                        "discord_id": mid,
                         "name": member.display_name,
                         "username": str(member),
                         "avatar_url": member.display_avatar.url if member.display_avatar else None,
-                        "clocked_in": False,  # This would need to be tracked separately
-                        "shifts_this_week": 0  # This would need to be calculated
+                        "clocked_in": prev.get("clocked_in", False),
+                        "current_shift_type": prev.get("current_shift_type"),
+                        "clock_in_time": prev.get("clock_in_time"),
+                        "shifts_this_week": 0  # Will be calculated by web API
                     })
         save_workers_cache(workers)
         print(f"Updated workers cache with {len(workers)} workers")
     except Exception as e:
         print(f"Error updating workers cache: {e}")
+
+# Availability helpers
+def load_availability():
+    try:
+        with open(AVAILABILITY_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_availability(data):
+    safe_json_dump(data, AVAILABILITY_FILE, indent=2)
+
+# Shift log helpers (for reminder/late detection)
+def load_shift_logs():
+    try:
+        with open(SHIFT_LOGS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
 
 # Notification queue processor for schedule announcements from web dashboard
 @tasks.loop(seconds=2)
@@ -186,15 +243,23 @@ async def process_notification_queue():
                                 channel = await bot.fetch_channel(int(channel_id))
                             
                             if channel:
-                                # Create beautiful schedule announcement embed
+                                # Generate beautiful schedule image
+                                schedule_img = None
+                                try:
+                                    schedule_img = generate_schedule_image(schedule)
+                                    print("[NOTIF] Generated schedule announcement image")
+                                except Exception as img_err:
+                                    print(f"[NOTIF] Image generation failed (will use text embed): {img_err}")
+
+                                # Create embed with image
                                 embed = Embed(
                                     title="📅 New Schedule Posted!",
                                     description=custom_message if custom_message else f"A new shift schedule has been posted for **{schedule.get('start_date', 'Unknown')}** to **{schedule.get('end_date', 'Unknown')}**.",
-                                    color=0x00D166
+                                    color=0xF59E0B
                                 )
                                 
                                 if schedule.get('name'):
-                                    embed.add_field(name="Schedule Name", value=schedule['name'], inline=False)
+                                    embed.add_field(name="📋 Schedule", value=schedule['name'], inline=False)
                                 
                                 embed.add_field(
                                     name="📆 Date Range",
@@ -202,27 +267,57 @@ async def process_notification_queue():
                                     inline=True
                                 )
                                 
-                                # Show if trading/offering shifts is allowed
                                 allow_offers = schedule.get('allow_offers', True)
                                 embed.add_field(
                                     name="🔄 Shift Trading",
                                     value="✅ Allowed" if allow_offers else "❌ Not Allowed",
                                     inline=True
                                 )
-                                
-                                if schedule.get('schedule_link'):
+
+                                shift_count = schedule.get('shift_count', 0)
+                                if shift_count:
                                     embed.add_field(
-                                        name="🔗 View Schedule",
-                                        value=f"[Click here to view]({schedule['schedule_link']})",
-                                        inline=False
+                                        name="👥 Total Shifts",
+                                        value=str(shift_count),
+                                        inline=True
                                     )
+
+                                # Attach the generated image
+                                if schedule_img:
+                                    img_file = discord.File(schedule_img, filename="schedule.png")
+                                    embed.set_image(url="attachment://schedule.png")
+                                else:
+                                    img_file = None
+                                    # Fallback: show shift details as text
+                                    shift_summary = schedule.get('shift_summary', {})
+                                    if shift_summary:
+                                        summary_lines = []
+                                        for day in sorted(shift_summary.keys())[:7]:
+                                            try:
+                                                d = datetime.strptime(day, '%Y-%m-%d')
+                                                day_label = d.strftime('%a %b %d')
+                                            except Exception:
+                                                day_label = day
+                                            shifts_text = ', '.join(shift_summary[day][:3])
+                                            if len(shift_summary[day]) > 3:
+                                                shifts_text += f' +{len(shift_summary[day])-3} more'
+                                            summary_lines.append(f"**{day_label}:** {shifts_text}")
+                                        if summary_lines:
+                                            embed.add_field(
+                                                name="🗓️ Shift Details",
+                                                value='\n'.join(summary_lines),
+                                                inline=False
+                                            )
                                 
-                                embed.set_footer(text=f"Posted by {schedule.get('created_by', 'Dashboard Admin')}")
+                                embed.set_footer(text=f"LionShiftGG • Posted by {schedule.get('created_by', 'Dashboard Admin')}")
                                 embed.timestamp = datetime.now(timezone.utc)
                                 
                                 # Ping the student worker role with the announcement
                                 role_mention = f"<@&{STUDENT_WORKER_ROLE_ID}>"
-                                await channel.send(content=role_mention, embed=embed)
+                                if img_file:
+                                    await channel.send(content=role_mention, embed=embed, file=img_file)
+                                else:
+                                    await channel.send(content=role_mention, embed=embed)
                                 print(f"[NOTIF] Sent schedule announcement to channel {channel_id}")
                                 channel_success = True
                             else:
@@ -243,24 +338,21 @@ async def process_notification_queue():
                                         dm_embed = Embed(
                                             title="📅 New Schedule Available!",
                                             description=f"A new shift schedule has been posted. Please check it and sign up for your shifts!",
-                                            color=0x00D166
+                                            color=0xF59E0B
                                         )
                                         
                                         if schedule.get('name'):
-                                            dm_embed.add_field(name="Schedule Name", value=schedule['name'], inline=False)
+                                            dm_embed.add_field(name="📋 Schedule", value=schedule['name'], inline=False)
                                         
                                         dm_embed.add_field(
                                             name="📆 Date Range",
                                             value=f"{schedule.get('start_date', 'Unknown')} to {schedule.get('end_date', 'Unknown')}",
                                             inline=True
                                         )
-                                        
-                                        if schedule.get('schedule_link'):
-                                            dm_embed.add_field(
-                                                name="🔗 View Schedule",
-                                                value=f"[Click here to view]({schedule['schedule_link']})",
-                                                inline=False
-                                            )
+
+                                        shift_count = schedule.get('shift_count', 0)
+                                        if shift_count:
+                                            dm_embed.add_field(name="👥 Total Shifts", value=str(shift_count), inline=True)
                                         
                                         dm_embed.set_footer(text="LionShiftGG • Please sign up for your shifts promptly")
                                         dm_embed.timestamp = datetime.now(timezone.utc)
@@ -276,6 +368,42 @@ async def process_notification_queue():
                     notif['status'] = 'completed'
                     notif['completed_at'] = datetime.now(timezone.utc).isoformat()
                     notif['channel_success'] = channel_success
+                    processed_any = True
+
+                elif notif_type == 'dm_workers':
+                    # Send custom DM to specific workers or all workers
+                    worker_ids = notif.get('worker_ids', [])
+                    message_text = notif.get('message', '')
+                    created_by = notif.get('created_by', 'Dashboard Admin')
+
+                    if message_text:
+                        dm_sent = 0
+                        dm_failed = 0
+                        dm_embed = Embed(
+                            title="📬 Message from Management",
+                            description=message_text,
+                            color=0xF59E0B
+                        )
+                        dm_embed.set_footer(text=f"LionShiftGG • Sent by {created_by}")
+                        dm_embed.timestamp = datetime.now(timezone.utc)
+
+                        for guild in bot.guilds:
+                            for wid in worker_ids:
+                                try:
+                                    member = guild.get_member(int(wid))
+                                    if not member:
+                                        member = await guild.fetch_member(int(wid))
+                                    if member:
+                                        await member.send(embed=dm_embed)
+                                        dm_sent += 1
+                                except Exception as e:
+                                    dm_failed += 1
+                                    print(f"[NOTIF] Failed to DM worker {wid}: {e}")
+
+                        print(f"[NOTIF] Sent custom DM to {dm_sent} workers ({dm_failed} failed)")
+
+                    notif['status'] = 'completed'
+                    notif['completed_at'] = datetime.now(timezone.utc).isoformat()
                     processed_any = True
                 
             except Exception as e:
@@ -304,9 +432,180 @@ async def set_embed_thumbnail_from_user(embed: Embed, user_id: int):
         # silently ignore failures (e.g., missing user or API error)
         pass
 
+# ── Shift Reminders & Late Detection ──────────────────────────────────────
+# Tracks which (worker_id, shift_date, shift_start) combos we already reminded/flagged
+_reminded_shifts = set()
+_late_flagged_shifts = set()
+
+def _get_chicago_tz():
+    """Get Central timezone safely"""
+    try:
+        return ZoneInfo("America/Chicago")
+    except Exception:
+        return timezone(timedelta(hours=-6))
+
+from zoneinfo import ZoneInfo
+
+@tasks.loop(minutes=5)
+async def shift_reminder_task():
+    """Check upcoming shifts and send reminders before start (configurable). Flag late workers after configurable threshold."""
+    try:
+        settings = load_settings()
+        schedules = load_schedules()
+        logs = load_shift_logs()
+        chicago = _get_chicago_tz()
+        now = datetime.now(chicago)
+        today_str = now.strftime("%Y-%m-%d")
+
+        # Configurable timing — defaults match previous hardcoded values
+        reminder_mins = max(5, int(settings.get("reminder_minutes_before", 60)))
+        late_mins = max(1, int(settings.get("late_alert_minutes", 10)))
+        # Detection windows are 10 minutes wide so a 5-min task loop never misses them
+        reminder_secs = reminder_mins * 60
+        late_secs = late_mins * 60
+
+        for sched in schedules:
+            if sched.get("status") == "draft":
+                continue
+            for shift in sched.get("shifts", []):
+                shift_date = shift.get("date", "")
+                shift_start = shift.get("start", "")
+                worker_id = shift.get("worker_id") or shift.get("worker_discord_id")
+                if not worker_id or not shift_date or not shift_start:
+                    continue
+
+                # Only process today's shifts
+                if shift_date != today_str:
+                    continue
+
+                # Parse shift start time
+                try:
+                    shift_dt = datetime.strptime(f"{shift_date} {shift_start}", "%Y-%m-%d %H:%M")
+                    shift_dt = shift_dt.replace(tzinfo=chicago)
+                except Exception:
+                    continue
+
+                reminder_key = (str(worker_id), shift_date, shift_start)
+
+                # Configurable lead-time reminder
+                time_until = (shift_dt - now).total_seconds()
+                if (reminder_secs - 600) < time_until <= reminder_secs and reminder_key not in _reminded_shifts:
+                    _reminded_shifts.add(reminder_key)
+                    if settings.get("dm_shift_reminders", True):
+                        try:
+                            member = None
+                            for guild in bot.guilds:
+                                member = guild.get_member(int(worker_id))
+                                if member:
+                                    break
+                            if not member:
+                                member = await bot.fetch_user(int(worker_id))
+                            if member:
+                                shift_type = (shift.get("type") or "shift").title()
+                                if reminder_mins >= 60 and reminder_mins % 60 == 0:
+                                    time_label = f"{reminder_mins // 60} hour{'s' if reminder_mins // 60 != 1 else ''}"
+                                elif reminder_mins >= 60:
+                                    hours = reminder_mins // 60
+                                    mins = reminder_mins % 60
+                                    time_label = f"{hours}h {mins}m"
+                                else:
+                                    time_label = f"{reminder_mins} minutes"
+                                embed = Embed(
+                                    title="⏰ Shift Reminder",
+                                    description=(
+                                        f"You have a **{shift_type}** shift starting in about **{time_label}**!\n\n"
+                                        f"**📅 Date:** {shift_date}\n"
+                                        f"**⏰ Time:** {shift_start} - {shift.get('end', '?')}\n"
+                                        f"**📋 Schedule:** {sched.get('name', 'Unknown')}"
+                                    ),
+                                    color=0xF59E0B
+                                )
+                                embed.set_footer(text="LionShiftGG • Don't forget to clock in!")
+                                await member.send(embed=embed)
+                                print(f"[REMIND] Sent {time_label} reminder to {member.display_name}")
+                        except Exception as e:
+                            print(f"[REMIND] Failed to remind worker {worker_id}: {e}")
+
+                # Configurable late detection — check after threshold, 10-min window
+                if -(late_secs + 600) < time_until <= -late_secs and reminder_key not in _late_flagged_shifts:
+                    # Check if worker clocked in today
+                    clocked_in = False
+                    for log in reversed(logs):
+                        if (str(log.get("user_id")) == str(worker_id) and
+                            log.get("action") == "start" and
+                            log.get("timestamp", "").startswith(today_str)):
+                            clocked_in = True
+                            break
+                    
+                    if not clocked_in:
+                        _late_flagged_shifts.add(reminder_key)
+                        if settings.get("dm_late_alerts", True):
+                            # DM the director about the late worker
+                            try:
+                                director = await bot.fetch_user(DIRECTOR_ID)
+                                worker_name = shift.get("worker_name") or str(worker_id)
+                                embed = Embed(
+                                    title="🚨 Late Worker Alert",
+                                    description=(
+                                        f"**{worker_name}** (<@{worker_id}>) has not clocked in for their shift!\n\n"
+                                        f"**📅 Date:** {shift_date}\n"
+                                        f"**⏰ Shift Start:** {shift_start}\n"
+                                        f"**🔖 Type:** {(shift.get('type') or 'shift').title()}\n"
+                                        f"**📋 Schedule:** {sched.get('name', 'Unknown')}\n\n"
+                                        f"They are now **{abs(int(time_until // 60))} minutes late**."
+                                    ),
+                                    color=0xE74C3C
+                                )
+                                embed.set_footer(text="LionShiftGG • Late Alert")
+                                await director.send(embed=embed)
+                                print(f"[LATE] Flagged {worker_name} as late for {shift_start} shift")
+                            except Exception as e:
+                                print(f"[LATE] Failed to send late alert: {e}")
+
+                            # Also DM the worker
+                            try:
+                                member = None
+                                for guild in bot.guilds:
+                                    member = guild.get_member(int(worker_id))
+                                    if member:
+                                        break
+                                if not member:
+                                    member = await bot.fetch_user(int(worker_id))
+                                if member:
+                                    embed_worker = Embed(
+                                        title="⚠️ You're Late!",
+                                        description=(
+                                            f"Your shift started at **{shift_start}** and you haven't clocked in yet!\n\n"
+                                            f"**📅 Date:** {shift_date}\n"
+                                            f"**📋 Schedule:** {sched.get('name', 'Unknown')}\n\n"
+                                            f"Please clock in immediately or contact management."
+                                        ),
+                                        color=0xE74C3C
+                                    )
+                                    embed_worker.set_footer(text="LionShiftGG • Please clock in ASAP")
+                                    await member.send(embed=embed_worker)
+                            except Exception:
+                                pass
+
+    except Exception as e:
+        print(f"[REMIND] Error in shift reminder task: {e}")
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """Refresh workers cache immediately when the student worker role is added or removed."""
+    if STUDENT_WORKER_ROLE_ID is None:
+        return
+    before_ids = {r.id for r in before.roles}
+    after_ids = {r.id for r in after.roles}
+    if STUDENT_WORKER_ROLE_ID in before_ids.symmetric_difference(after_ids):
+        print(f"[WORKERS] Role change detected for {after.display_name} — refreshing workers cache")
+        await update_workers_cache()
+
 
 @bot.event
 async def on_ready():
+    print("[CONNECTION] Bot ready and connected.")
     panels = load_panels()
 
     # Register global views that rely only on custom_id handlers
@@ -365,6 +664,19 @@ async def on_ready():
         except Exception:
             pass
 
+    # Re-register TakeOfferButton views for all currently open offers
+    try:
+        with open(SHIFT_BOARD_FILE, "r", encoding="utf-8") as _f:
+            _board = json.load(_f)
+        for _oid, _offer in _board.get("shift_board", {}).items():
+            if _offer.get("status") == "open":
+                try:
+                    bot.add_view(TakeOfferView(_oid))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # --- Safe cog loader (handles hyphenated filenames and async/sync setup) ---
     async def load_cog_file(filename):
         try:
@@ -405,6 +717,11 @@ async def on_ready():
         print(f"[STARTUP] Queue file exists: {os.path.exists(NOTIFICATION_QUEUE_FILE)}")
         print(f"[STARTUP] Student Worker Role ID: {STUDENT_WORKER_ROLE_ID}")
     
+    # Start shift reminder/late detection task
+    if not shift_reminder_task.is_running():
+        shift_reminder_task.start()
+        print(f"[STARTUP] Shift reminder task started (runs every 5 min)")
+    
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands.")
@@ -412,103 +729,6 @@ async def on_ready():
         print(f"Error syncing commands: {e}")
 
 # --- UI Components ---
-class OfferScheduleSelect(discord.ui.Select):
-    def __init__(self, schedules, requester_id):
-        options = [
-            discord.SelectOption(
-                label=f"{s['start_date']} to {s['end_date']}",
-                value=str(idx),
-                description=s['schedule_link'][:80]
-            )
-            for idx, s in enumerate(schedules)
-        ]
-        super().__init__(
-            placeholder="Select a schedule...",
-            min_values=1,
-            max_values=1,
-            options=options,
-            custom_id="offer_schedule_select"
-        )
-        self.schedules = schedules
-        self.requester_id = requester_id
-
-    async def callback(self, interaction: Interaction):
-        if interaction.user.id != self.requester_id:
-            await interaction.response.send_message("Only the requester can use this menu.", ephemeral=True)
-            return
-        idx = int(self.values[0])
-        selected_schedule = self.schedules[idx]
-        await interaction.response.send_modal(OfferShiftModal(interaction.user.id, selected_schedule))
-
-class OfferScheduleSelectView(View):
-    def __init__(self, schedules, requester_id):
-        super().__init__(timeout=180)
-        self.add_item(OfferScheduleSelect(schedules, requester_id))
-
-class OfferShiftModal(Modal, title="Offer Your Shift"):
-    name = TextInput(label="Your Name", placeholder="Enter your name", required=True)
-    date = TextInput(label="Date of Shift", placeholder="DD-MM-YYYY", required=True)
-    time = TextInput(label="Time of Shift", placeholder="e.g. 2:00 PM - 6:00 PM", required=True)
-    reason = TextInput(label="Reason for Offering", style=discord.TextStyle.paragraph, required=True)
-
-    def __init__(self, author_id, schedule):
-        super().__init__()
-        self.author_id = author_id
-        self.schedule = schedule
-
-    async def on_submit(self, interaction: Interaction):
-        global shift_counter
-        shift_id = shift_counter
-        shift_counter += 1
-        shift_info = {
-            "user_id": self.author_id,
-            "name": self.name.value,
-            "date": self.date.value,
-            "time": self.time.value,
-            "reason": self.reason.value,
-            "schedule": self.schedule
-        }
-        shift_board[shift_id] = shift_info
-        save_shift_board()  # Save after adding a shift
-        # Notify all student workers
-        from datetime import datetime
-        now_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        schedule_str = (
-            f"**📅 Schedule:** {self.schedule['start_date']} to {self.schedule['end_date']}\n"
-            f"[View Schedule]({self.schedule['schedule_link']})\n"
-        )
-        embed = Embed(
-            title="🟢 Shift Available!",
-            description=(
-                f"{schedule_str}"
-                f"**👤 Name:** {shift_info['name']}\n"
-                f"**📅 Date:** {shift_info['date']}\n"
-                f"**⏰ Time:** {shift_info['time']}\n"
-                f"**📝 Reason:** {shift_info['reason']}\n"
-                f"**🆔 Shift ID:** {shift_id}"
-            ),
-            color=0x27ae60
-        )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.set_footer(text=f"Posted: {now_str}")
-        view = TakeShiftView(shift_id)
-        # Send the message first, then register the view bound to that message so it's persistent
-        if STUDENT_WORKER_ROLE_ID:
-            role_mention = f"<@&{STUDENT_WORKER_ROLE_ID}>"
-            message = await interaction.channel.send(f"{role_mention} **A NEW SHIFT IS AVAILABLE**", embed=embed, view=view)
-        else:
-            message = await interaction.channel.send("**A NEW SHIFT IS AVAILABLE**", embed=embed, view=view)
-        # Register the view for that specific message (so it persists after restarts)
-        try:
-            bot.add_view(view, message_id=message.id)
-        except Exception:
-            try:
-                bot.add_view(view)
-            except Exception:
-                pass
-        await interaction.response.send_message("Your shift offer has been posted!", ephemeral=True)
-        # No longer DM the director when a shift is offered
-
 class OfferShiftView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -520,14 +740,107 @@ class OfferShiftButton(Button):
         super().__init__(label="🟥 Offer Shift", style=discord.ButtonStyle.danger, custom_id="offer_shift")
 
     async def callback(self, interaction: Interaction):
-        schedules = load_schedules()
-        allowed_schedules = [s for s in schedules if s.get("allow_offers", False)]
-        if not allowed_schedules:
-            await interaction.response.send_message("No schedules available for offering shifts.", ephemeral=True)
+        if not load_settings().get("allow_shift_trading", True):
+            await interaction.response.send_message(
+                "❌ Shift trading is currently disabled by management.", ephemeral=True
+            )
             return
+
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        worker_id = str(interaction.user.id)
+
+        # Find the worker's actual upcoming scheduled shifts (same logic as /offer_shift slash command)
+        schedules = load_schedules()
+        upcoming = []
+        for schedule in schedules:
+            if schedule.get("status") != "published":
+                continue
+            for shift in schedule.get("shifts", []):
+                if str(shift.get("worker_id", "")) == worker_id and shift.get("date", "") >= today_str:
+                    upcoming.append(shift)
+
+        if not upcoming:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="⚠️ No Upcoming Shifts",
+                    description="You have no published upcoming shifts to offer.",
+                    color=0xf59e0b
+                ),
+                ephemeral=True
+            )
+            return
+
+        # Deduplicate and cap at Discord's 25-option limit
+        seen = set()
+        unique = []
+        for s in upcoming:
+            key = (s.get("date"), s.get("type"))
+            if key not in seen:
+                seen.add(key)
+                unique.append(s)
+        unique = unique[:25]
+
+        options = [
+            discord.SelectOption(
+                label=f"{s['date']} — {s.get('type','?').title()} ({s.get('start','')}–{s.get('end','')})",
+                value=f"{s['date']}|{s.get('type','mid')}|{s.get('start','')}|{s.get('end','')}"
+            )
+            for s in unique
+        ]
+
+        select = discord.ui.Select(placeholder="Choose a shift to offer…", options=options, custom_id="offer_shift_select_panel")
+
+        async def select_callback(sel_inter: Interaction):
+            parts = select.values[0].split("|")
+            date, stype, start, end = parts[0], parts[1], parts[2], parts[3]
+
+            # Check for an existing open offer on this exact shift
+            try:
+                with open(SHIFT_BOARD_FILE, "r", encoding="utf-8") as _f:
+                    _board = json.load(_f)
+            except Exception:
+                _board = {"shift_board": {}}
+            for _existing in _board.get("shift_board", {}).values():
+                if (
+                    str(_existing.get("worker_id")) == worker_id
+                    and _existing.get("date") == date
+                    and _existing.get("shift_type") == stype
+                    and _existing.get("status") == "open"
+                ):
+                    await sel_inter.response.send_message(
+                        embed=discord.Embed(
+                            title="⚠️ Already Offered",
+                            description="You already have an open offer for that shift.",
+                            color=0xF59E0B,
+                        ),
+                        ephemeral=True,
+                    )
+                    return
+
+            # Show the reason modal — it handles posting to the channel
+            await sel_inter.response.send_modal(
+                OfferReasonModal(
+                    shift_data={
+                        "worker_id": worker_id,
+                        "worker_name": sel_inter.user.display_name,
+                        "date": date,
+                        "stype": stype,
+                        "start": start,
+                        "end": end,
+                    }
+                )
+            )
+
+        select.callback = select_callback
+        view = discord.ui.View(timeout=120)
+        view.add_item(select)
         await interaction.response.send_message(
-            "Select the schedule for your shift offer:",
-            view=OfferScheduleSelectView(allowed_schedules, interaction.user.id),
+            embed=discord.Embed(
+                title="📋 Offer a Shift",
+                description="Select the shift you want to put on the board:",
+                color=0x3b82f6
+            ),
+            view=view,
             ephemeral=True
         )
 
@@ -536,6 +849,11 @@ class TradeShiftButton(Button):
         super().__init__(label="🟦 Trade Shift", style=discord.ButtonStyle.primary, custom_id="trade_shift", disabled=False)
 
     async def callback(self, interaction: Interaction):
+        if not load_settings().get("allow_shift_trading", True):
+            await interaction.response.send_message(
+                "❌ Shift trading is currently disabled by management.", ephemeral=True
+            )
+            return
         schedules = load_schedules()
         if not schedules:
             await interaction.response.send_message("No schedules available for trading.", ephemeral=True)
@@ -546,6 +864,277 @@ class TradeShiftButton(Button):
             view=TradeScheduleSelectView(schedules, interaction.user.id),
             ephemeral=True
         )
+
+# ── Offer Reason Modal — shown after worker selects a shift ──────────────
+class OfferReasonModal(Modal, title="Offer Your Shift"):
+    reason = TextInput(
+        label="Reason for Offering Shift",
+        placeholder="Why can't you make this shift?",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500,
+    )
+
+    def __init__(self, shift_data: dict):
+        super().__init__()
+        self.shift_data = shift_data  # {worker_id, worker_name, date, stype, start, end}
+
+    async def on_submit(self, interaction: Interaction):
+        import time as _t, random as _rnd
+        offer_id = f"O{int(_t.time())}{_rnd.randint(10, 99)}"
+
+        try:
+            with open(SHIFT_BOARD_FILE, "r", encoding="utf-8") as _f:
+                board = json.load(_f)
+        except Exception:
+            board = {"shift_board": {}, "shift_counter": 0}
+
+        board.setdefault("shift_board", {})[offer_id] = {
+            "worker_id": self.shift_data["worker_id"],
+            "worker_name": self.shift_data["worker_name"],
+            "date": self.shift_data["date"],
+            "shift_type": self.shift_data["stype"],
+            "start": self.shift_data["start"],
+            "end": self.shift_data["end"],
+            "reason": self.reason.value,
+            "taken_by": None,
+            "taken_by_name": None,
+            "status": "open",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source": "discord_bot",
+        }
+        safe_json_dump(board, SHIFT_BOARD_FILE, indent=2)
+
+        def _fmt(t):
+            try:
+                return datetime.strptime(t, "%H:%M").strftime("%I:%M %p").lstrip("0")
+            except Exception:
+                return t
+
+        date = self.shift_data["date"]
+        stype = self.shift_data["stype"]
+        start_nice = _fmt(self.shift_data["start"])
+        end_nice = _fmt(self.shift_data["end"])
+        try:
+            date_nice = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %B %d, %Y")
+        except Exception:
+            date_nice = date
+
+        embed = Embed(
+            title="🟢  Shift Available — Claim It!",
+            color=0x2ECC71,
+        )
+        embed.set_author(
+            name=f"{self.shift_data['worker_name']} is offering their shift",
+            icon_url=interaction.user.display_avatar.url,
+        )
+        embed.add_field(name="📅  Date", value=date_nice, inline=True)
+        embed.add_field(name="🔖  Type", value=stype.title(), inline=True)
+        embed.add_field(name="⏰  Time", value=f"{start_nice} – {end_nice}", inline=True)
+        embed.add_field(name="📝  Reason", value=self.reason.value, inline=False)
+        embed.set_footer(text=f"LionShiftGG  •  Offer {offer_id}  •  Click the button below to claim this shift")
+        embed.timestamp = datetime.now(timezone.utc)
+
+        view = TakeOfferView(offer_id)
+        content = (
+            f"<@&{STUDENT_WORKER_ROLE_ID}> **A shift is up for grabs!**"
+            if STUDENT_WORKER_ROLE_ID
+            else "**A shift is up for grabs!**"
+        )
+        await interaction.channel.send(content=content, embed=embed, view=view)
+
+        await interaction.response.send_message(
+            embed=Embed(
+                title="✅  Shift Offered",
+                description=(
+                    f"Your **{stype.title()}** shift on **{date_nice}** "
+                    f"({start_nice} – {end_nice}) has been posted to the board."
+                ),
+                color=0x2ECC71,
+            ),
+            ephemeral=True,
+        )
+
+
+# ── Persistent view for taking a posted offer ─────────────────────────────
+class TakeOfferView(View):
+    def __init__(self, offer_id: str):
+        super().__init__(timeout=None)
+        self.add_item(TakeOfferButton(offer_id))
+
+
+class TakeOfferButton(Button):
+    def __init__(self, offer_id: str):
+        super().__init__(
+            label="✅  Take This Shift",
+            style=discord.ButtonStyle.success,
+            custom_id=f"take_offer_{offer_id}",
+        )
+        self.offer_id = offer_id
+
+    async def callback(self, interaction: Interaction):
+        try:
+            with open(SHIFT_BOARD_FILE, "r", encoding="utf-8") as _f:
+                board = json.load(_f)
+        except Exception:
+            board = {"shift_board": {}}
+
+        offer = board.get("shift_board", {}).get(self.offer_id)
+        if not offer or offer.get("status") != "open":
+            await interaction.response.send_message(
+                "❌ This shift has already been taken or is no longer available.",
+                ephemeral=True,
+            )
+            return
+        if str(offer["worker_id"]) == str(interaction.user.id):
+            await interaction.response.send_message(
+                "❌ You can't take your own shift.", ephemeral=True
+            )
+            return
+
+        now = datetime.now(timezone.utc)
+        now_str = now.strftime("%Y-%m-%d %I:%M %p").lstrip("0")
+
+        # Mark as taken in the board file
+        offer["status"] = "taken"
+        offer["taken_by"] = str(interaction.user.id)
+        offer["taken_by_name"] = interaction.user.display_name
+        offer["taken_at"] = now.isoformat()
+        board["shift_board"][self.offer_id] = offer
+        safe_json_dump(board, SHIFT_BOARD_FILE, indent=2)
+
+        # Transfer the shift in schedules.json so the taker can clock in
+        updated_schedule = False
+        try:
+            schedules = load_schedules()
+            for sched in schedules:
+                for shift in sched.get("shifts", []):
+                    if (
+                        str(shift.get("worker_id", "")) == str(offer["worker_id"])
+                        and shift.get("date") == offer["date"]
+                        and shift.get("type") == offer["shift_type"]
+                    ):
+                        shift["worker_id"] = str(interaction.user.id)
+                        shift["worker_discord_id"] = str(interaction.user.id)
+                        shift["worker_name"] = interaction.user.display_name
+                        updated_schedule = True
+                        break
+                if updated_schedule:
+                    break
+            if updated_schedule:
+                save_schedules(schedules)
+        except Exception as e:
+            print(f"[OFFER] Failed to update schedules on take: {e}")
+
+        def _fmt(t):
+            try:
+                return datetime.strptime(t, "%H:%M").strftime("%I:%M %p").lstrip("0")
+            except Exception:
+                return t
+
+        try:
+            date_nice = datetime.strptime(offer["date"], "%Y-%m-%d").strftime("%A, %B %d, %Y")
+        except Exception:
+            date_nice = offer["date"]
+        start_nice = _fmt(offer.get("start", "?"))
+        end_nice = _fmt(offer.get("end", "?"))
+        stype = offer.get("shift_type", "shift").title()
+
+        # Update the public embed to show claimed state
+        if interaction.message:
+            try:
+                taken_embed = Embed(title="⛔  Shift Claimed", color=0x95A5A6)
+                taken_embed.set_author(
+                    name=f"Originally offered by {offer.get('worker_name', 'Unknown')}"
+                )
+                taken_embed.add_field(name="📅  Date", value=date_nice, inline=True)
+                taken_embed.add_field(name="🔖  Type", value=stype, inline=True)
+                taken_embed.add_field(name="⏰  Time", value=f"{start_nice} – {end_nice}", inline=True)
+                taken_embed.add_field(name="🙋  Claimed By", value=interaction.user.mention, inline=False)
+                taken_embed.set_footer(text=f"LionShiftGG  •  Claimed at {now_str}")
+                taken_embed.timestamp = now
+                await interaction.message.edit(
+                    content="~~**A shift is up for grabs!**~~",
+                    embed=taken_embed,
+                    view=View(),
+                )
+                import asyncio
+                _msg = interaction.message
+
+                async def _del():
+                    await asyncio.sleep(30)
+                    try:
+                        await _msg.delete()
+                    except Exception:
+                        pass
+
+                asyncio.create_task(_del())
+            except Exception:
+                pass
+
+        # DM the original worker
+        try:
+            orig = await interaction.client.fetch_user(int(offer["worker_id"]))
+            dm = Embed(
+                title="✅  Your Shift Was Taken!",
+                description=f"**{interaction.user.display_name}** has claimed your shift.",
+                color=0x2ECC71,
+            )
+            dm.add_field(name="📅  Date", value=date_nice, inline=True)
+            dm.add_field(name="⏰  Time", value=f"{start_nice} – {end_nice}", inline=True)
+            dm.add_field(name="📝  Your Reason", value=offer.get("reason", "—"), inline=False)
+            dm.set_footer(text="LionShiftGG  •  Shift successfully transferred")
+            dm.timestamp = now
+            await orig.send(embed=dm)
+        except Exception:
+            pass
+
+        # DM the director
+        try:
+            director = await interaction.client.fetch_user(DIRECTOR_ID)
+            dir_em = Embed(title="🔄  Shift Transfer", color=0xE67E22)
+            dir_em.add_field(name="📅  Date", value=date_nice, inline=True)
+            dir_em.add_field(name="🔖  Type", value=stype, inline=True)
+            dir_em.add_field(name="⏰  Time", value=f"{start_nice} – {end_nice}", inline=True)
+            dir_em.add_field(
+                name="👤  Original Worker",
+                value=f"<@{offer['worker_id']}> ({offer.get('worker_name', '?')})",
+                inline=True,
+            )
+            dir_em.add_field(
+                name="🙋  Taken By",
+                value=f"{interaction.user.mention} ({interaction.user.display_name})",
+                inline=True,
+            )
+            dir_em.add_field(name="📝  Reason", value=offer.get("reason", "—"), inline=False)
+            dir_em.add_field(
+                name="📊  Schedule Updated",
+                value=(
+                    "✅ Yes — shift now assigned to taker"
+                    if updated_schedule
+                    else "⚠️ Could not locate shift in schedule"
+                ),
+                inline=False,
+            )
+            dir_em.set_footer(text=f"LionShiftGG  •  Offer {self.offer_id}")
+            dir_em.timestamp = now
+            await director.send(embed=dir_em)
+        except Exception:
+            pass
+
+        await interaction.response.send_message(
+            embed=Embed(
+                title="✅  Shift Claimed!",
+                description=(
+                    f"You've taken the **{stype}** shift on **{date_nice}** "
+                    f"({start_nice} – {end_nice}).\n\n"
+                    "You are now scheduled for this shift and can clock in on that day."
+                ),
+                color=0x2ECC71,
+            ),
+            ephemeral=True,
+        )
+
 
 class TakeShiftView(View):
     def __init__(self, shift_id):
@@ -645,9 +1234,57 @@ async def setup_offershift(interaction: Interaction):
     await interaction.followup.send("Offer Shift board created and persisted.", ephemeral=True)
 
 
+# --- Slash Command to View/Toggle DM Notification Settings ---
+@bot.tree.command(name="dm_settings", description="View or toggle DM notifications for shift reminders and late alerts (admin only).")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(
+    setting="Which DM setting to toggle (leave blank to view all current settings)",
+    enabled="Turn this DM on or off"
+)
+@app_commands.choices(setting=[
+    app_commands.Choice(name="Shift Reminders (1 hour before shift)", value="dm_shift_reminders"),
+    app_commands.Choice(name="Late Alerts (worker hasn't clocked in)", value="dm_late_alerts"),
+])
+async def dm_settings(
+    interaction: Interaction,
+    setting: Optional[app_commands.Choice[str]] = None,
+    enabled: Optional[bool] = None
+):
+    settings = load_settings()
+
+    # If a setting and value are both provided, update it
+    if setting is not None and enabled is not None:
+        settings[setting.value] = enabled
+        save_settings(settings)
+
+    # Build current status for both settings
+    reminders_on = settings.get("dm_shift_reminders", True)
+    late_on = settings.get("dm_late_alerts", True)
+
+    reminders_str = "✅ **ON**" if reminders_on else "❌ **OFF**"
+    late_str = "✅ **ON**" if late_on else "❌ **OFF**"
+
+    if setting is not None and enabled is not None:
+        action_line = f"**{setting.name}** has been turned **{'ON ✅' if enabled else 'OFF ❌'}**.\n\n"
+        embed_color = 0x2ECC71 if enabled else 0xE74C3C
+    else:
+        action_line = ""
+        embed_color = 0xF59E0B
+
+    embed = Embed(
+        title="⚙️ LionShiftGG DM Settings",
+        description=(
+            f"{action_line}"
+            f"**⏰ Shift Reminders (1 hr before):** {reminders_str}\n"
+            f"**🚨 Late Alerts (not clocked in):** {late_str}"
+        ),
+        color=embed_color
+    )
+    embed.set_footer(text="LionShiftGG • Use /dm_settings to toggle • Affects worker & director DMs")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-
+# --- Slash Command to Restart the Bot Service ---
 # --- Slash Command to Restart the Bot Service ---
 @bot.tree.command(name="restart_service", description="Restart the LionShiftGG bot service.")
 @app_commands.checks.has_permissions(administrator=True)
@@ -1558,6 +2195,40 @@ async def set_log_channel(interaction: Interaction, channel: discord.TextChannel
     await interaction.response.send_message("Failed to set log channel.", ephemeral=True)
 
 if __name__ == "__main__":
+    if not TOKEN:
+        print("[FATAL] DISCORD_BOT_TOKEN not set in .env file!")
+        sys.exit(1)
     _ = load_panels()
     load_shift_board()  # Ensure persistent shift board is loaded
+
+    # --- Connection resilience events ---
+    @bot.event
+    async def on_connect():
+        print("[CONNECTION] Bot connected to Discord gateway.")
+
+    @bot.event
+    async def on_disconnect():
+        print("[CONNECTION] WARNING: Bot disconnected from Discord gateway. Will auto-reconnect.")
+
+    @bot.event
+    async def on_resumed():
+        print("[CONNECTION] Bot resumed connection to Discord.")
+        # Restart task loops that may have died during disconnect
+        try:
+            if not process_notification_queue.is_running():
+                print("[RECOVERY] Restarting dead task loop: process_notification_queue")
+                process_notification_queue.start()
+        except Exception as e:
+            print(f"[RECOVERY] Failed to restart process_notification_queue: {e}")
+
+    @process_notification_queue.error
+    async def process_notification_queue_error(error):
+        print(f"[ERROR] process_notification_queue task died: {error}")
+        import traceback
+        traceback.print_exc()
+        import asyncio
+        await asyncio.sleep(30)
+        if not process_notification_queue.is_running():
+            process_notification_queue.start()
+
     bot.run(TOKEN)

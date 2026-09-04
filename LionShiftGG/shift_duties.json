@@ -1,0 +1,113 @@
+{
+  "opener": {
+    "greeting": "🌅 You're the Opener today! Here's what you need to take care of:",
+    "tasks": [
+      {
+        "text": "Turn on all monitors and PC stations",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Log into GGLeap and verify all stations are active",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Unlock and open the arena door",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Ensure the Next Student worker is on Site and clocked in before leaving the Arena",
+        "show_on": "end",
+        "required": false
+      },
+      "Report any System Issues to Jay (Mage)",
+      {
+        "text": "DO NOT LEAVE THE ARENA UNATTENDED AT ALL TIMES",
+        "show_on": "both",
+        "required": true
+      }
+    ]
+  },
+  "mid": {
+    "greeting": "☀️ You're the Mid-Shift worker today! Here's what you need to take care of:",
+    "tasks": [
+      {
+        "text": "Check in with current staff on duty",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Monitor the arena and assist students",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Report any equipment issues to the director",
+        "show_on": "start",
+        "required": false
+      },
+      {
+        "text": "Report any System Issues to Jay (Mage)",
+        "show_on": "both",
+        "required": true
+      },
+      {
+        "text": "DO NOT LEAVE THE ARENA UNATTENDED AT ALL TIMES",
+        "show_on": "both",
+        "required": true
+      }
+    ]
+  },
+  "closer": {
+    "greeting": "🌙 You're the Closer Today! Here's what you need to take care of:",
+    "tasks": [
+      {
+        "text": "DO NOT LEAVE THE ARENA UNATTENDED AT ALL TIMES",
+        "show_on": "both",
+        "required": true
+      },
+      {
+        "text": "Check in with the current staff on duty",
+        "show_on": "start",
+        "required": true
+      },
+      {
+        "text": "Monitor the arena and assist students",
+        "show_on": "start",
+        "required": true
+      },
+      {
+        "text": "Report any Damage or Missing Equipment to the Director",
+        "show_on": "both",
+        "required": true
+      },
+      {
+        "text": "Report any System Issues to Mage",
+        "show_on": "both",
+        "required": true
+      },
+      {
+        "text": "Ensure all non-varsity students have left the arena",
+        "show_on": "end",
+        "required": true
+      },
+      {
+        "text": "Log all students out of GGLeap",
+        "show_on": "end",
+        "required": true
+      },
+      {
+        "text": "Close and lock the arena door",
+        "show_on": "end",
+        "required": true
+      },
+      {
+        "text": "Report any System Issues to Jay (Mage)",
+        "show_on": "both",
+        "required": true
+      }
+    ]
+  }
+}

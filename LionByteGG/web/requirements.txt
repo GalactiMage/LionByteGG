@@ -31,3 +31,6 @@ openpyxl>=3.1.0
 
 # System monitoring
 psutil>=5.9.0
+
+# QR Code generation
+qrcode[pil]>=8.0.0

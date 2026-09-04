@@ -700,7 +700,7 @@
                     <div class="perm-item"><input type="checkbox" id="perm-page.varsity" data-perm="page.varsity"><label for="perm-page.varsity">View Registrations</label></div>
                     <div class="perm-item"><input type="checkbox" id="perm-varsity.manage" data-perm="varsity.manage"><label for="perm-varsity.manage">Manage Registrations (Approve / Deny / Delete)</label></div>
 
-                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Team Rosters</div>
+                    <div style="margin: 8px 0 4px 0; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;"> Team Manager</div>
                     <div class="perm-item"><input type="checkbox" id="perm-page.rosters" data-perm="page.rosters"><label for="perm-page.rosters">View Rosters</label></div>
                     <div class="perm-item"><input type="checkbox" id="perm-rosters.manage" data-perm="rosters.manage"><label for="perm-rosters.manage">Manage Players, Teams & Matches</label></div>
                     <div class="perm-item"><input type="checkbox" id="perm-rosters.admin" data-perm="rosters.admin"><label for="perm-rosters.admin">Roster Admin (Bulk Actions / Sync Roles / Import-Export / Announce / DM)</label></div>
@@ -735,15 +735,27 @@
                 </div>
             </div>
 
-            <!-- Worker On Duty Section -->
+            <!-- Arena Staff Section -->
             <div class="perm-section">
-                <div class="perm-section-title"><i class="fas fa-hard-hat"></i> Worker On Duty</div>
+                <div class="perm-section-title"><i class="fas fa-gamepad"></i> Arena Staff</div>
                 <div class="perm-section-body">
-                    <div class="perm-item"><input type="checkbox" id="perm-section.onduty" data-perm="section.onduty"><label for="perm-section.onduty"><strong>Access On Duty Section</strong></label></div>
-                    <div class="perm-item"><input type="checkbox" id="perm-page.onduty_dashboard" data-perm="page.onduty_dashboard"><label for="perm-page.onduty_dashboard">View Dashboard</label></div>
-                    <div class="perm-item"><input type="checkbox" id="perm-page.onduty_equipment" data-perm="page.onduty_equipment"><label for="perm-page.onduty_equipment">View Equipment</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-section.arena" data-perm="section.arena"><label for="perm-section.arena"><strong>Access Arena Staff Section</strong></label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_live" data-perm="page.arena_live"><label for="perm-page.arena_live">View Live Feed</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_sessions" data-perm="page.arena_sessions"><label for="perm-page.arena_sessions">View Sessions (PC Room Map)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_logs" data-perm="page.arena_logs"><label for="perm-page.arena_logs">View Sign-in Logs</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_controls" data-perm="page.arena_controls"><label for="perm-page.arena_controls">View Kiosk Manager (Admin)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.manage" data-perm="arena.manage"><label for="perm-arena.manage">Manage Kiosks &amp; PC Sessions (Settings / Lock-Unlock / Restart-Shutdown PCs / Force Sign-out / Reload / Clear Logs)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.unlock" data-perm="arena.unlock"><label for="perm-arena.unlock">Unlock Locked Kiosks (remote)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_inventory" data-perm="page.arena_inventory"><label for="perm-page.arena_inventory">View Inventory (Equipment)</label></div>
                     <div class="perm-item"><input type="checkbox" id="perm-equipment.use" data-perm="equipment.use"><label for="perm-equipment.use">Check Out / Check In Equipment</label></div>
-                    <div class="perm-item"><input type="checkbox" id="perm-equipment.manage" data-perm="equipment.manage"><label for="perm-equipment.manage">Manage Equipment (Add / Edit / Delete / Reports / Export)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-equipment.manage" data-perm="equipment.manage"><label for="perm-equipment.manage">Manage Inventory (Add / Edit / Delete / Reports / Export)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_students" data-perm="page.arena_students"><label for="perm-page.arena_students">View Students (Profiles &amp; History)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.notes" data-perm="arena.notes"><label for="perm-arena.notes">Add / Remove Student Notes</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.ban" data-perm="arena.ban"><label for="perm-arena.ban">Ban / Watch-list Students</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.students_manage" data-perm="arena.students_manage"><label for="perm-arena.students_manage">Delete Students &amp; Their Records</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-page.arena_reports" data-perm="page.arena_reports"><label for="perm-page.arena_reports">View Incident Reports (own only)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.reports_all" data-perm="arena.reports_all"><label for="perm-arena.reports_all">View ALL Incident Reports (not just own)</label></div>
+                    <div class="perm-item"><input type="checkbox" id="perm-arena.reports" data-perm="arena.reports"><label for="perm-arena.reports">File / Resolve Incident Reports</label></div>
                 </div>
             </div>
 

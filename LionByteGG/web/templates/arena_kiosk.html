@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>{{ arena_name or 'Arena' }} — Choose Kiosk</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; }
+        body {
+            font-family: 'Inter', sans-serif; color: #F5F3EE; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center; padding: 24px;
+            background:
+              radial-gradient(ellipse 120% 80% at 50% -10%, #131D3D 0%, transparent 55%),
+              linear-gradient(160deg, #0E1730 0%, #0B0E17 45%, #05060A 100%);
+        }
+        .wrap { width: 100%; max-width: 860px; text-align: center; }
+        .logo { width: 66px; height: 66px; border-radius: 18px; background: linear-gradient(135deg, #CFB991, #8A7B5C); display: flex; align-items: center; justify-content: center; font-size: 30px; color: #1B1706; margin: 0 auto 20px; box-shadow: 0 10px 30px rgba(207,185,145,.3); }
+        .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #CFB991; margin-bottom: 10px; }
+        h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: clamp(24px, 4vw, 34px); margin-bottom: 8px; }
+        .sub { color: #A0A4B8; font-size: 15px; margin-bottom: 34px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+        .kiosk-card {
+            display: block; text-decoration: none; color: inherit; text-align: left;
+            background: linear-gradient(165deg, #131D3D 0%, #101526 60%, #0B0E17 100%);
+            border: 2px solid #26304F; border-radius: 22px; padding: 26px;
+            transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        .kiosk-card:hover { transform: translateY(-3px); border-color: #CFB991; box-shadow: 0 18px 40px -18px rgba(207,185,145,.5); }
+        .kiosk-card.disabled { opacity: .5; pointer-events: none; }
+        .kc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+        .kc-icon { width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(155deg, rgba(52,211,153,.18), rgba(207,185,145,.14)); border: 1.5px solid rgba(52,211,153,.3); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #E8D5A8; }
+        .kc-status { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; }
+        .kc-status.open { color: #34D399; background: rgba(52,211,153,.14); border: 1px solid rgba(52,211,153,.35); }
+        .kc-status.closed { color: #E8776B; background: rgba(232,119,107,.12); border: 1px solid rgba(232,119,107,.35); }
+        .kc-name { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+        .kc-room { color: #A0A4B8; font-size: 14px; }
+        .kc-go { margin-top: 18px; display: flex; align-items: center; gap: 8px; color: #CFB991; font-weight: 600; font-size: 14px; }
+        .foot { margin-top: 34px; color: #5F637A; font-size: 13px; }
+        .foot a { color: #A0A4B8; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="logo"><i class="fas fa-gamepad"></i></div>
+        <div class="eyebrow">{{ arena_name }}</div>
+        <h1>Select This iPad's Kiosk</h1>
+        <p class="sub">Tap the station this device belongs to.</p>
+        <div class="grid">
+            {% for k in kiosks %}
+            <a class="kiosk-card {% if not k.enabled %}disabled{% endif %}" href="/arena/kiosk/{{ k.id }}">
+                <div class="kc-top">
+                    <div class="kc-icon"><i class="fas fa-desktop"></i></div>
+                    <span class="kc-status {% if k.enabled %}open{% else %}closed{% endif %}">{{ 'Enabled' if k.enabled else 'Disabled' }}</span>
+                </div>
+                <div class="kc-name">{{ k.label }}</div>
+                <div class="kc-room">{{ k.room }}</div>
+                <div class="kc-go">Launch <i class="fas fa-arrow-right"></i></div>
+            </a>
+            {% endfor %}
+        </div>
+        <div class="foot">Powered by LionByteGG Nova · <a href="/arena/live">Staff Dashboard</a></div>
+    </div>
+</body>
+</html>

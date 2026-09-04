@@ -4,9 +4,12 @@ from discord import app_commands
 import json
 import os
 import re
+import asyncio
 from datetime import datetime, timezone, timedelta
-from utils.constants import USER_RECORDS_DIR, GUEST_TIMES_DIR, LOG_CHANNEL_NAME
-from utils.safe_json import safe_json_dump
+from utils.constants import USER_RECORDS_DIR, GUEST_TIMES_DIR, LOG_CHANNEL_NAME, GUILD_ID
+from utils.safe_json import safe_json_dump, safe_json_load
+from utils import db as user_db
+from utils.automod_sync import sync_automod
 
 # Ensure data directory and flagged_words.json exist
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -25,12 +28,10 @@ THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1053299583830212639/1374
 SERVER_NAME = "Purdue University Northwest eSports Discord Server"
 WORDS_FILE = FLAGGED_WORDS_PATH
 AUTOMOD_LOG_CHANNEL_ID = 1316780542078881854  # <-- Replace with your AutoMod log channel ID
+BOT_TOKEN = os.environ.get('DISCORD_BOT_TOKEN', '')
 
 def load_words():
-    if not os.path.exists(WORDS_FILE):
-        return {"bannable": [], "kickable": [], "warning": []}
-    with open(WORDS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return safe_json_load(WORDS_FILE, {"bannable": [], "kickable": [], "warning": []})
 
 def save_words(words):
     safe_json_dump(words, WORDS_FILE, indent=2)
@@ -55,8 +56,8 @@ def load_guest_times():
     for fname in os.listdir(GUEST_TIMES_DIR):
         if fname.endswith("_guest_time.json"):
             try:
-                with open(os.path.join(GUEST_TIMES_DIR, fname), "r") as f:
-                    data = json.load(f)
+                data = safe_json_load(os.path.join(GUEST_TIMES_DIR, fname), None)
+                if data is not None:
                     user_id = fname.split("_")[0]
                     guest_times[user_id] = data
             except Exception:
@@ -85,50 +86,27 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.reload_words()
-        self.user_warnings = {}
-        self.user_records = self.load_user_records()
         self.processed_audit_ids = set()
         self.processed_automod_ids = set()  # Track processed AutoMod events to prevent duplicates
+        user_db.init_db()
         # Optionally, you can start an auditlog watcher task if needed
         # self.auditlog_task = self.bot.loop.create_task(self.auditlog_watcher())
 
-    def load_user_records(self):
-        ensure_user_records_dir()
-        records = {}
-        for fname in os.listdir(USER_RECORDS_DIR):
-            if fname.endswith("_record.json"):
-                try:
-                    with open(os.path.join(USER_RECORDS_DIR, fname), "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        user_id = fname.split("_")[0]
-                        records[user_id] = data
-                except Exception:
-                    continue
-        return records
-
-    def save_user_records(self):
-        ensure_user_records_dir()
-        for user_id, record in self.user_records.items():
-            path = user_record_path(user_id)
-            safe_json_dump(record, path, indent=2)
+    async def _sync_automod(self):
+        """Push the current flagged-word lists to Discord AutoMod (runs in a thread)."""
+        try:
+            words = load_words()
+            result = await asyncio.to_thread(sync_automod, BOT_TOKEN, GUILD_ID, words)
+            print(f"[AutoMod Sync] {result}")
+        except Exception as exc:
+            print(f"[AutoMod Sync] Error: {exc}")
 
     def add_record(self, user_id, type_, reason, moderator_name=None, moderator_id=None, source="discord"):
-        ensure_user_records_dir()
         user_id = str(user_id)
-        record = {
-            "user_id": user_id,
-            "type": type_,
-            "reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "moderator": moderator_name or "Moderation Team",
-            "moderator_id": str(moderator_id) if moderator_id else None,
-            "source": source
-        }
-        if user_id not in self.user_records:
-            self.user_records[user_id] = []
-        self.user_records[user_id].append(record)
-        self.save_user_records()
-        
+        user_db.add_record(user_id, type_, reason,
+                           moderator=moderator_name,
+                           moderator_id=moderator_id,
+                           source=source)
         # Also log to activity log
         self.log_to_activity_log(
             action=type_.lower(),
@@ -146,13 +124,7 @@ class Moderation(commands.Cog):
             activity_log_path = os.path.join(DATA_DIR, "activity_log.json")
             
             # Load existing log
-            activity_log = []
-            if os.path.exists(activity_log_path):
-                try:
-                    with open(activity_log_path, 'r', encoding='utf-8') as f:
-                        activity_log = json.load(f)
-                except:
-                    activity_log = []
+            activity_log = safe_json_load(activity_log_path, [])
             
             # Create moderator info
             moderator_info = {
@@ -189,8 +161,7 @@ class Moderation(commands.Cog):
             print(f"[ACTIVITY LOG] Error logging activity: {e}")
 
     def get_user_records(self, user_id):
-        user_id = str(user_id)
-        return self.user_records.get(user_id, [])
+        return user_db.get_records(str(user_id))
 
     def reload_words(self):
         words = load_words()
@@ -220,17 +191,21 @@ class Moderation(commands.Cog):
         Always logs the flagged content to the user's record, then takes action if needed.
         """
         try:
-            # Create a unique key to prevent duplicate processing
-            # Discord sometimes fires this event multiple times for the same action
-            event_key = f"{execution.user_id}:{execution.rule_id}:{execution.message_id}:{execution.content}"
+            # Build a dedup key for all events.
+            # For non-block actions a real message_id is available, so use it.
+            # For block actions message_id is None; deduplicate by user + rule + matched keyword.
+            if execution.message_id is not None:
+                event_key = f"{execution.user_id}:{execution.rule_id}:{execution.message_id}"
+            else:
+                event_key = f"{execution.user_id}:{execution.rule_id}:{(execution.matched_keyword or execution.content or '')}"
+
             if event_key in self.processed_automod_ids:
                 print(f"[AutoMod] Skipping duplicate event: {event_key[:50]}...")
                 return
             self.processed_automod_ids.add(event_key)
-            
-            # Clean up old entries to prevent memory buildup (keep last 100)
-            if len(self.processed_automod_ids) > 100:
-                self.processed_automod_ids = set(list(self.processed_automod_ids)[-50:])
+            # Keep the set bounded
+            if len(self.processed_automod_ids) > 200:
+                self.processed_automod_ids = set(list(self.processed_automod_ids)[-100:])
             
             print(f"[DEBUG] AutoMod event fired!")
             print(f"[DEBUG] Execution: action={execution.action}, rule_id={execution.rule_id}")
@@ -288,11 +263,11 @@ class Moderation(commands.Cog):
             # Check if word matches our custom lists - if so, the action method handles all logging
             for word in bannable:
                 if word.lower() in flagged_content.lower():
-                    await self.ban_user(member, flagged_content, word)
+                    await self.ban_user(member, f"Use of prohibited language: {word}", moderator_name="AutoMod")
                     return  # Action taken, method handles logging
             for word in kickable:
                 if word.lower() in flagged_content.lower():
-                    await self.kick_user(member, flagged_content, word)
+                    await self.kick_user(member, f"Use of prohibited language: {word}", moderator_name="AutoMod")
                     return  # Action taken, method handles logging
             for word in warning:
                 if word.lower() in flagged_content.lower():
@@ -367,13 +342,13 @@ class Moderation(commands.Cog):
             embed = discord.Embed(
                 title=f"{action_type} | {user}",
                 description=(
-                    f"User: {user.mention} (ID: {user.id})\n"
-                    f"Action: {action_type}\n"
-                    f"Reason: {reason}\n"
-                    f"Moderator: {moderator_name if moderator_name else 'Moderation Team'}\n"
-                    f"Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                    f"**User:** {user.mention} (ID: {user.id})\n"
+                    f"**Action:** {action_type}\n"
+                    f"**Reason:** {reason}\n"
+                    f"**Moderator:** {moderator_name if moderator_name else 'Moderation Team'}\n"
+                    f"**Time:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
                 ),
-                color=discord.Color.orange() if action_type == "Warning" else discord.Color.red() if action_type == "Kick" else discord.Color.dark_red()
+                color=discord.Color.orange() if action_type in ("Warning", "Violation") else discord.Color.red() if action_type == "Kick" else discord.Color.dark_red()
             )
             embed.set_footer(text="PNW eSports | Moderation Log (LionByteGG)")
             embed.set_thumbnail(url=user.display_avatar.url)
@@ -381,58 +356,31 @@ class Moderation(commands.Cog):
         # The record is also saved in self.user_records, so /userinfo will show it
 
     async def warn_user(self, user, content, word):
-        user_id = user.id
-        self.user_warnings[user_id] = self.user_warnings.get(user_id, 0) + 1
-        warnings = self.user_warnings[user_id]
-
-        # First warning
-        if warnings == 1:
-            embed = discord.Embed(
-                title="⚠️ Official Warning",
-                description=(
-                    f"Dear {user.mention},\n\n"
-                    f"You have received an official warning from the **{SERVER_NAME}** moderation team.\n\n"
-                    "**Reason:** Use of inappropriate language.\n\n"
-                    "Please review the server rules and ensure future compliance. Continued violations may result in further disciplinary action."
-                ),
-                color=discord.Color.orange()
-            )
-        # Second warning
-        elif warnings == 2:
-            embed = discord.Embed(
-                title="⚠️ Second Warning",
-                description=(
-                    f"Dear {user.mention},\n\n"
-                    f"This is your second warning from the **{SERVER_NAME}** moderation team.\n\n"
-                    "**Reason:** Continued use of inappropriate language.\n\n"
-                    "Further violations will result in a kick from the server."
-                ),
-                color=discord.Color.orange()
-            )
-        # Third warning: kick
-        elif warnings >= 3:
-            embed = discord.Embed(
-                title="👢 Notice of Removal from PNW eSports Discord",
-                description=(
-                    f"Dear {user.mention},\n\n"
-                    f"You have been **removed (kicked)** from the **{SERVER_NAME}** due to repeated warnings for inappropriate language.\n\n"
-                    "You may rejoin, but further violations will result in a permanent ban."
-                ),
-                color=discord.Color.red()
-            )
+        """
+        Warning-tier words result in a logged Violation and a DM notice only.
+        There is no escalation — users can accumulate as many violations as needed.
+        Kickable-tier and bannable-tier words handle their own escalation separately.
+        """
+        embed = discord.Embed(
+            title="⚠️ Language Violation",
+            description=(
+                f"Dear {user.mention},\n\n"
+                f"You have received a **violation** from the **{SERVER_NAME}** moderation team.\n\n"
+                f"**Reason:** Use of inappropriate language (`{word}`).\n\n"
+                "Please review the server rules and ensure future compliance."
+            ),
+            color=discord.Color.orange()
+        )
         embed.set_footer(text="PNW eSports | Moderation Team")
         embed.set_thumbnail(url=THUMBNAIL_URL)
         try:
             await user.send(embed=embed)
-        except discord.Forbidden:
+        except Exception:
             pass
 
-        # Log the warning
-        await self.log_action(user.guild, user, "Warning", f"Use of inappropriate language: {word}")
-        self.add_record(user.id, "Warning", f"Use of inappropriate language: {word}", moderator_name="AutoMod", source="discord")
-
-        if warnings >= 3:
-            await self.kick_user(user, content, word, warned=True)
+        # Log the violation (always, even if DM failed)
+        await self.log_action(user.guild, user, "Violation", f"Use of inappropriate language: {word}")
+        self.add_record(user.id, "Violation", f"Use of inappropriate language: {word}", moderator_name="AutoMod", source="discord")
 
     async def kick_user(self, user, reason, moderator_name=None, moderator_id=None):
         # Use the same DM embed for all kicks
@@ -442,7 +390,7 @@ class Moderation(commands.Cog):
                 f"Dear {user.mention},\n\n"
                 f"You have been **removed (kicked)** from the **{SERVER_NAME}** by the moderation team.\n\n"
                 f"**Reason:** {reason}\n"
-                f"Moderator: {moderator_name if moderator_name else 'Moderation Team'}\n\n"
+                f"**Moderator:** {moderator_name if moderator_name else 'Moderation Team'}\n\n"
                 "If you believe this was a mistake or wish to appeal, please contact a server administrator."
             ),
             color=discord.Color.red()
@@ -451,7 +399,7 @@ class Moderation(commands.Cog):
         embed.set_thumbnail(url=THUMBNAIL_URL)
         try:
             await user.send(embed=embed)
-        except discord.Forbidden:
+        except Exception:
             pass
         try:
             await user.kick(reason=f"{reason} (by {moderator_name})" if moderator_name else reason)
@@ -468,7 +416,7 @@ class Moderation(commands.Cog):
                 f"Dear {user.mention},\n\n"
                 f"You have been **banned** from the **{SERVER_NAME}** by the moderation team.\n\n"
                 f"**Reason:** {reason}\n"
-                f"Moderator: {moderator_name if moderator_name else 'Moderation Team'}\n\n"
+                f"**Moderator:** {moderator_name if moderator_name else 'Moderation Team'}\n\n"
                 "If you believe this action was taken in error or wish to appeal, please contact a server administrator outside of Discord."
             ),
             color=discord.Color.dark_red()
@@ -508,11 +456,13 @@ class Moderation(commands.Cog):
             return
         word = word.lower().strip()
         self.reload_words()
+        synced = False
         if tier.lower() == "ban":
             if word not in self.BANNABLE_WORDS:
                 self.BANNABLE_WORDS.append(word)
                 self.tier_keywords[word] = 3
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Added `{word}` to bannable words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is already in bannable words.", ephemeral=True)
@@ -521,6 +471,7 @@ class Moderation(commands.Cog):
                 self.KICKABLE_WORDS.append(word)
                 self.tier_keywords[word] = 2
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Added `{word}` to kickable words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is already in kickable words.", ephemeral=True)
@@ -529,11 +480,14 @@ class Moderation(commands.Cog):
                 self.WARNING_WORDS.append(word)
                 self.tier_keywords[word] = 1
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Added `{word}` to warning words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is already in warning words.", ephemeral=True)
         else:
             await interaction.response.send_message("Invalid tier. Use `ban`, `kick`, or `warn`.", ephemeral=True)
+        if synced:
+            asyncio.create_task(self._sync_automod())
 
     @app_commands.command(name="removeword", description="Remove a word from the moderation database.")
     @app_commands.describe(tier="ban, kick, or warn", word="The word to remove")
@@ -543,11 +497,13 @@ class Moderation(commands.Cog):
             return
         word = word.lower().strip()
         self.reload_words()
+        synced = False
         if tier.lower() == "ban":
             if word in self.BANNABLE_WORDS:
                 self.BANNABLE_WORDS.remove(word)
                 self.tier_keywords.pop(word, None)
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Removed `{word}` from bannable words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is not in bannable words.", ephemeral=True)
@@ -556,6 +512,7 @@ class Moderation(commands.Cog):
                 self.KICKABLE_WORDS.remove(word)
                 self.tier_keywords.pop(word, None)
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Removed `{word}` from kickable words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is not in kickable words.", ephemeral=True)
@@ -564,11 +521,14 @@ class Moderation(commands.Cog):
                 self.WARNING_WORDS.remove(word)
                 self.tier_keywords.pop(word, None)
                 self.persist_words()
+                synced = True
                 await interaction.response.send_message(f"Removed `{word}` from warning words.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"`{word}` is not in warning words.", ephemeral=True)
         else:
             await interaction.response.send_message("Invalid tier. Use `ban`, `kick`, or `warn`.", ephemeral=True)
+        if synced:
+            asyncio.create_task(self._sync_automod())
 
     # NOTE: Removed on_message listener that watched AutoMod log channel - 
     # it was redundant with on_automod_action and caused duplicate logging.
@@ -580,11 +540,11 @@ class Moderation(commands.Cog):
         if not record:
             await ctx.send("No Record, Good Standing.")
             return
-        warnings = sum(1 for r in record if r.get("type") == "Warning")
+        violations = sum(1 for r in record if r.get("type") in ("Warning", "Violation"))
         kicks = sum(1 for r in record if r.get("type") == "Kick")
         bans = sum(1 for r in record if r.get("type") == "Ban")
         automods = sum(1 for r in record if r.get("type") == "AutoMod")
-        summary = f"Warnings: {warnings}, Kicks: {kicks}, Bans: {bans}, AutoMod Actions: {automods}"
+        summary = f"Violations: {violations}, Kicks: {kicks}, Bans: {bans}, AutoMod Actions: {automods}"
         lines = [f"Summary: {summary}"]
         for entry in record:
             lines.append(f"{entry['timestamp']} | {entry['type']}: {entry['reason']}")

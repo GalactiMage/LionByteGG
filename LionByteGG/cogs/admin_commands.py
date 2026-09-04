@@ -10,6 +10,7 @@ import random
 from datetime import time as dt_time
 import json
 
+from utils.safe_json import safe_json_load
 from views.setup_view import SetupView, AccountSetupModal  # Ensure this import is present
 from views.varsity_view import VarsityRegistrationView  # Make sure this is the correct class name
 from views.ticket_view import TicketPanelView
@@ -17,14 +18,12 @@ from utils.constants import STUDENT_LIFE_LINK, GUILD_ID, STUDENT_ROLE_ID, SECURI
 from utils.log_channels import get_or_create_log_channel, get_or_create_ticket_logs_channel
 from utils.arena_status import update_arena_status
 from views.setup_view import load_guest_times  # Ensure this import is present
+from utils import db as user_db
 
 
 def get_guest_time_info(user_id):
     path = os.path.join(GUEST_TIMES_DIR, f"{user_id}_guest_time.json")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
+    return safe_json_load(path, None)
 
 class SecurityCodeModal(discord.ui.Modal, title="Security Check"):
     def __init__(self, action_callback):
@@ -238,10 +237,10 @@ class AdminCommands(commands.Cog):
             await interaction.response.send_message("❌ Admins only.", ephemeral=True)
             return
         embed = discord.Embed(
-            title="⚠️ Official Warning Notice",
+            title="⚠️ Official Violation Notice",
             description=(
                 f"Dear {user.mention},\n\n"
-                "You have received an official warning from the **Purdue University Northwest eSports Discord Server** moderation team.\n\n"
+                "You have received an official violation notice from the **Purdue University Northwest eSports Discord Server** moderation team.\n\n"
                 f"**Reason:** {reason}\n\n"
                 "Please review the server rules and ensure future compliance. Continued violations may result in further disciplinary action."
             ),
@@ -253,15 +252,15 @@ class AdminCommands(commands.Cog):
             await user.send(embed=embed)
         except Exception:
             pass
-        await interaction.response.send_message(f"⚠️ {user.mention} has been warned. Reason: {reason}", ephemeral=True)
+        await interaction.response.send_message(f"⚠️ {user.mention} has received a violation. Reason: {reason}", ephemeral=True)
         # Log to lionbytegg-logs
         log_channel = await get_or_create_log_channel(interaction.guild)
         log_embed = discord.Embed(
-            title="⚠️ User Warned",
+            title="⚠️ Violation Issued",
             color=discord.Color.orange(),
             timestamp=datetime.now(timezone.utc)
         )
-        log_embed.add_field(name="Warned User", value=f"{user} (ID: {user.id})", inline=False)
+        log_embed.add_field(name="Violation Issued To", value=f"{user} (ID: {user.id})", inline=False)
         log_embed.add_field(name="Moderator", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
         log_embed.add_field(name="Reason", value=reason, inline=False)
         log_embed.set_footer(text="PNW Esports | Moderation Log (LionByteGG)")
@@ -269,16 +268,11 @@ class AdminCommands(commands.Cog):
         await log_channel.send(embed=log_embed)
         # Record to user_records
         moderation_cog = interaction.client.get_cog("Moderation")
-        if moderation_cog and hasattr(moderation_cog, "user_records"):
-            user_id = str(user.id)
-            record = moderation_cog.user_records.get(user_id, [])
-            record.append({
-                "type": "Warning",
-                "reason": reason,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            moderation_cog.user_records[user_id] = record
-            moderation_cog.save_user_records()
+        if moderation_cog:
+            moderation_cog.add_record(
+                str(user.id), "Violation", reason,
+                moderator_name=str(interaction.user), moderator_id=interaction.user.id
+            )
 
     @app_commands.command(name="kick", description="Kick a user from the server.")
     @app_commands.describe(user="User to kick", reason="Reason for kick")
@@ -320,16 +314,11 @@ class AdminCommands(commands.Cog):
             await log_channel.send(embed=log_embed)
             # Record to user_records
             moderation_cog = interaction.client.get_cog("Moderation")
-            if moderation_cog and hasattr(moderation_cog, "user_records"):
-                user_id = str(user.id)
-                record = moderation_cog.user_records.get(user_id, [])
-                record.append({
-                    "type": "Kick",
-                    "reason": reason,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                moderation_cog.user_records[user_id] = record
-                moderation_cog.save_user_records()
+            if moderation_cog:
+                moderation_cog.add_record(
+                    str(user.id), "Kick", reason,
+                    moderator_name=str(interaction.user), moderator_id=interaction.user.id
+                )
         except Exception as e:
             await interaction.response.send_message(f"Failed to kick: {e}", ephemeral=True)
 
@@ -373,16 +362,11 @@ class AdminCommands(commands.Cog):
             await log_channel.send(embed=log_embed)
             # Record to user_records
             moderation_cog = interaction.client.get_cog("Moderation")
-            if moderation_cog and hasattr(moderation_cog, "user_records"):
-                user_id = str(user.id)
-                record = moderation_cog.user_records.get(user_id, [])
-                record.append({
-                    "type": "Ban",
-                    "reason": reason,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                moderation_cog.user_records[user_id] = record
-                moderation_cog.save_user_records()
+            if moderation_cog:
+                moderation_cog.add_record(
+                    str(user.id), "Ban", reason,
+                    moderator_name=str(interaction.user), moderator_id=interaction.user.id
+                )
         except Exception as e:
             await interaction.response.send_message(f"Failed to ban: {e}", ephemeral=True)
 
@@ -619,11 +603,11 @@ class AdminCommands(commands.Cog):
             await interaction.response.send_message("❌ Admins only.", ephemeral=True)
             return
         moderation_cog = interaction.client.get_cog("Moderation")
-        if not moderation_cog or not hasattr(moderation_cog, "user_records"):
+        if not moderation_cog:
             await interaction.response.send_message("Moderation records not available.", ephemeral=True)
             return
         user_id = str(user.id)
-        record = moderation_cog.user_records.get(user_id, [])
+        record = user_db.get_records(user_id)
         if not record:
             await interaction.response.send_message("No Record, Good Standing.", ephemeral=True)
             return
@@ -888,11 +872,8 @@ class ConfirmClearRecordView(discord.ui.View):
             await interaction.response.send_message("❌ Only admins can clear records.", ephemeral=True)
             return
         # Clear the record
-        cleared = False
-        if self.user_id in self.moderation_cog.user_records:
-            del self.moderation_cog.user_records[self.user_id]
-            self.moderation_cog.save_user_records()
-            cleared = True
+        user_db.clear_records(self.user_id)
+        cleared = True
         # Update embed
         self.embed.clear_fields()
         user = interaction.guild.get_member(int(self.user_id))
@@ -904,7 +885,7 @@ class ConfirmClearRecordView(discord.ui.View):
             self.embed.add_field(name="Top Role", value=user.top_role.mention, inline=True)
             self.embed.add_field(name="Bot?", value=str(user.bot), inline=True)
             self.embed.add_field(name="Roles", value=user.roles, inline=False)
-        self.embed.add_field(name="Warnings", value="0", inline=True)
+        self.embed.add_field(name="Violations", value="0", inline=True)
         self.embed.add_field(name="Record Summary", value="No Record, Good Standing", inline=False)
         await interaction.response.edit_message(embed=self.embed, view=self.parent_view)
         await interaction.followup.send("✅ Record cleared.", ephemeral=True)
@@ -971,14 +952,10 @@ class KickBanModal(discord.ui.Modal):
                     pass
                 await self.user.kick(reason=reason_text)
                 # Add to record
-                record = self.moderation_cog.user_records.get(user_id, [])
-                record.append({
-                    "type": "Kick",
-                    "reason": reason_text,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                self.moderation_cog.user_records[user_id] = record
-                self.moderation_cog.save_user_records()
+                self.moderation_cog.add_record(
+                    user_id, "Kick", reason_text,
+                    moderator_name=str(interaction.user), moderator_id=interaction.user.id
+                )
                 await interaction.response.send_message(f"👢 {self.user.mention} has been kicked. Reason: {reason_text}", ephemeral=True)
                 # Log to lionbyte-logs
                 if log_channel:
@@ -1015,14 +992,10 @@ class KickBanModal(discord.ui.Modal):
                     pass
                 await self.user.ban(reason=reason_text)
                 # Add to record
-                record = self.moderation_cog.user_records.get(user_id, [])
-                record.append({
-                    "type": "Ban",
-                    "reason": reason_text,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                self.moderation_cog.user_records[user_id] = record
-                self.moderation_cog.save_user_records()
+                self.moderation_cog.add_record(
+                    user_id, "Ban", reason_text,
+                    moderator_name=str(interaction.user), moderator_id=interaction.user.id
+                )
                 await interaction.response.send_message(f"🔨 {self.user.mention} has been banned. Reason: {reason_text}", ephemeral=True)
                 # Log to lionbyte-logs
                 if log_channel:

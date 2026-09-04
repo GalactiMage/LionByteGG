@@ -1,0 +1,97 @@
+{
+  "chapter": 6,
+  "title": "Nova Web Dashboard — Part 2: Rosters & Varsity Team Manager",
+  "path": "LionByteGG\\web\\app.py (lines ~6762-9950) + templates\\rosters.html",
+  "overview": "Full team/player roster CRUD with multi-team assignment, encrypted PII, registration approval workflow, Discord role sync via bot notification queue, match/stat tracking, leaderboard, announcements, CSV import/export, and an immutable audit log. All endpoints require @api_auth_required.",
+  "data_files": {
+    "data/rosters.json": "Master player list. PII fields (purdue_email, personal_email, puid, phone, hometown, year_in_school, gpa, major, jersey_details, additional_notes, schedule_images) are Fernet-encrypted into an 'encrypted_pii' blob; decrypted transparently on load_rosters(), re-encrypted on save_rosters().",
+    "data/.roster_encrypt_key": "Binary Fernet key, auto-generated on first run.",
+    "data/teams.json": "Team definitions: name, game, type, color.",
+    "data/roster_audit_log.json": "Immutable append-only log of all roster modifications, capped ~500 entries.",
+    "data/match_history.json": "Logged match results + per-player game stats (kills/deaths/assists/mvp).",
+    "data/team_role_settings.json": "Discord role ID mapping used by role sync.",
+    "data/team_announcements.json": "Team-wide announcements incl. Discord webhook URLs.",
+    "data/notification_settings.json": "Webhook URLs + notification type toggles.",
+    "data/discord_notification_queue.json": "Thread-safe append queue read by the LionByteGG bot for async Discord actions.",
+    "data/live_notifications.json": "Dashboard bell notifications, 24h window, capped 100.",
+    "data/job_progress.json": "Progress tracker for long-running jobs (bulk role sync, bulk DM).",
+    "data/varsity_registrations/{discord_id}_varsity.json": "Per-user list of submitted registration forms."
+  },
+  "multi_team_model": {
+    "team_ids": "list on each player, replaces old single team_id (kept for backward-compat = first team)",
+    "coach_rule": "player_type == 'coach' can belong to multiple teams and keeps the 'coach' type regardless of team",
+    "non_coach_rule": "Inherits the team's type (varsity/jv) for each team assignment",
+    "auto_migration": "A player with only team_id gets it converted to team_ids on first access"
+  },
+  "discord_role_sync": {
+    "role_mapping_file": "team_role_settings.json",
+    "shape": {"mapping": {"<Game Name>": {"varsity": "role_id", "jv": "role_id"}}, "varsity_role_id": "general roster role (everyone gets this)", "captain_role_id": "extra role for captains", "coach_role_id": "extra role for coaches"},
+    "assignment_rules": ["All roster members get varsity_role_id", "Varsity players also get mapping[game].varsity", "JV players also get mapping[game].jv", "Captains additionally get captain_role_id", "Coaches get coach_role_id + varsity_role_id"],
+    "flow": ["Admin assigns team_ids via /api/rosters/assign-team (queues immediate sync too)", "Admin can queue a full bulk sync via /api/rosters/sync-roles/execute", "Job queued to discord_notification_queue.json (status pending)", "LionByteGG bot processes it, updates job_progress.json with live progress/errors/rate-limit info", "Frontend polls /api/jobs/progress/<job_id>"]
+  },
+  "routes": {
+    "core": [
+      {"path": "/api/rosters", "method": "GET", "does": "Loads players + teams + pending registrations with Discord member enrichment (avatar/username)"}
+    ],
+    "player_management": [
+      {"path": "/api/rosters/player", "method": "POST", "does": "Add or update a player"},
+      {"path": "/api/rosters/player", "method": "DELETE", "does": "Remove a player"},
+      {"path": "/api/rosters/captain", "method": "POST", "does": "Toggle captain status for a player"},
+      {"path": "/api/rosters/player/status", "method": "POST", "does": "Update player status: active/inactive/bench/injured/leave"},
+      {"path": "/api/rosters/bulk/status", "method": "POST"},
+      {"path": "/api/rosters/bulk/type", "method": "POST"},
+      {"path": "/api/rosters/bulk/team", "method": "POST"},
+      {"path": "/api/rosters/bulk/delete", "method": "POST"}
+    ],
+    "team_management": [
+      {"path": "/api/rosters/team", "method": "POST", "does": "Create team, ID format team_{count}_{timestamp}"},
+      {"path": "/api/rosters/team/update", "method": "POST", "does": "Modify team fields"},
+      {"path": "/api/rosters/teams/reorder", "method": "POST", "does": "Drag-and-drop reordering"},
+      {"path": "/api/rosters/team", "method": "DELETE", "does": "Removes team + clears player assignments referencing it"}
+    ],
+    "player_team_assignment": [
+      {"path": "/api/rosters/assign-team", "method": "POST", "body": "{action: add|remove|set, team_ids...}", "does": "Coaches keep type; non-coaches inherit team tier; queues an immediate role-sync notification"},
+      {"path": "/api/rosters/coaches", "method": "GET"},
+      {"path": "/api/rosters/captains", "method": "GET"}
+    ],
+    "registration_approval": [
+      {"path": "/api/rosters/send-registration", "method": "POST", "does": "Queues a varsity form DM to the bot, returns job_id for polling"},
+      {"path": "/api/rosters/registration-status/<job_id>", "method": "GET", "does": "Poll DM delivery status"},
+      {"path": "/api/rosters/approve", "method": "POST", "does": "Decrypts submitted form, adds player to roster, queues Discord role assignment"},
+      {"path": "/api/rosters/deny", "method": "POST", "does": "Marks denied with reason, queues denial DM"}
+    ],
+    "audit": [
+      {"path": "/api/rosters/audit-log", "method": "GET", "query": "action, target, limit(default 100)", "does": "Read-only immutable action history"}
+    ],
+    "matches_and_stats": [
+      {"path": "/api/rosters/matches", "method": "GET"},
+      {"path": "/api/rosters/matches", "method": "POST", "does": "Log a match with per-player stats (kills/deaths/assists)"},
+      {"path": "/api/rosters/matches/<match_id>", "method": "DELETE"},
+      {"path": "/api/rosters/player/<player_id>/stats", "method": "GET", "does": "Leaderboard-style data + recent form for one player"},
+      {"path": "/api/rosters/leaderboard", "method": "GET", "does": "Top N sortable by wins/matches_played/win_rate/mvp_count"}
+    ],
+    "role_sync": [
+      {"path": "/api/rosters/sync-roles/preview", "method": "POST", "does": "Read-only preview of exactly which roles would be added/removed"},
+      {"path": "/api/rosters/sync-roles/execute", "method": "POST", "does": "Queues the bulk sync job (supports game/type filters), returns job_id"}
+    ],
+    "announcements_and_comms": [
+      {"path": "/api/rosters/announcements", "method": "GET"},
+      {"path": "/api/rosters/announcements", "method": "POST"},
+      {"path": "/api/rosters/announcements/<id>", "method": "DELETE"},
+      {"path": "/api/rosters/notification-settings", "methods": "GET,POST", "does": "Configure webhook URLs + notification type toggles"},
+      {"path": "/api/rosters/send-webhook", "method": "POST", "does": "Test Discord webhook delivery with an embed"},
+      {"path": "/api/rosters/dm-players", "method": "POST", "does": "Queues a bulk DM to selected players"}
+    ],
+    "import_export": [
+      {"path": "/api/rosters/export/csv", "method": "GET", "query": "type=players|teams"},
+      {"path": "/api/rosters/import/csv", "method": "POST", "body": "multipart CSV, mode: merge|replace"}
+    ]
+  },
+  "player_object_shape": {"id": "str", "name": "str", "ign": "str (optional)", "game": "str", "rank": "str", "team_ids": "list", "team_id": "str (legacy, first of team_ids)", "player_type": "varsity|jv|sub_varsity|sub_jv|coach", "position": "str", "status": "active|inactive|bench|injured|leave", "is_captain": "bool", "encrypted_pii": "Fernet blob"},
+  "team_object_shape": {"id": "team_{count}_{timestamp}", "name": "str", "game": "str", "logo_url": "str", "coach": "discord_id", "members": "list of player_id strings", "created_at": "ISO"},
+  "notes": {
+    "PII_encryption": "Fernet, transparent decrypt-on-load/encrypt-on-save via load_rosters()/save_rosters()",
+    "one_time_migration": "migrate_rosters_pii() encrypts any legacy plaintext PII found on first run after this feature shipped",
+    "job_progress_fields": "status(queued|in_progress|completed|failed), completed_operations, added_count, removed_count, skipped_count, errors[], current_step, rate_limit info"
+  }
+}

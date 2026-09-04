@@ -1,6 +1,7 @@
 ﻿{% extends "base.html" %}
 
 {% block title %}MC Server Members{% endblock %}
+{% block page_title %}Server Members{% endblock %}
 
 {% block content %}
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -154,7 +155,7 @@
 
         <button class="context-menu-item warn" onclick="contextMenuAction('warn')">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>Warn User</span>
+            <span>Issue Violation</span>
         </button>
         <button class="context-menu-item timeout" onclick="contextMenuAction('timeout')">
             <i class="fas fa-clock"></i>
@@ -1895,6 +1896,7 @@ async function openMemberModal(userId) {
         
         const member = data.member || allMembers.find(m => m.id === userId);
         const records = data.records || [];
+        const verification = data.verification || null;
         
         if (!member) {
             content.innerHTML = '<p>Member not found</p>';
@@ -1973,6 +1975,55 @@ async function openMemberModal(userId) {
                             </div>
                         </div>
                         
+                        <!-- Verification Info Card -->
+                        <div class="member-info-card">
+                            <div class="member-info-card-header">
+                                <i class="fas fa-user-check"></i>
+                                <h4>Verification Info</h4>
+                            </div>
+                            <div class="member-info-card-body">
+                                ${verification ? `
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-fingerprint"></i> Discord ID</span>
+                                    <span class="member-info-value" style="font-family: monospace; font-size: 12px;">${escapeHtml(verification.discord_id)}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-user"></i> First Name</span>
+                                    <span class="member-info-value">${escapeHtml(verification.first_name || 'N/A')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-envelope"></i> Email</span>
+                                    <span class="member-info-value" style="font-size: 12px;">${escapeHtml(verification.email || 'N/A')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-phone"></i> Phone</span>
+                                    <span class="member-info-value">${escapeHtml(verification.phone || 'Not provided')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-gamepad"></i> Minecraft IGN</span>
+                                    <span class="member-info-value" style="color: #22c55e; font-weight: 600;">${escapeHtml(verification.minecraft_username || 'N/A')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-key"></i> Minecraft UUID</span>
+                                    <span class="member-info-value" style="font-family: monospace; font-size: 11px;">${escapeHtml(verification.minecraft_uuid || 'N/A')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-university"></i> Campus</span>
+                                    <span class="member-info-value">${escapeHtml(verification.campus || 'N/A')}</span>
+                                </div>
+                                <div class="member-info-field">
+                                    <span class="member-info-label"><i class="fas fa-calendar-check"></i> Verified Date</span>
+                                    <span class="member-info-value">${verification.verified_at ? new Date(verification.verified_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}</span>
+                                </div>
+                                ` : `
+                                <div style="text-align: center; padding: 16px; color: var(--text-muted, #a1a1aa);">
+                                    <i class="fas fa-user-times" style="font-size: 24px; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
+                                    <p style="margin: 0; font-size: 13px;">Not verified</p>
+                                </div>
+                                `}
+                            </div>
+                        </div>
+                        
                         <!-- Roles Card -->
                         <div class="member-info-card member-roles-card">
                             <div class="member-info-card-header">
@@ -2048,7 +2099,7 @@ async function openMemberModal(userId) {
                             </button>
                             <button class="member-action-btn warn" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'warn')">
                                 <div class="action-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                                <span class="action-label">Warn</span>
+                                <span class="action-label">Issue Violation</span>
                             </button>
                             <button class="member-action-btn timeout" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'timeout')">
                                 <div class="action-icon"><i class="fas fa-clock"></i></div>
@@ -2105,13 +2156,13 @@ function openActionModal(userId, userName, action) {
     const actionConfig = {
         warn: {
             icon: 'fa-exclamation-triangle',
-            title: 'Warn User',
-            subtitle: 'Issue an official warning',
+            title: 'Issue Violation',
+            subtitle: 'Issue an official violation notice',
             badgeIcon: 'fa-exclamation-triangle',
-            badgeText: 'Warning',
-            warningTitle: 'Warning Notice',
-            warningText: 'The user will receive an official warning that will be added to their record. A DM will be sent to notify them.',
-            buttonText: 'Issue Warning',
+            badgeText: 'Violation',
+            warningTitle: 'Violation Notice',
+            warningText: 'The user will receive an official violation notice that will be added to their record. A DM will be sent to notify them.',
+            buttonText: 'Issue Violation',
             showDuration: false
         },
         timeout: {

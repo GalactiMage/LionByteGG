@@ -1,0 +1,1031 @@
+{% extends "base.html" %}
+
+{% block title %}Moderation{% endblock %}
+{% block page_title %}Moderation{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Moderation page specific styles */
+    .mod-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    @media (max-width: 1200px) { .mod-stats-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 768px) { .mod-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .mod-stat-card {
+        background: var(--background-secondary);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.2s ease;
+    }
+    .mod-stat-card:hover { transform: translateY(-2px); border-color: var(--border-hover, var(--border)); }
+    .mod-stat-icon {
+        width: 48px; height: 48px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; flex-shrink: 0;
+    }
+    .mod-stat-icon.warnings { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    .mod-stat-icon.kicks { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+    .mod-stat-icon.bans { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .mod-stat-icon.automod { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+    .mod-stat-icon.words { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+    .mod-stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+    .mod-stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Records section */
+    .records-header {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .records-search {
+        flex: 1; min-width: 200px;
+        background: var(--background-secondary); border: 1px solid var(--border);
+        border-radius: 10px; padding: 10px 14px 10px 38px;
+        color: var(--text-primary); font-size: 14px;
+        transition: border-color 0.2s;
+    }
+    .records-search:focus { outline: none; border-color: var(--primary); }
+    .records-search-wrapper {
+        position: relative; flex: 1; min-width: 200px;
+    }
+    .records-search-wrapper i {
+        position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+        color: var(--text-muted); font-size: 14px;
+    }
+    .filter-chips {
+        display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .filter-chip {
+        padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+        cursor: pointer; border: 1px solid var(--border); background: var(--background-secondary);
+        color: var(--text-secondary); transition: all 0.2s; user-select: none;
+    }
+    .filter-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-chip.active { background: var(--primary); border-color: var(--primary); color: white; }
+
+    /* User record row */
+    .record-user-row {
+        display: flex; align-items: center; padding: 14px 16px;
+        background: var(--background-secondary); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 8px; gap: 16px;
+        transition: all 0.2s; cursor: pointer;
+    }
+    .record-user-row:hover { border-color: var(--primary); background: var(--surface); }
+    .record-user-avatar {
+        width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark, #4338ca));
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 700; font-size: 16px; overflow: hidden;
+    }
+    .record-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .record-user-info { flex: 1; min-width: 0; }
+    .record-user-name { font-weight: 600; font-size: 14px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .record-user-id { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+    .record-badges {
+        display: flex; gap: 6px; align-items: center; flex-shrink: 0;
+    }
+    .record-badge {
+        display: flex; align-items: center; gap: 5px;
+        padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    }
+    .record-badge.warn { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    .record-badge.kick { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+    .record-badge.ban { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .record-badge.automod { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+    .record-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    /* Record detail card (in modal) */
+    .record-entry {
+        position: relative; padding: 16px 16px 16px 20px;
+        background: var(--background-secondary); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 10px;
+        border-left: 4px solid var(--border);
+        transition: all 0.15s;
+    }
+    .record-entry:hover { border-color: var(--border-hover, var(--text-muted)); }
+    .record-entry.type-warning { border-left-color: #f59e0b; }
+    .record-entry.type-kick { border-left-color: #f97316; }
+    .record-entry.type-ban { border-left-color: #ef4444; }
+    .record-entry.type-automod { border-left-color: #8b5cf6; }
+    .record-entry.type-timeout { border-left-color: #06b6d4; }
+    .record-entry-header {
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+    }
+    .record-type-badge {
+        padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .record-type-badge.warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    .record-type-badge.kick { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+    .record-type-badge.ban { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .record-type-badge.automod { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+    .record-type-badge.timeout { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+    .record-entry-reason { font-size: 14px; color: var(--text-primary); line-height: 1.5; margin-bottom: 8px; }
+    .record-entry-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); }
+    .record-entry-meta i { margin-right: 4px; }
+    .record-remove-btn {
+        position: absolute; top: 12px; right: 12px;
+        width: 28px; height: 28px; border-radius: 8px;
+        background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2);
+        color: #ef4444; display: flex; align-items: center; justify-content: center;
+        cursor: pointer; font-size: 12px; transition: all 0.15s; opacity: 0;
+    }
+    .record-entry:hover .record-remove-btn { opacity: 1; }
+    .record-remove-btn:hover { background: rgba(239, 68, 68, 0.2); transform: scale(1.1); }
+
+    /* Modal record filter tabs */
+    .modal-filter-tabs {
+        display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .modal-filter-tab {
+        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        cursor: pointer; background: var(--background-secondary); border: 1px solid var(--border);
+        color: var(--text-secondary); transition: all 0.15s;
+    }
+    .modal-filter-tab:hover { border-color: var(--primary); }
+    .modal-filter-tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+    .modal-filter-tab .count { margin-left: 4px; opacity: 0.7; }
+
+    /* User profile header in modal */
+    .modal-user-profile {
+        display: flex; align-items: center; gap: 16px; padding: 16px;
+        background: var(--background-secondary); border-radius: 12px;
+        margin-bottom: 16px; border: 1px solid var(--border);
+    }
+    .modal-user-avatar {
+        width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark, #4338ca));
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 700; font-size: 22px; overflow: hidden;
+    }
+    .modal-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .modal-user-details { flex: 1; }
+    .modal-user-name { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .modal-user-sub { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+    .modal-user-stats { display: flex; gap: 12px; margin-top: 8px; }
+
+    /* Quick action cards improved */
+    .action-card {
+        background: var(--background-secondary); padding: 20px; border-radius: 14px;
+        border: 1px solid var(--border); transition: all 0.2s;
+        display: flex; flex-direction: column; gap: 10px;
+    }
+    .action-card:hover { border-color: var(--border-hover, var(--border)); transform: translateY(-1px); }
+    .action-card-title {
+        font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+    }
+    .action-card-desc { font-size: 13px; color: var(--text-secondary); flex: 1; }
+    .action-card code {
+        display: block; background: var(--surface); padding: 10px; border-radius: 8px;
+        font-size: 13px; color: var(--primary-light); border: 1px solid var(--border);
+    }
+
+    /* Empty state */
+    .empty-state {
+        text-align: center; padding: 48px 20px; color: var(--text-secondary);
+    }
+    .empty-state i { font-size: 36px; margin-bottom: 12px; display: block; opacity: 0.4; }
+    .empty-state p { font-size: 14px; margin-top: 4px; }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .record-badges { display: none; }
+        .records-header { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="mod-stats-grid">
+    <div class="mod-stat-card">
+        <div class="mod-stat-icon warnings"><i class="fas fa-exclamation-triangle"></i></div>
+        <div>
+            <div class="mod-stat-value" id="stat-warnings">-</div>
+            <div class="mod-stat-label">Warnings</div>
+        </div>
+    </div>
+    <div class="mod-stat-card">
+        <div class="mod-stat-icon kicks"><i class="fas fa-user-slash"></i></div>
+        <div>
+            <div class="mod-stat-value" id="stat-kicks">-</div>
+            <div class="mod-stat-label">Kicks</div>
+        </div>
+    </div>
+    <div class="mod-stat-card">
+        <div class="mod-stat-icon bans"><i class="fas fa-gavel"></i></div>
+        <div>
+            <div class="mod-stat-value" id="stat-bans">-</div>
+            <div class="mod-stat-label">Bans</div>
+        </div>
+    </div>
+    <div class="mod-stat-card">
+        <div class="mod-stat-icon automod"><i class="fas fa-robot"></i></div>
+        <div>
+            <div class="mod-stat-value" id="stat-automod">-</div>
+            <div class="mod-stat-label">AutoMod Flags</div>
+        </div>
+    </div>
+    <div class="mod-stat-card">
+        <div class="mod-stat-icon words"><i class="fas fa-filter"></i></div>
+        <div>
+            <div class="mod-stat-value" id="stat-words">-</div>
+            <div class="mod-stat-label">Flagged Words</div>
+        </div>
+    </div>
+</div>
+
+<!-- User Records Section (Full Width - Primary Focus) -->
+<div class="card mb-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-folder-open"></i>
+            User Records
+        </h3>
+        <span class="badge badge-info" id="records-count">0 users</span>
+    </div>
+    <div class="card-body">
+        <div class="records-header mb-3">
+            <div class="records-search-wrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" class="records-search" id="records-search" placeholder="Search by username or ID...">
+            </div>
+            <div class="filter-chips">
+                <div class="filter-chip active" data-filter="all" onclick="filterRecords('all', this)">All</div>
+                <div class="filter-chip" data-filter="warnings" onclick="filterRecords('warnings', this)">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 10px;"></i> Warnings
+                </div>
+                <div class="filter-chip" data-filter="kicks" onclick="filterRecords('kicks', this)">
+                    <i class="fas fa-user-slash" style="font-size: 10px;"></i> Kicks
+                </div>
+                <div class="filter-chip" data-filter="bans" onclick="filterRecords('bans', this)">
+                    <i class="fas fa-gavel" style="font-size: 10px;"></i> Bans
+                </div>
+                <div class="filter-chip" data-filter="automod" onclick="filterRecords('automod', this)">
+                    <i class="fas fa-robot" style="font-size: 10px;"></i> AutoMod
+                </div>
+            </div>
+        </div>
+        <div id="records-list" style="max-height: 500px; overflow-y: auto; padding-right: 4px;">
+            <div class="empty-state">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading records...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2 gap-3">
+    <!-- Flagged Words Management -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-filter"></i>
+                AutoMod Flagged Words
+            </h3>
+            {% if has_perm('moderation.flagged_words') %}
+            <button class="btn btn-primary btn-sm" onclick="openAddWordModal()">
+                <i class="fas fa-plus"></i> Add Word
+            </button>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <h4 style="font-size: 14px; color: var(--danger); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-gavel"></i> Bannable Words
+                </h4>
+                <div class="word-tags" id="bannable-words">
+                    <span class="badge badge-info">Loading...</span>
+                </div>
+            </div>
+            <div class="mb-3">
+                <h4 style="font-size: 14px; color: var(--warning); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-user-slash"></i> Kickable Words
+                </h4>
+                <div class="word-tags" id="kickable-words">
+                    <span class="badge badge-info">Loading...</span>
+                </div>
+            </div>
+            <div>
+                <h4 style="font-size: 14px; color: var(--info); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-exclamation-triangle"></i> Warning Words
+                </h4>
+                <div class="word-tags" id="warning-words">
+                    <span class="badge badge-info">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-bolt"></i>
+                Quick Actions
+            </h3>
+        </div>
+        <div class="card-body">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i> Warn User
+                    </div>
+                    <div class="action-card-desc">Send an official warning via DM</div>
+                    {% if has_perm('members.warn') %}
+                    <button class="btn btn-warning btn-sm" onclick="openWarnUserModal()" style="width: 100%;">
+                        <i class="fas fa-paper-plane"></i> Warn
+                    </button>
+                    {% else %}
+                    <button class="btn btn-secondary btn-sm" style="width: 100%; opacity: 0.5;" disabled>
+                        <i class="fas fa-lock"></i> No Permission
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-user-slash" style="color: #f97316;"></i> Kick User
+                    </div>
+                    <div class="action-card-desc">Remove from server</div>
+                    <code>/kick @user "reason"</code>
+                </div>
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-gavel" style="color: #ef4444;"></i> Ban User
+                    </div>
+                    <div class="action-card-desc">Permanently ban</div>
+                    <code>/ban @user "reason"</code>
+                </div>
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-clock" style="color: #06b6d4;"></i> Timeout
+                    </div>
+                    <div class="action-card-desc">Temporarily mute</div>
+                    <code>/mute @user duration</code>
+                </div>
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-unlock" style="color: #10b981;"></i> Unban
+                    </div>
+                    <div class="action-card-desc">Remove a ban</div>
+                    <code>/unban user_id</code>
+                </div>
+                <div class="action-card">
+                    <div class="action-card-title">
+                        <i class="fas fa-broom" style="color: var(--primary-light);"></i> Clear Messages
+                    </div>
+                    <div class="action-card-desc">Bulk delete messages</div>
+                    <code>/clear amount</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Watchlist Section -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-eye"></i>
+            User Watchlist
+        </h3>
+        <span class="badge badge-warning" id="watchlist-count">0 users</span>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info mb-3">
+            <i class="fas fa-info-circle"></i>
+            <span>Watched users are monitored for activity. You'll receive alerts when they join, send messages, or join voice channels.</span>
+        </div>
+        <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Reason</th>
+                        <th>Alert Level</th>
+                        <th>Added</th>
+                        <th>Activity</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="watchlist-body">
+                    <tr>
+                        <td colspan="6" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                            Loading watchlist...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Word Modal -->
+<div class="modal-overlay" id="add-word-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 class="modal-title">Add Flagged Word</h3>
+            <button class="modal-close" onclick="closeAddWordModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Word or Phrase</label>
+                <input type="text" class="form-input" id="new-word" placeholder="Enter word to flag...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Category</label>
+                <select class="form-select" id="word-category">
+                    <option value="warning">Warning (1st offense = warning)</option>
+                    <option value="kickable">Kickable (Immediate kick)</option>
+                    <option value="bannable">Bannable (Immediate ban)</option>
+                </select>
+            </div>
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Words are case-insensitive and will trigger AutoMod actions.</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAddWordModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="addFlaggedWord()">Add Word</button>
+        </div>
+    </div>
+</div>
+
+<!-- Warn User Modal -->
+<div class="modal-overlay" id="warn-user-modal">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3 class="modal-title">
+                <i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i>
+                Warn User
+            </h3>
+            <button class="modal-close" onclick="closeWarnUserModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">User ID</label>
+                <input type="text" class="form-input" id="warn-user-id" placeholder="Enter Discord User ID...">
+                <small style="color: var(--text-secondary);">Right-click user in Discord → Copy User ID</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Reason</label>
+                <textarea class="form-input" id="warn-reason" rows="3" placeholder="Enter reason for warning..."></textarea>
+            </div>
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <span>The user will receive a DM from the bot with this warning.</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeWarnUserModal()">Cancel</button>
+            <button class="btn btn-warning" onclick="sendWarning()">
+                <i class="fas fa-paper-plane"></i> Send Warning
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- View User Record Modal (Redesigned) -->
+<div class="modal-overlay" id="user-record-modal">
+    <div class="modal" style="max-width: 680px;">
+        <div class="modal-header">
+            <h3 class="modal-title">User Record</h3>
+            <button class="modal-close" onclick="closeUserRecordModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body" style="padding: 16px;">
+            <!-- User profile header -->
+            <div class="modal-user-profile" id="modal-user-header">
+                <div class="modal-user-avatar" id="modal-avatar">?</div>
+                <div class="modal-user-details">
+                    <div class="modal-user-name" id="modal-display-name">Loading...</div>
+                    <div class="modal-user-sub" id="modal-user-id-text"></div>
+                    <div class="modal-user-stats" id="modal-stats"></div>
+                </div>
+            </div>
+            <!-- Filter tabs -->
+            <div class="modal-filter-tabs" id="modal-filter-tabs"></div>
+            <!-- Records list -->
+            <div id="user-record-content" style="max-height: 400px; overflow-y: auto; padding-right: 4px;">
+                <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading...</p></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            {% if has_perm('moderation.user_records') %}
+            <button class="btn btn-danger" id="clear-record-btn">
+                <i class="fas fa-trash"></i> Clear All Records
+            </button>
+            {% endif %}
+            <button class="btn btn-secondary" onclick="closeUserRecordModal()">Close</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MOD_PERMS = {
+        flagged_words: {{ has_perm('moderation.flagged_words')|tojson }},
+        user_records: {{ has_perm('moderation.user_records')|tojson }},
+        warn: {{ has_perm('members.warn')|tojson }}
+    };
+    let flaggedWords = { bannable: [], kickable: [], warning: [] };
+    let allUserRecords = [];
+    let currentFilter = 'all';
+    let currentSearch = '';
+    let currentViewingUserId = null;
+    let currentViewingUserData = null;
+    let modalRecordFilter = 'all';
+
+    // ========== Stats ==========
+    async function loadStats() {
+        try {
+            const response = await fetch('/api/stats');
+            if (!response.ok) return;
+            const data = await response.json();
+            document.getElementById('stat-warnings').textContent = data.total_warnings || 0;
+            document.getElementById('stat-kicks').textContent = data.total_kicks || 0;
+            document.getElementById('stat-bans').textContent = data.total_bans || 0;
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+        }
+    }
+
+    // ========== Flagged Words ==========
+    async function loadFlaggedWords() {
+        try {
+            const response = await fetch('/api/flagged-words');
+            if (!response.ok) return;
+            flaggedWords = await response.json();
+            renderWordTags('bannable-words', flaggedWords.bannable, 'bannable');
+            renderWordTags('kickable-words', flaggedWords.kickable, 'kickable');
+            renderWordTags('warning-words', flaggedWords.warning, 'warning');
+            const totalWords = flaggedWords.bannable.length + flaggedWords.kickable.length + flaggedWords.warning.length;
+            document.getElementById('stat-words').textContent = totalWords;
+        } catch (error) {
+            console.error('Failed to load flagged words:', error);
+        }
+    }
+
+    function renderWordTags(containerId, words, category) {
+        const container = document.getElementById(containerId);
+        if (!words || words.length === 0) {
+            container.innerHTML = '<span style="color: var(--text-muted); font-size: 13px;">No words added</span>';
+            return;
+        }
+        container.innerHTML = words.map(word => `
+            <div class="word-tag ${category}">
+                <span>${escapeHtml(word)}</span>
+                ${MOD_PERMS.flagged_words ? `<i class="fas fa-times remove-word" onclick="removeWord('${category}', '${escapeHtml(word)}')"></i>` : ''}
+            </div>
+        `).join('');
+    }
+
+    async function removeWord(category, word) {
+        if (!confirm(`Remove "${word}" from ${category} list?`)) return;
+        try {
+            const response = await fetch('/api/flagged-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'remove', category, word })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Word removed!', 'success');
+                loadFlaggedWords();
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // ========== User Records ==========
+    async function loadUserRecords() {
+        try {
+            const response = await fetch('/api/user-records');
+            if (!response.ok) return;
+            allUserRecords = await response.json();
+
+            // Calculate automod stat
+            let totalAutomod = 0;
+            allUserRecords.forEach(u => { totalAutomod += u.automod_count || 0; });
+            document.getElementById('stat-automod').textContent = totalAutomod;
+            document.getElementById('records-count').textContent = `${allUserRecords.length} user${allUserRecords.length !== 1 ? 's' : ''}`;
+
+            renderRecordsList();
+        } catch (error) {
+            console.error('Failed to load records:', error);
+            document.getElementById('records-list').innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle" style="color: var(--danger);"></i><p>Failed to load records</p></div>';
+        }
+    }
+
+    function renderRecordsList() {
+        const container = document.getElementById('records-list');
+        let filtered = allUserRecords;
+
+        // Apply type filter
+        if (currentFilter === 'warnings') filtered = filtered.filter(u => u.warning_count > 0);
+        else if (currentFilter === 'kicks') filtered = filtered.filter(u => u.kick_count > 0);
+        else if (currentFilter === 'bans') filtered = filtered.filter(u => u.ban_count > 0);
+        else if (currentFilter === 'automod') filtered = filtered.filter(u => u.automod_count > 0);
+
+        // Apply search
+        if (currentSearch) {
+            const q = currentSearch.toLowerCase();
+            filtered = filtered.filter(u =>
+                (u.display_name || '').toLowerCase().includes(q) ||
+                (u.username || '').toLowerCase().includes(q) ||
+                u.user_id.includes(q)
+            );
+        }
+
+        // Sort by total records descending
+        filtered.sort((a, b) => {
+            const totalA = (a.warning_count || 0) + (a.kick_count || 0) + (a.ban_count || 0) + (a.automod_count || 0);
+            const totalB = (b.warning_count || 0) + (b.kick_count || 0) + (b.ban_count || 0) + (b.automod_count || 0);
+            return totalB - totalA;
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = `<div class="empty-state">
+                <i class="fas fa-check-circle" style="color: var(--success);"></i>
+                <p>${currentSearch || currentFilter !== 'all' ? 'No matching records found' : 'No user records'}</p>
+            </div>`;
+            return;
+        }
+
+        container.innerHTML = filtered.map(user => {
+            const name = user.display_name || user.username || user.user_id;
+            const avatarHtml = user.avatar_url
+                ? `<img src="${user.avatar_url}" alt="">`
+                : name.substring(0, 2).toUpperCase();
+            const badges = [];
+            if (user.warning_count > 0) badges.push(`<div class="record-badge warn"><i class="fas fa-exclamation-triangle" style="font-size:10px;"></i> ${user.warning_count}</div>`);
+            if (user.automod_count > 0) badges.push(`<div class="record-badge automod"><i class="fas fa-robot" style="font-size:10px;"></i> ${user.automod_count}</div>`);
+            if (user.kick_count > 0) badges.push(`<div class="record-badge kick"><i class="fas fa-user-slash" style="font-size:10px;"></i> ${user.kick_count}</div>`);
+            if (user.ban_count > 0) badges.push(`<div class="record-badge ban"><i class="fas fa-gavel" style="font-size:10px;"></i> ${user.ban_count}</div>`);
+
+            return `<div class="record-user-row" onclick="viewUserRecord('${user.user_id}')">
+                <div class="record-user-avatar">${avatarHtml}</div>
+                <div class="record-user-info">
+                    <div class="record-user-name">${escapeHtml(name)}</div>
+                    <div class="record-user-id">${user.user_id}</div>
+                </div>
+                <div class="record-badges">${badges.join('')}</div>
+                <div class="record-actions" onclick="event.stopPropagation();">
+                    <button class="btn btn-sm btn-secondary" onclick="viewUserRecord('${user.user_id}')" title="View Records">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    ${MOD_PERMS.user_records ? `<button class="btn btn-sm btn-danger" onclick="clearUserRecord('${user.user_id}')" title="Clear All Records">
+                        <i class="fas fa-trash"></i>
+                    </button>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function filterRecords(filter, el) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        if (el) el.classList.add('active');
+        renderRecordsList();
+    }
+
+    // Search debounce
+    let searchTimeout;
+    document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('records-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    currentSearch = e.target.value.trim();
+                    renderRecordsList();
+                }, 250);
+            });
+        }
+    });
+
+    // ========== User Record Modal ==========
+    async function viewUserRecord(userId) {
+        currentViewingUserId = userId;
+        modalRecordFilter = 'all';
+        document.getElementById('user-record-modal').classList.add('active');
+        document.getElementById('user-record-content').innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading...</p></div>';
+        document.getElementById('modal-filter-tabs').innerHTML = '';
+
+        // Find user info from allUserRecords
+        const userInfo = allUserRecords.find(u => u.user_id === userId);
+        const name = userInfo ? (userInfo.display_name || userInfo.username || userId) : userId;
+        const avatarHtml = userInfo && userInfo.avatar_url
+            ? `<img src="${userInfo.avatar_url}" alt="">`
+            : (name.substring(0, 2).toUpperCase());
+
+        document.getElementById('modal-avatar').innerHTML = avatarHtml;
+        document.getElementById('modal-display-name').textContent = name;
+        document.getElementById('modal-user-id-text').textContent = userId;
+
+        try {
+            const response = await fetch(`/api/user-records/${userId}`);
+            const data = await response.json();
+            currentViewingUserData = data.records || [];
+
+            // Stats in header
+            const counts = { Warning: 0, 'AutoMod Flag': 0, Kick: 0, Ban: 0, Timeout: 0 };
+            currentViewingUserData.forEach(r => {
+                const t = r.type || 'Unknown';
+                if (counts[t] !== undefined) counts[t]++;
+                else counts[t] = (counts[t] || 0) + 1;
+            });
+
+            document.getElementById('modal-stats').innerHTML = `
+                ${counts.Warning ? `<div class="record-badge warn"><i class="fas fa-exclamation-triangle" style="font-size:10px;"></i> ${counts.Warning}</div>` : ''}
+                ${counts['AutoMod Flag'] ? `<div class="record-badge automod"><i class="fas fa-robot" style="font-size:10px;"></i> ${counts['AutoMod Flag']}</div>` : ''}
+                ${counts.Kick ? `<div class="record-badge kick"><i class="fas fa-user-slash" style="font-size:10px;"></i> ${counts.Kick}</div>` : ''}
+                ${counts.Ban ? `<div class="record-badge ban"><i class="fas fa-gavel" style="font-size:10px;"></i> ${counts.Ban}</div>` : ''}
+                ${counts.Timeout ? `<div class="record-badge" style="background:rgba(6,182,212,0.15);color:#06b6d4;"><i class="fas fa-clock" style="font-size:10px;"></i> ${counts.Timeout}</div>` : ''}
+            `;
+
+            // Build filter tabs
+            const types = [...new Set(currentViewingUserData.map(r => r.type || 'Unknown'))];
+            let tabsHtml = `<div class="modal-filter-tab active" onclick="filterModalRecords('all', this)">All <span class="count">(${currentViewingUserData.length})</span></div>`;
+            types.forEach(type => {
+                const count = currentViewingUserData.filter(r => r.type === type).length;
+                tabsHtml += `<div class="modal-filter-tab" onclick="filterModalRecords('${type}', this)">${type} <span class="count">(${count})</span></div>`;
+            });
+            document.getElementById('modal-filter-tabs').innerHTML = tabsHtml;
+
+            renderModalRecords();
+
+            // Set up clear record button
+            const clearBtn = document.getElementById('clear-record-btn');
+            if (clearBtn) {
+                clearBtn.onclick = () => clearUserRecord(userId);
+            }
+        } catch (error) {
+            document.getElementById('user-record-content').innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle" style="color:var(--danger);"></i><p>Error loading record</p></div>';
+        }
+    }
+
+    function filterModalRecords(filter, el) {
+        modalRecordFilter = filter;
+        document.querySelectorAll('.modal-filter-tab').forEach(t => t.classList.remove('active'));
+        if (el) el.classList.add('active');
+        renderModalRecords();
+    }
+
+    function renderModalRecords() {
+        if (!currentViewingUserData || currentViewingUserData.length === 0) {
+            document.getElementById('user-record-content').innerHTML = '<div class="empty-state"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No records found</p></div>';
+            return;
+        }
+
+        let records = currentViewingUserData;
+        if (modalRecordFilter !== 'all') {
+            records = records.filter(r => r.type === modalRecordFilter);
+        }
+
+        // Sort newest first
+        records = [...records].sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+
+        const content = records.map((record, filteredIdx) => {
+            // Find the actual index in the full records array
+            const actualIndex = currentViewingUserData.indexOf(record);
+            const date = record.timestamp ? new Date(record.timestamp) : null;
+            const typeClass = getTypeClass(record.type);
+            const typeBadgeClass = getTypeBadgeClass(record.type);
+
+            return `<div class="record-entry type-${typeClass}">
+                ${MOD_PERMS.user_records ? `<button class="record-remove-btn" onclick="removeRecord('${currentViewingUserId}', ${actualIndex}, this)" title="Remove this record">
+                    <i class="fas fa-times"></i>
+                </button>` : ''}
+                <div class="record-entry-header">
+                    <span class="record-type-badge ${typeBadgeClass}">${escapeHtml(record.type || 'Unknown')}</span>
+                </div>
+                <div class="record-entry-reason">${escapeHtml(record.reason || 'No reason provided')}</div>
+                <div class="record-entry-meta">
+                    ${date ? `<span><i class="fas fa-calendar"></i> ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>` : ''}
+                    ${date ? `<span><i class="fas fa-clock"></i> ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+                    ${record.moderator ? `<span><i class="fas fa-user-shield"></i> ${escapeHtml(record.moderator)}</span>` : ''}
+                    ${record.source ? `<span><i class="fas fa-link"></i> ${escapeHtml(record.source)}</span>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('user-record-content').innerHTML = content || '<div class="empty-state"><p>No records for this filter</p></div>';
+    }
+
+    function getTypeClass(type) {
+        const map = { 'Warning': 'warning', 'Kick': 'kick', 'Ban': 'ban', 'AutoMod Flag': 'automod', 'Timeout': 'timeout' };
+        return map[type] || 'warning';
+    }
+    function getTypeBadgeClass(type) {
+        const map = { 'Warning': 'warning', 'Kick': 'kick', 'Ban': 'ban', 'AutoMod Flag': 'automod', 'Timeout': 'timeout' };
+        return map[type] || 'warning';
+    }
+
+    async function removeRecord(userId, recordIndex, btnEl) {
+        if (!confirm('Remove this record? This cannot be undone.')) return;
+
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            const response = await fetch(`/api/user-records/${userId}/remove-record`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index: recordIndex })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                showToast(data.message, 'success');
+                // Reload both the modal and the list
+                await loadUserRecords();
+                await loadStats();
+                // Re-open modal with refreshed data
+                viewUserRecord(userId);
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    async function clearUserRecord(userId) {
+        if (!confirm(`Clear ALL records for user ${userId}? This cannot be undone.`)) return;
+
+        try {
+            const response = await fetch(`/api/user-records/${userId}/clear`, { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+                showToast('All records cleared!', 'success');
+                closeUserRecordModal();
+                loadUserRecords();
+                loadStats();
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    function closeUserRecordModal() {
+        closeModalWithAnimation(document.getElementById('user-record-modal'));
+    }
+
+    // ========== Add Word Modal ==========
+    function openAddWordModal() {
+        document.getElementById('add-word-modal').classList.add('active');
+        document.getElementById('new-word').value = '';
+    }
+    function closeAddWordModal() {
+        closeModalWithAnimation(document.getElementById('add-word-modal'));
+    }
+
+    async function addFlaggedWord() {
+        const word = document.getElementById('new-word').value.trim();
+        const category = document.getElementById('word-category').value;
+        const btn = document.querySelector('#add-word-modal .btn-primary');
+        const originalHtml = btn ? btn.innerHTML : '';
+
+        if (!word) { showToast('Please enter a word', 'error'); return; }
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading-spinner small"></span> Adding...'; }
+
+        try {
+            const response = await fetch('/api/flagged-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'add', category, word })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Word added!', 'success');
+                closeAddWordModal();
+                loadFlaggedWords();
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+        }
+    }
+
+    // ========== Warn User Modal ==========
+    function openWarnUserModal() {
+        document.getElementById('warn-user-modal').classList.add('active');
+        document.getElementById('warn-user-id').value = '';
+        document.getElementById('warn-reason').value = '';
+    }
+    function closeWarnUserModal() {
+        closeModalWithAnimation(document.getElementById('warn-user-modal'));
+    }
+
+    async function sendWarning() {
+        const userId = document.getElementById('warn-user-id').value.trim();
+        const reason = document.getElementById('warn-reason').value.trim();
+
+        if (!userId) { showToast('Please enter a User ID', 'error'); return; }
+        if (!reason) { showToast('Please enter a reason', 'error'); return; }
+        if (!/^\d+$/.test(userId)) { showToast('User ID must be numeric', 'error'); return; }
+
+        try {
+            const response = await fetch('/api/warn-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, reason, moderator: 'Dashboard' })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Warning sent! User will receive a DM.', 'success');
+                closeWarnUserModal();
+                loadUserRecords();
+                loadStats();
+            } else {
+                showToast('Failed: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // ========== Watchlist ==========
+    async function loadWatchlist() {
+        try {
+            const response = await fetch('/api/watchlist');
+            if (!response.ok) return;
+            const data = await response.json();
+            const watchedUsers = data.watched_users || [];
+            document.getElementById('watchlist-count').textContent = `${watchedUsers.length} user${watchedUsers.length !== 1 ? 's' : ''}`;
+
+            const tbody = document.getElementById('watchlist-body');
+            if (watchedUsers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                    <i class="fas fa-check-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                    No users on watchlist
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = watchedUsers.map(user => {
+                const alertColors = { low: 'success', normal: 'warning', high: 'danger' };
+                const addedDate = user.added_at ? new Date(user.added_at).toLocaleDateString() : 'Unknown';
+                const lastActivity = user.last_activity ? new Date(user.last_activity).toLocaleString() : 'No activity';
+                return `<tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, var(--warning), var(--warning-dark)); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; overflow: hidden;">
+                                ${user.avatar ? `<img src="${user.avatar}" style="width: 100%; height: 100%; border-radius: 8px; object-fit: cover;">` : (user.username ? user.username.charAt(0).toUpperCase() : '?')}
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: var(--text-primary);">${escapeHtml(user.display_name || user.username || 'Unknown')}</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">${user.user_id}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(user.reason || 'No reason')}">${escapeHtml(user.reason || 'No reason')}</div></td>
+                    <td><span class="badge badge-${alertColors[user.alert_level] || 'warning'}" style="text-transform: capitalize;">${user.alert_level || 'normal'}</span></td>
+                    <td><div style="font-size: 12px; color: var(--text-secondary);">${addedDate}<div style="font-size: 11px; color: var(--text-muted);">by ${escapeHtml(user.added_by || 'Unknown')}</div></div></td>
+                    <td><div style="font-size: 12px;"><span style="color: var(--primary-light); font-weight: 600;">${user.activity_count || 0}</span> events<div style="font-size: 11px; color: var(--text-muted);">Last: ${lastActivity}</div></div></td>
+                    <td><button class="btn btn-danger btn-sm" onclick="removeFromWatchlist('${user.user_id}')" title="Remove from watchlist"><i class="fas fa-eye-slash"></i></button></td>
+                </tr>`;
+            }).join('');
+        } catch (error) {
+            console.error('Failed to load watchlist:', error);
+            document.getElementById('watchlist-body').innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 40px; color: var(--danger);">Failed to load watchlist</td></tr>`;
+        }
+    }
+
+    async function removeFromWatchlist(userId) {
+        if (!confirm('Remove this user from the watchlist?')) return;
+        try {
+            const response = await fetch(`/api/watchlist/${userId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) { loadWatchlist(); } else { showToast('Failed: ' + (data.error || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('Error: ' + error.message, 'error'); }
+    }
+
+    // ========== Initialize ==========
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        loadFlaggedWords();
+        loadUserRecords();
+        loadWatchlist();
+    });
+</script>
+{% endblock %}

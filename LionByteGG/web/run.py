@@ -7,12 +7,57 @@ Supports both development and production modes.
 import os
 import sys
 import socket
+import time
+import subprocess
 import argparse
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app
+
+def _kill_other_instances():
+    """Terminate any OTHER python process running run.py, so only one web server
+    ever exists. Prevents the duplicate-server problem that breaks logins."""
+    me = os.getpid()
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*run.py*' } | "
+             "Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True, timeout=15,
+        )
+        killed = 0
+        for line in (out.stdout or "").split():
+            pid = line.strip()
+            if pid.isdigit() and int(pid) != me:
+                r = subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=10)
+                if r.returncode == 0:
+                    killed += 1
+                    print(f"[startup] Stopped duplicate server (PID {pid}) so only one runs.")
+        if killed:
+            time.sleep(1.5)  # let the OS release port 5000
+    except Exception as e:
+        print(f"[startup] Duplicate-instance check skipped: {e}")
+
+def _port_in_use(port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(1)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+    finally:
+        s.close()
+
+def _ensure_single_instance(port):
+    """Guarantee exactly one server: kill other run.py instances, then wait for
+    the port to free up."""
+    _kill_other_instances()
+    for _ in range(12):
+        if not _port_in_use(port):
+            return
+        time.sleep(0.5)
+    print(f"[startup] WARNING: port {port} is still in use by another program.")
 
 def get_local_ip():
     """Get the local IP address for LAN access."""
@@ -27,6 +72,7 @@ def get_local_ip():
 
 def run_development():
     """Run in development mode with Flask's built-in server"""
+    _ensure_single_instance(int(os.environ.get('PORT', 5000)))
     local_ip = get_local_ip()
     print("=" * 60)
     print("LionByteGG Web Dashboard - DEVELOPMENT MODE")
@@ -57,6 +103,7 @@ def run_production():
     
     local_ip = get_local_ip()
     port = int(os.environ.get('PORT', 5000))
+    _ensure_single_instance(port)
     
     print("=" * 60)
     print("LionByteGG Web Dashboard - PRODUCTION MODE")

@@ -1,16 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-transitions">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#7c3aed">
     <meta name="description" content="PNW Esports Dashboard - Team Management System">
-    <title>{% block title %}Dashboard{% endblock %} - LionByteGG</title>
+    <title>{% block title %}Dashboard{% endblock %} - Nova</title>
     
     <!-- Prevent security modal flash - check before page renders -->
     <script>
         // This runs immediately before any rendering
         window.__securityAcknowledged = sessionStorage.getItem('security_acknowledged') === 'true';
+    </script>
+
+    <!-- Prevent bot-switcher flash: detect bot from URL and apply theme class instantly -->
+    <script>
+        (function() {
+            var p = window.location.pathname;
+            var bot = 'lionbyte';
+            if (p.startsWith('/admin')) bot = 'admin';
+            else if (p.startsWith('/onduty')) bot = 'onduty';
+            else if (p.startsWith('/music')) bot = 'lionbeats';
+            else if (p.startsWith('/boilercraft')) bot = 'boilercraft';
+            else if (p.startsWith('/lionshift')) bot = 'lionshift';
+            else if (p.startsWith('/arena')) bot = 'arena';
+            document.documentElement.setAttribute('data-bot', bot);
+            document.documentElement.className = 'no-transitions bot-' + bot;
+        })();
     </script>
     
     <!-- Favicon -->
@@ -30,13 +46,13 @@
             --primary-light: #a78bfa;
             --secondary: #f59e0b;
             --secondary-dark: #d97706;
-            --background: #0f0f23;
-            --background-secondary: #1a1a2e;
-            --background-tertiary: #252545;
-            --background-primary: #1a1a2e;
-            --surface: #16213e;
-            --surface-light: #1f2937;
-            --surface-hover: #243352;
+            --background: #0a0e1a;
+            --background-secondary: #111827;
+            --background-tertiary: #1a2035;
+            --background-primary: #111827;
+            --surface: #131a2e;
+            --surface-light: #1a2332;
+            --surface-hover: #1e2d45;
             --text-primary: #ffffff;
             --text-secondary: #9ca3af;
             --text-muted: #6b7280;
@@ -76,11 +92,26 @@
             max-width: 100vw;
         }
 
-        /* Global Smooth Transitions */
+        /* Global Smooth Transitions - suppressed until page is initialized */
+        html.no-transitions *, html.no-transitions *::before, html.no-transitions *::after {
+            transition: none !important;
+        }
         *, *::before, *::after {
             transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
             transition-duration: 0.15s;
             transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Hide all bot navs by default, show only the one matching the detected bot */
+        .bot-nav { display: none !important; }
+        html.bot-lionbyte #nav-lionbyte,
+        html.bot-onduty #nav-onduty,
+        html.bot-lionbeats #nav-lionbeats,
+        html.bot-boilercraft #nav-boilercraft,
+        html.bot-lionshift #nav-lionshift,
+        html.bot-arena #nav-arena,
+        html.bot-admin #nav-admin {
+            display: block !important;
         }
 
         body {
@@ -181,6 +212,7 @@
             flex: 1;
             padding: 16px 12px;
             overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .nav-section {
@@ -243,46 +275,52 @@
             border-top: 1px solid var(--border);
         }
 
-        .user-info {
+        .nova-brand {
             display: flex;
             align-items: center;
             gap: 12px;
         }
 
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            background: var(--gradient-2);
+        .nova-brand-icon {
+            width: 38px;
+            height: 38px;
             border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
+            overflow: hidden;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
         }
 
-        .user-details h4 {
+        .nova-brand-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .nova-brand-text h4 {
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: 0.3px;
         }
 
-        .user-details span {
-            font-size: 12px;
-            color: var(--text-secondary);
+        .nova-brand-text span {
+            font-size: 11px;
+            color: var(--text-muted);
         }
 
         /* Main Content */
         .main-content {
             flex: 1;
+            min-width: 0;
             margin-left: var(--sidebar-width);
             min-height: 100vh;
             overflow-x: hidden;
-            max-width: calc(100vw - var(--sidebar-width));
         }
 
         /* Header */
         .header {
             height: var(--header-height);
-            background: rgba(22, 33, 62, 0.95);
+            background: rgba(19, 26, 46, 0.95);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
             display: flex;
@@ -1840,46 +1878,14 @@
             }
         }
 
-        /* Responsive - Mobile (768px and below) */
+        /* Responsive - Narrow / snapped desktop window (768px and below).
+           This app is desktop-only, so we DO NOT switch to a phone layout here.
+           The sidebar stays as the desktop icon-rail (see the max-width:1024px
+           auto-collapse rules) and is always visible — no off-canvas drawer,
+           no hamburger. Only spacing/typography is tightened below. */
         @media (max-width: 768px) {
             :root {
-                --sidebar-width: 280px;
                 --header-height: 60px;
-            }
-            
-            .sidebar {
-                transform: translateX(-100%);
-                z-index: 1000;
-                box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
-            }
-
-            .sidebar.open {
-                transform: translateX(0);
-            }
-            
-            /* Mobile menu overlay */
-            .mobile-overlay {
-                display: none;
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.5);
-                z-index: 999;
-                opacity: 0;
-                transition: opacity 0.3s ease;
-            }
-            
-            .mobile-overlay.active {
-                display: block;
-                opacity: 1;
-            }
-
-            .main-content {
-                margin-left: 0;
-            }
-            
-            /* Show mobile menu toggle button */
-            #menu-toggle {
-                display: flex !important;
             }
 
             .header {
@@ -3495,6 +3501,90 @@
             border-color: rgba(207, 185, 145, 0.3);
         }
 
+        /* LionShiftGG theme colors (Amber/Orange) */
+        body.bot-lionshift .sidebar-logo-icon {
+            background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%) !important;
+        }
+
+        body.bot-lionshift .nav-link.active {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border-left-color: #f59e0b;
+        }
+
+        body.bot-lionshift .bot-switcher-item.active {
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        body.bot-lionshift .bot-switcher-check {
+            color: #f59e0b;
+        }
+
+        body.bot-lionshift .btn-primary {
+            background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.3);
+            color: #000;
+        }
+
+        body.bot-lionshift .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+        }
+
+        body.bot-lionshift .stat-card.purple::before {
+            background: #f59e0b;
+        }
+
+        body.bot-lionshift .stat-card.purple .stat-icon {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        body.bot-lionshift .card:hover {
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        /* Arena Staff theme colors */
+        body.bot-arena .sidebar-logo-icon {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+        }
+
+        body.bot-arena .nav-link.active {
+            background: rgba(6, 182, 212, 0.15);
+            color: #22d3ee;
+            border-left-color: #06b6d4;
+        }
+
+        body.bot-arena .bot-switcher-item.active {
+            background: rgba(6, 182, 212, 0.15);
+        }
+
+        body.bot-arena .bot-switcher-check {
+            color: #06b6d4;
+        }
+
+        body.bot-arena .btn-primary {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+            box-shadow: 0 2px 10px rgba(6, 182, 212, 0.3);
+            color: #001318;
+        }
+
+        body.bot-arena .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.5);
+        }
+
+        body.bot-arena .stat-card.purple::before {
+            background: #06b6d4;
+        }
+
+        body.bot-arena .stat-card.purple .stat-icon {
+            background: rgba(6, 182, 212, 0.2);
+            color: #06b6d4;
+        }
+
+        body.bot-arena .card:hover {
+            border-color: rgba(6, 182, 212, 0.3);
+        }
+
         /* Admin Panel theme colors */
         body.bot-admin .sidebar-logo-icon {
             background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
@@ -3855,11 +3945,479 @@
         .security-ack-btn:active {
             transform: translateY(0);
         }
+
+        /* ============ Sidebar Collapse ============ */
+        .sidebar-collapse-btn {
+            position: absolute;
+            top: 50%;
+            right: -14px;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            z-index: 101;
+            transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+            opacity: 1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+
+        .sidebar:hover .sidebar-collapse-btn,
+        .sidebar-collapse-btn:focus {
+            opacity: 1;
+        }
+
+        .sidebar-collapse-btn:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        /* Collapsed sidebar state */
+        body.sidebar-collapsed .sidebar {
+            width: 72px;
+        }
+
+        body.sidebar-collapsed .sidebar-header {
+            padding: 16px 12px;
+        }
+
+        body.sidebar-collapsed .sidebar-logo-text,
+        body.sidebar-collapsed .bot-switcher-toggle,
+        body.sidebar-collapsed .nav-section-title,
+        body.sidebar-collapsed .nav-link span,
+        body.sidebar-collapsed .nav-badge,
+        body.sidebar-collapsed .nova-brand-text {
+            display: none;
+        }
+
+        body.sidebar-collapsed .sidebar-logo {
+            justify-content: center;
+        }
+
+        body.sidebar-collapsed .sidebar-logo-icon {
+            width: 40px;
+            height: 40px;
+        }
+
+        body.sidebar-collapsed .sidebar-nav {
+            padding: 12px 8px;
+        }
+
+        body.sidebar-collapsed .nav-link {
+            justify-content: center;
+            padding: 12px;
+            position: relative;
+        }
+
+        body.sidebar-collapsed .nav-link i {
+            width: 24px;
+            font-size: 18px;
+        }
+
+        body.sidebar-collapsed .nav-link.active {
+            border-left: none;
+            background: rgba(124, 58, 237, 0.2);
+        }
+
+        /* Collapsed nav tooltip — fixed-position element (never clipped, never causes scroll) */
+        .sidebar-tooltip {
+            position: fixed;
+            z-index: 3000;
+            background: var(--surface);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border);
+            opacity: 0;
+            transform: translateY(-50%) translateX(-6px);
+            transition: opacity 0.14s ease, transform 0.14s ease;
+            pointer-events: none;
+        }
+        .sidebar-tooltip.show { opacity: 1; transform: translateY(-50%) translateX(0); }
+
+        body.sidebar-collapsed .sidebar-footer {
+            padding: 12px;
+            display: flex;
+            justify-content: center;
+        }
+
+        body.sidebar-collapsed .nova-brand {
+            justify-content: center;
+        }
+
+        body.sidebar-collapsed .nova-brand-icon {
+            width: 32px;
+            height: 32px;
+        }
+
+        body.sidebar-collapsed .sidebar-collapse-btn {
+            opacity: 1;
+        }
+
+        body.sidebar-collapsed .sidebar-collapse-btn i {
+            transform: rotate(180deg);
+        }
+
+        body.sidebar-collapsed .main-content {
+            margin-left: 72px;
+        }
+
+        body.sidebar-collapsed .jobs-bar {
+            left: 72px;
+        }
+
+        /* Sidebar transition */
+        .sidebar,
+        .main-content,
+        .jobs-bar {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Narrow-window auto-collapse (icon rail) — desktop layout, always visible.
+           Applies to every width <= 1024px (tablet + snapped desktop windows),
+           so the nav never turns into a phone drawer. */
+        @media (max-width: 1024px) {
+            body:not(.sidebar-expanded) .sidebar {
+                width: 72px;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-header {
+                padding: 16px 12px;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-logo-text,
+            body:not(.sidebar-expanded) .bot-switcher-toggle,
+            body:not(.sidebar-expanded) .nav-section-title,
+            body:not(.sidebar-expanded) .nav-link span,
+            body:not(.sidebar-expanded) .nav-badge,
+            body:not(.sidebar-expanded) .nova-brand-text {
+                display: none;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-logo {
+                justify-content: center;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-logo-icon {
+                width: 40px;
+                height: 40px;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-nav {
+                padding: 12px 8px;
+            }
+
+            body:not(.sidebar-expanded) .nav-link {
+                justify-content: center;
+                padding: 12px;
+                position: relative;
+            }
+
+            body:not(.sidebar-expanded) .nav-link i {
+                width: 24px;
+                font-size: 18px;
+            }
+
+            body:not(.sidebar-expanded) .nav-link.active {
+                border-left: none;
+                background: rgba(124, 58, 237, 0.2);
+            }
+
+            body:not(.sidebar-expanded) .sidebar-footer {
+                padding: 12px;
+                display: flex;
+                justify-content: center;
+            }
+
+            body:not(.sidebar-expanded) .nova-brand {
+                justify-content: center;
+            }
+
+            body:not(.sidebar-expanded) .nova-brand-icon {
+                width: 32px;
+                height: 32px;
+            }
+
+            body:not(.sidebar-expanded) .main-content {
+                margin-left: 72px;
+            }
+
+            body:not(.sidebar-expanded) .jobs-bar {
+                left: 72px;
+            }
+
+            body:not(.sidebar-expanded) .sidebar-collapse-btn {
+                opacity: 1;
+            }
+        }
+
+        /* ============ Command Palette ============ */
+        .command-palette-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 15vh;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+
+        .command-palette-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .command-palette {
+            width: 100%;
+            max-width: 640px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            transform: scale(0.95) translateY(-10px);
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .command-palette-overlay.active .command-palette {
+            transform: scale(1) translateY(0);
+        }
+
+        .command-palette-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .command-palette-input-wrap i {
+            color: var(--primary-light);
+            font-size: 18px;
+        }
+
+        .command-palette-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 16px;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+        }
+
+        .command-palette-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .command-palette-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .command-palette-hint kbd {
+            padding: 2px 6px;
+            background: var(--background-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: inherit;
+        }
+
+        .command-palette-results {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .command-palette-section {
+            padding: 8px 12px 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .command-palette-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .command-palette-item:hover,
+        .command-palette-item.selected {
+            background: var(--surface-hover);
+        }
+
+        .command-palette-item.selected {
+            outline: 2px solid var(--primary);
+            outline-offset: -2px;
+        }
+
+        .command-palette-item-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .command-palette-item-icon.page {
+            background: rgba(124, 58, 237, 0.15);
+            color: var(--primary-light);
+        }
+
+        .command-palette-item-icon.action {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--secondary);
+        }
+
+        .command-palette-item-icon.user {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+        }
+
+        .command-palette-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .command-palette-item-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .command-palette-item-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .command-palette-item-badge {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--background-secondary);
+            color: var(--text-muted);
+        }
+
+        .command-palette-footer {
+            padding: 10px 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .command-palette-footer span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .command-palette-footer kbd {
+            padding: 2px 6px;
+            background: var(--background-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: inherit;
+        }
+
+        .command-palette-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .command-palette-empty i {
+            font-size: 32px;
+            margin-bottom: 12px;
+            display: block;
+            opacity: 0.4;
+        }
+
+        /* ===== Global smoothness & polish ===== */
+        html { scroll-behavior: smooth; }
+        * { -webkit-tap-highlight-color: transparent; }
+        /* Dark dropdown options (fixes white-on-white select menus) */
+        select option, optgroup { background-color: #12161f; color: #e5e9f0; }
+
+        /* Sleeker scrollbars */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.13); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; transition: background 0.2s ease; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.26); background-clip: padding-box; }
+        html { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+
+        /* Nav links: smooth slide + icon pop */
+        .nav-link { transition: background 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2,0.8,0.2,1), border-color 0.2s ease; }
+        .nav-link:hover { transform: translateX(3px); }
+        .nav-link i { transition: transform 0.2s cubic-bezier(0.2,0.8,0.2,1); }
+        .nav-link:hover i { transform: scale(1.14); }
+        .nav-link.active i { transform: scale(1.05); }
+
+        /* Buttons: micro-lift + press feedback */
+        .btn, .btn-enhanced { transition: transform 0.15s cubic-bezier(0.2,0.8,0.2,1), box-shadow 0.2s ease, background 0.2s ease, filter 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
+        .btn:hover, .btn-enhanced:hover { transform: translateY(-1px); }
+        .btn:active, .btn-enhanced:active { transform: translateY(0) scale(0.97); }
+
+        /* Faster, smoother page entrance */
+        .main-content { animation: pageSlideIn 0.3s cubic-bezier(0.2,0.8,0.2,1); }
+
+        /* Smooth header/profile controls */
+        .header-btn, .profile-circle-btn, .notification-bell-btn { transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; }
+        .header-btn:active, .profile-circle-btn:active, .notification-bell-btn:active { transform: scale(0.94); }
+
+        /* Respect reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+        }
     </style>
     {% block extra_styles %}{% endblock %}
     {% block extra_head %}{% endblock %}
+
+    {# Detect bot from URL path server-side to prevent flash #}
+    {% set current_bot = 'lionbyte' %}
+    {% if request.path.startswith('/admin') %}{% set current_bot = 'admin' %}
+    {% elif request.path.startswith('/onduty') %}{% set current_bot = 'onduty' %}
+    {% elif request.path.startswith('/music') %}{% set current_bot = 'lionbeats' %}
+    {% elif request.path.startswith('/boilercraft') %}{% set current_bot = 'boilercraft' %}
+    {% elif request.path.startswith('/lionshift') %}{% set current_bot = 'lionshift' %}
+    {% elif request.path.startswith('/arena') %}{% set current_bot = 'arena' %}
+    {% endif %}
 </head>
-<body>
+<body class="bot-{{ current_bot }}">
     <!-- Security Acknowledgment Modal (shows once per session) -->
     <!-- Start hidden, JavaScript will show it if needed -->
     <div class="security-ack-overlay hidden" id="securityAckModal">
@@ -3872,7 +4430,7 @@
                 <p>Please review before proceeding</p>
             </div>
             <div class="security-ack-body">
-                <p><strong>Welcome to the LionByteGG Administrative Dashboard.</strong> This system contains sensitive and confidential information protected by institutional policies and privacy regulations.</p>
+                <p><strong>Welcome to the Nova Administrative Dashboard.</strong> This system contains sensitive and confidential information protected by institutional policies and privacy regulations.</p>
                 
                 <ul class="security-ack-list">
                     <li>
@@ -3945,13 +4503,30 @@
 
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
+        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">
+            <i class="fas fa-chevron-left"></i>
+        </button>
         <div class="sidebar-header">
             <div class="sidebar-logo">
                 <div class="sidebar-logo-icon">
+                    {% if current_bot == 'admin' %}
+                    <i class="fas fa-shield-alt" style="font-size: 24px; color: #ef4444;"></i>
+                    {% elif current_bot == 'onduty' %}
+                    <i class="fas fa-clipboard-check" style="font-size: 24px; color: #f59e0b;"></i>
+                    {% elif current_bot == 'lionbeats' %}
+                    <img src="{{ url_for('static', filename='images/LionBeatsGGLogo.png') }}" alt="LionBeatsGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="sidebar-logo-img">
+                    {% elif current_bot == 'boilercraft' %}
+                    <img src="{{ url_for('static', filename='images/PurdueNetworkLogo.png') }}" alt="BoilerCraftGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="sidebar-logo-img">
+                    {% elif current_bot == 'lionshift' %}
+                    <img src="{{ url_for('static', filename='images/LionShiftGGLogo.png') }}" alt="LionShiftGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="sidebar-logo-img">
+                    {% elif current_bot == 'arena' %}
+                    <i class="fas fa-user-shield" style="font-size: 24px; color: #ef4444;"></i>
+                    {% else %}
                     <img src="{{ url_for('static', filename='images/LionByteGGLogo.png') }}" alt="LionByteGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="sidebar-logo-img">
+                    {% endif %}
                 </div>
                 <div class="sidebar-logo-text">
-                    <h1 id="sidebar-bot-name">LionByteGG</h1>
+                    <h1 id="sidebar-bot-name">{% if current_bot == 'admin' %}Admin Panel{% elif current_bot == 'onduty' %}Inventory Manager{% elif current_bot == 'lionbeats' %}LionBeatsGG{% elif current_bot == 'boilercraft' %}BoilerCraftGG{% elif current_bot == 'lionshift' %}LionShiftGG{% elif current_bot == 'arena' %}Arena Staff{% else %}LionByteGG{% endif %}</h1>
                     <span>Admin Dashboard</span>
                 </div>
                 <button class="bot-switcher-toggle" id="bot-switcher-toggle">
@@ -3968,18 +4543,6 @@
                     <div class="bot-switcher-info">
                         <span class="bot-switcher-name">LionByteGG</span>
                         <span class="bot-switcher-desc">Main Discord Bot</span>
-                    </div>
-                    <i class="fas fa-check bot-switcher-check"></i>
-                </div>
-                {% endif %}
-                {% if has_perm('section.onduty') %}
-                <div class="bot-switcher-item" data-bot="onduty">
-                    <div class="bot-switcher-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                        <i class="fas fa-clipboard-check" style="color: white; font-size: 18px; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;"></i>
-                    </div>
-                    <div class="bot-switcher-info">
-                        <span class="bot-switcher-name">Worker On Duty</span>
-                        <span class="bot-switcher-desc">Equipment & Clock In/Out</span>
                     </div>
                     <i class="fas fa-check bot-switcher-check"></i>
                 </div>
@@ -4008,6 +4571,30 @@
                     <i class="fas fa-check bot-switcher-check"></i>
                 </div>
                 {% endif %}
+                {% if has_perm('section.lionshift') %}
+                <div class="bot-switcher-item" data-bot="lionshift">
+                    <div class="bot-switcher-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);">
+                        <img src="{{ url_for('static', filename='images/LionShiftGGLogo.png') }}" alt="LionShiftGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 6px;">
+                    </div>
+                    <div class="bot-switcher-info">
+                        <span class="bot-switcher-name">LionShiftGG</span>
+                        <span class="bot-switcher-desc">Shift Management</span>
+                    </div>
+                    <i class="fas fa-check bot-switcher-check"></i>
+                </div>
+                {% endif %}
+                {% if has_perm('section.arena') %}
+                <div class="bot-switcher-item" data-bot="arena">
+                    <div class="bot-switcher-icon" style="background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);">
+                        <i class="fas fa-user-shield" style="color: white; font-size: 18px; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;"></i>
+                    </div>
+                    <div class="bot-switcher-info">
+                        <span class="bot-switcher-name">Arena Staff</span>
+                        <span class="bot-switcher-desc">Guest Check-ins & Inventory</span>
+                    </div>
+                    <i class="fas fa-check bot-switcher-check"></i>
+                </div>
+                {% endif %}
                 {% if has_perm('admin.panel') %}
                 <div class="bot-switcher-item" data-bot="admin" style="border-top: 1px solid var(--border); margin-top: 4px; padding-top: 12px;">
                     <div class="bot-switcher-icon" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
@@ -4025,6 +4612,7 @@
 
         <!-- LionByteGG Navigation -->
         {% set perms = user_perms %}
+        {% set cur_tab = request.args.get('tab', '') %}
         {% if has_perm('section.lionbyte') %}
         <nav class="sidebar-nav bot-nav" id="nav-lionbyte">
             <div class="nav-section">
@@ -4034,8 +4622,7 @@
                 {% if 'page.members' in perms %}<a href="/members" class="nav-link {% if request.path == '/members' %}active{% endif %}"><i class="fas fa-users"></i> Server Members</a>{% endif %}
                 {% if 'page.users' in perms %}<a href="/users" class="nav-link {% if request.path == '/users' %}active{% endif %}"><i class="fas fa-user-clock"></i> Guest Management</a>{% endif %}
                 {% if 'page.varsity' in perms %}<a href="/varsity" class="nav-link {% if request.path == '/varsity' %}active{% endif %}"><i class="fas fa-trophy"></i> Varsity Registrations</a>{% endif %}
-                {% if 'page.rosters' in perms %}<a href="/rosters" class="nav-link {% if request.path == '/rosters' %}active{% endif %}"><i class="fas fa-users-cog"></i> Team Rosters</a>{% endif %}
-                {% if 'page.ggleap' in perms %}<a href="/ggleap" class="nav-link {% if request.path == '/ggleap' %}active{% endif %}"><i class="fas fa-gamepad"></i> Arena Manager</a>{% endif %}
+                {% if 'page.rosters' in perms %}<a href="/rosters" class="nav-link {% if request.path == '/rosters' %}active{% endif %}"><i class="fas fa-users-cog"></i> Team Manager</a>{% endif %}
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Moderation</div>
@@ -4052,20 +4639,9 @@
         </nav>
         {% endif %}
 
-        <!-- Worker On Duty Navigation -->
-        {% if has_perm('section.onduty') %}
-        <nav class="sidebar-nav bot-nav" id="nav-onduty" style="display: none;">
-            <div class="nav-section">
-                <div class="nav-section-title">On Duty</div>
-                {% if 'page.onduty_dashboard' in perms %}<a href="/onduty/dashboard" class="nav-link {% if request.path == '/onduty/dashboard' %}active{% endif %}"><i class="fas fa-clipboard-check"></i> Dashboard</a>{% endif %}
-                {% if 'page.onduty_equipment' in perms %}<a href="/onduty/equipment" class="nav-link {% if request.path == '/onduty/equipment' %}active{% endif %}"><i class="fas fa-box-open"></i> Equipment Manager</a>{% endif %}
-            </div>
-        </nav>
-        {% endif %}
-
         <!-- LionBeatsGG Navigation -->
         {% if has_perm('section.lionbeats') %}
-        <nav class="sidebar-nav bot-nav" id="nav-lionbeats" style="display: none;">
+        <nav class="sidebar-nav bot-nav" id="nav-lionbeats">
             <div class="nav-section">
                 <div class="nav-section-title">Music</div>
                 {% if 'page.music_dashboard' in perms %}<a href="/music/dashboard" class="nav-link {% if request.path == '/music/dashboard' %}active{% endif %}"><i class="fas fa-tachometer-alt"></i> Dashboard</a>{% endif %}
@@ -4087,7 +4663,7 @@
 
         <!-- BoilerCraftGG Navigation -->
         {% if has_perm('section.boilercraft') %}
-        <nav class="sidebar-nav bot-nav" id="nav-boilercraft" style="display: none;">
+        <nav class="sidebar-nav bot-nav" id="nav-boilercraft">
             <div class="nav-section">
                 <div class="nav-section-title">Minecraft</div>
                 {% if 'page.boilercraft' in perms %}
@@ -4124,9 +4700,67 @@
         </nav>
         {% endif %}
 
+        <!-- LionShiftGG Navigation -->
+        {% if has_perm('section.lionshift') %}
+        <nav class="sidebar-nav bot-nav" id="nav-lionshift">
+            <div class="nav-section">
+                <div class="nav-section-title">Shifts</div>
+                {% if 'page.shift_dashboard' in perms %}<a href="/lionshift/calendar" class="nav-link {% if request.path in ['/lionshift', '/lionshift/', '/lionshift/calendar'] %}active{% endif %}"><i class="fas fa-calendar-alt"></i> Calendar</a>{% endif %}
+                {% if 'page.shift_schedules' in perms %}<a href="/lionshift/schedules" class="nav-link {% if request.path == '/lionshift/schedules' %}active{% endif %}"><i class="fas fa-layer-group"></i> Schedules</a>{% endif %}
+                {% if 'page.shift_workers' in perms %}<a href="/lionshift/workers" class="nav-link {% if request.path == '/lionshift/workers' %}active{% endif %}"><i class="fas fa-users"></i> Workers</a>{% endif %}
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Management</div>
+                {% if 'page.shift_offers' in perms %}<a href="/lionshift/activity" class="nav-link {% if request.path in ['/lionshift/activity', '/lionshift/offers', '/lionshift/trades', '/lionshift/timeoff'] %}active{% endif %}"><i class="fas fa-exchange-alt"></i> Activity</a>{% endif %}
+                {% if 'page.shift_logs' in perms %}<a href="/lionshift/logs" class="nav-link {% if request.path == '/lionshift/logs' %}active{% endif %}"><i class="fas fa-scroll"></i> Shift Logs</a>{% endif %}
+                {% if 'page.shift_dashboard' in perms %}<a href="/lionshift/tasks" class="nav-link {% if request.path == '/lionshift/tasks' %}active{% endif %}"><i class="fas fa-clipboard-list"></i> Shift Tasks</a>{% endif %}
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Settings</div>
+                {% if 'page.shift_dashboard' in perms %}<a href="/lionshift/bot-settings" class="nav-link {% if request.path == '/lionshift/bot-settings' %}active{% endif %}"><i class="fas fa-cog"></i> Bot Settings</a>{% endif %}
+            </div>
+        </nav>
+        {% endif %}
+
+        <!-- Arena Staff Navigation -->
+        {% if has_perm('section.arena') %}
+        <nav class="sidebar-nav bot-nav" id="nav-arena">
+            <div class="nav-section">
+                <div class="nav-section-title">Kiosk</div>
+                {% if 'page.arena_live' in perms %}<a href="/arena/live" class="nav-link {% if request.path in ['/arena', '/arena/', '/arena/live'] %}active{% endif %}"><i class="fas fa-signal"></i> Live Feed</a>{% endif %}
+                {% if 'page.arena_live' in perms %}<a href="/arena/sessions" class="nav-link {% if request.path == '/arena/sessions' %}active{% endif %}"><i class="fas fa-desktop"></i> Sessions</a>{% endif %}
+                {% if 'page.arena_logs' in perms %}<a href="/arena/logs" class="nav-link {% if request.path == '/arena/logs' %}active{% endif %}"><i class="fas fa-scroll"></i> Sign-in Logs</a>{% endif %}
+                {% if 'page.arena_logs' in perms %}<a href="/arena/activity" class="nav-link {% if request.path == '/arena/activity' %}active{% endif %}"><i class="fas fa-chart-line"></i> Activity</a>{% endif %}
+                {% if 'page.arena_controls' in perms %}<a href="/arena/controls" class="nav-link {% if request.path == '/arena/controls' %}active{% endif %}"><i class="fas fa-sliders-h"></i> Kiosk Manager</a>{% endif %}
+            </div>
+            {% if 'page.arena_students' in perms or 'page.arena_reports' in perms %}
+            <div class="nav-section">
+                <div class="nav-section-title">People</div>
+                {% if 'page.arena_students' in perms %}<a href="/arena/students" class="nav-link {% if request.path == '/arena/students' %}active{% endif %}"><i class="fas fa-user-group"></i> Students</a>{% endif %}
+                {% if 'page.arena_reports' in perms %}<a href="/arena/reports" class="nav-link {% if request.path == '/arena/reports' %}active{% endif %}"><i class="fas fa-file-shield"></i> Incident Reports <span class="nav-badge" id="nav-reports-cnt" style="display:none;">0</span></a>{% endif %}
+            </div>
+            {% endif %}
+            {% if 'page.arena_inventory' in perms %}
+            <div class="nav-section">
+                <div class="nav-section-title">Inventory</div>
+                <a href="/arena/inventory" class="nav-link {% if request.path == '/arena/inventory' %}active{% endif %}"><i class="fas fa-box-open"></i> Equipment <span class="nav-badge" id="nav-equipment-cnt" style="display:none;">0</span></a>
+            </div>
+            {% endif %}
+            <div class="nav-section">
+                <div class="nav-section-title">Launch</div>
+                <a href="/arena/kiosk" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-tablet-alt"></i> Choose Kiosk</a>
+                <a href="/arena/kiosk/1" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-desktop"></i> Kiosk 1</a>
+                <a href="/arena/kiosk/2" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-desktop"></i> Kiosk 2</a>
+                {% if session.get('dashboard_user', {}).get('is_admin') or session.get('legacy_login') %}
+                <a href="/arena/kiosk/demo" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-flask"></i> Demo Kiosk <span class="nav-badge" style="background:rgba(207,185,145,.2);color:#e6d3a3;">ADMIN</span></a>
+                {% endif %}
+            </div>
+        </nav>
+        {% endif %}
+
         <!-- Admin Panel Navigation -->
         {% if has_perm('admin.panel') %}
-        <nav class="sidebar-nav bot-nav" id="nav-admin" style="display: none;">
+        <nav class="sidebar-nav bot-nav" id="nav-admin">
             <div class="nav-section">
                 <div class="nav-section-title">Administration</div>
                 <a href="/admin" class="nav-link {% if request.path == '/admin' %}active{% endif %}">
@@ -4138,39 +4772,14 @@
         {% endif %}
 
         <div class="sidebar-footer">
-            <div class="user-info">
-                {% if session.get('discord_user') %}
-                <div class="user-avatar" style="background: none;">
-                    <img src="{{ session.get('discord_user', {}).get('avatar_url', '') }}" 
-                         alt="Avatar" 
-                         style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;"
-                         onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-user\'></i>';">
+            <div class="nova-brand">
+                <div class="nova-brand-icon">
+                    <img src="{{ url_for('static', filename='images/LionByteGGLogo.png') }}" alt="Nova">
                 </div>
-                <div class="user-details">
-                    <h4>{{ session.get('discord_user', {}).get('global_name') or session.get('discord_user', {}).get('username', 'User') }}</h4>
-                    <span class="permission-badge" style="font-size: 10px; background: var(--primary); padding: 2px 6px; border-radius: 4px;">
-                        {{ session.get('discord_user', {}).get('permission_name', 'Member') }}
-                    </span>
+                <div class="nova-brand-text">
+                    <h4>Nova</h4>
+                    <span>v26.9.22</span>
                 </div>
-                {% elif session.get('dashboard_user') %}
-                <div class="user-avatar">
-                    <i class="fas fa-user-shield" style="{% if session.get('dashboard_user', {}).get('is_admin') %}color: #ef4444;{% endif %}"></i>
-                </div>
-                <div class="user-details">
-                    <h4>{{ session.get('dashboard_user', {}).get('display_name') or session.get('dashboard_user', {}).get('username', 'User') }}</h4>
-                    <span class="permission-badge" style="font-size: 10px; background: {% if session.get('dashboard_user', {}).get('is_admin') %}#ef4444{% else %}var(--primary){% endif %}; padding: 2px 6px; border-radius: 4px;">
-                        {% if session.get('dashboard_user', {}).get('is_admin') %}Admin{% else %}{{ session.get('dashboard_user', {}).get('group_name', 'User') }}{% endif %}
-                    </span>
-                </div>
-                {% else %}
-                <div class="user-avatar">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="user-details">
-                    <h4>{{ session.get('user_name', 'User') }}</h4>
-                    <span>Session</span>
-                </div>
-                {% endif %}
             </div>
         </div>
     </aside>
@@ -4307,7 +4916,9 @@
                             {% elif session.get('dashboard_user') %}
                             <div class="profile-dropdown-name">{{ session.get('dashboard_user', {}).get('display_name') or session.get('dashboard_user', {}).get('username', 'User') }}</div>
                             <span class="profile-dropdown-role {% if session.get('dashboard_user', {}).get('is_admin') %}admin-role{% endif %}">
-                                {% if session.get('dashboard_user', {}).get('is_admin') %}Admin{% else %}{{ session.get('dashboard_user', {}).get('group_name', 'User') }}{% endif %}
+                                {% if session.get('dashboard_user', {}).get('is_admin') %}Admin
+                                {%- else %}{{ session.get('dashboard_user', {}).get('group_name', 'User') }}
+                                {%- endif %}
                             </span>
                             {% else %}
                             <div class="profile-dropdown-name">{{ session.get('user_name', 'User') }}</div>
@@ -4371,7 +4982,7 @@
                     <label class="form-label">Note Type</label>
                     <select class="form-select" id="note-type">
                         <option value="Note">General Note</option>
-                        <option value="Warning">Warning</option>
+                        <option value="Violation">Violation</option>
                         <option value="Info">Info</option>
                     </select>
                 </div>
@@ -4481,6 +5092,7 @@
         const botSwitcherItems = document.querySelectorAll('.bot-switcher-item');
         const sidebarBotName = document.getElementById('sidebar-bot-name');
         const sidebarLogoImg = document.getElementById('sidebar-logo-img');
+        const IS_CAPTAIN = {{ is_captain|tojson }};
 
         // Initialize bot on page load
         function initializeBot() {
@@ -4488,12 +5100,16 @@
             const path = window.location.pathname;
             if (path.startsWith('/admin')) {
                 currentBot = 'admin';
-            } else if (path.startsWith('/onduty/')) {
+            } else if (path.startsWith('/onduty')) {
                 currentBot = 'onduty';
-            } else if (path.startsWith('/music/')) {
+            } else if (path.startsWith('/music')) {
                 currentBot = 'lionbeats';
-            } else if (path.startsWith('/boilercraft/')) {
+            } else if (path.startsWith('/boilercraft')) {
                 currentBot = 'boilercraft';
+            } else if (path.startsWith('/lionshift')) {
+                currentBot = 'lionshift';
+            } else if (path.startsWith('/arena')) {
+                currentBot = 'arena';
             } else if (path.startsWith('/dashboard') || path.startsWith('/members') || 
                        path.startsWith('/users') || path.startsWith('/varsity') || 
                        path.startsWith('/rosters') || path.startsWith('/moderation') ||
@@ -4528,15 +5144,20 @@
             });
             
             // Update body class for theming
-            document.body.classList.remove('bot-lionbyte', 'bot-onduty', 'bot-lionbeats', 'bot-boilercraft', 'bot-admin');
+            document.body.classList.remove('bot-lionbyte', 'bot-onduty', 'bot-lionbeats', 'bot-boilercraft', 'bot-lionshift', 'bot-arena', 'bot-admin');
             document.body.classList.add(`bot-${botId}`);
             
-            // Update sidebar header
+            // Update html class for CSS nav visibility rules
+            document.documentElement.classList.remove('bot-lionbyte', 'bot-onduty', 'bot-lionbeats', 'bot-boilercraft', 'bot-lionshift', 'bot-arena', 'bot-admin');
+            document.documentElement.classList.add(`bot-${botId}`);
+            
+            // Update sidebar header (skipped for captains to keep the Nova branding)
+            if (!IS_CAPTAIN) {
             if (botId === 'admin') {
                 sidebarBotName.textContent = 'Admin Panel';
                 document.querySelector('.sidebar-logo-icon').innerHTML = `<i class="fas fa-shield-alt" style="font-size: 24px; color: #ef4444;"></i>`;
             } else if (botId === 'onduty') {
-                sidebarBotName.textContent = 'Worker On Duty';
+                sidebarBotName.textContent = 'Inventory Manager';
                 document.querySelector('.sidebar-logo-icon').innerHTML = `<i class="fas fa-clipboard-check" style="font-size: 24px; color: #f59e0b;"></i>`;
             } else if (botId === 'lionbeats') {
                 sidebarBotName.textContent = 'LionBeatsGG';
@@ -4544,9 +5165,16 @@
             } else if (botId === 'boilercraft') {
                 sidebarBotName.textContent = 'BoilerCraftGG';
                 document.querySelector('.sidebar-logo-icon').innerHTML = `<img src="/static/images/PurdueNetworkLogo.png" alt="BoilerCraftGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">`;
+            } else if (botId === 'lionshift') {
+                sidebarBotName.textContent = 'LionShiftGG';
+                document.querySelector('.sidebar-logo-icon').innerHTML = `<img src="/static/images/LionShiftGGLogo.png" alt="LionShiftGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">`;
+            } else if (botId === 'arena') {
+                sidebarBotName.textContent = 'Arena Staff';
+                document.querySelector('.sidebar-logo-icon').innerHTML = `<i class="fas fa-user-shield" style="font-size: 24px; color: #ef4444;"></i>`;
             } else {
                 sidebarBotName.textContent = 'LionByteGG';
                 document.querySelector('.sidebar-logo-icon').innerHTML = `<img src="/static/images/LionByteGGLogo.png" alt="LionByteGG" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;">`;
+            }
             }
             
             // Switch navigation
@@ -4554,12 +5182,16 @@
             const navOnduty = document.getElementById('nav-onduty');
             const navLionbeats = document.getElementById('nav-lionbeats');
             const navBoilercraft = document.getElementById('nav-boilercraft');
+            const navLionshift = document.getElementById('nav-lionshift');
+            const navArena = document.getElementById('nav-arena');
             const navAdmin = document.getElementById('nav-admin');
             
             if (navLionbyte) navLionbyte.style.display = 'none';
             if (navOnduty) navOnduty.style.display = 'none';
             if (navLionbeats) navLionbeats.style.display = 'none';
             if (navBoilercraft) navBoilercraft.style.display = 'none';
+            if (navLionshift) navLionshift.style.display = 'none';
+            if (navArena) navArena.style.display = 'none';
             if (navAdmin) navAdmin.style.display = 'none';
             
             const targetNav = document.getElementById('nav-' + botId);
@@ -4579,6 +5211,10 @@
                     window.location.href = '/onduty/dashboard';
                 } else if (botId === 'lionbeats') {
                     window.location.href = '/music/dashboard';
+                } else if (botId === 'lionshift') {
+                    window.location.href = '/lionshift/dashboard';
+                } else if (botId === 'arena') {
+                    window.location.href = '/arena/live';
                 } else {
                     window.location.href = '/dashboard';
                 }
@@ -4626,7 +5262,56 @@
         });
 
         // Initialize on load
-        document.addEventListener('DOMContentLoaded', initializeBot);
+        document.addEventListener('DOMContentLoaded', function() {
+            try { initializeBot(); } catch (e) { console.error('initializeBot failed:', e); }
+            // Always re-enable smooth transitions, even if bot init hit an error,
+            // so the UI can never get stuck with transitions permanently disabled.
+            requestAnimationFrame(function() {
+                document.documentElement.classList.remove('no-transitions');
+            });
+        });
+        // Safety net: guarantee transitions are re-enabled once everything has loaded.
+        window.addEventListener('load', function() {
+            document.documentElement.classList.remove('no-transitions');
+        });
+
+        // ============ Arena: sidebar Incident Reports badge (open/unresolved count) ============
+        {% if 'page.arena_reports' in perms %}
+        (function() {
+            const badge = document.getElementById('nav-reports-cnt');
+            if (!badge) return;
+            async function refreshReportsBadge() {
+                try {
+                    const d = await (await fetch('/api/arena/alerts')).json();
+                    if (!d || !d.success || typeof d.open_reports !== 'number') return;
+                    badge.textContent = d.open_reports;
+                    badge.style.display = d.open_reports > 0 ? '' : 'none';
+                } catch (e) {}
+            }
+            refreshReportsBadge();
+            setInterval(() => { if (!document.hidden) refreshReportsBadge(); }, 20000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshReportsBadge(); });
+        })();
+        {% endif %}
+
+        // ============ Arena: sidebar Equipment badge (currently checked-out count) ============
+        {% if 'page.arena_inventory' in perms %}
+        (function() {
+            const badge = document.getElementById('nav-equipment-cnt');
+            if (!badge) return;
+            async function refreshEquipmentBadge() {
+                try {
+                    const d = await (await fetch('/api/equipment')).json();
+                    const out = (d && d.active_checkouts) || [];
+                    badge.textContent = out.length;
+                    badge.style.display = out.length > 0 ? '' : 'none';
+                } catch (e) {}
+            }
+            refreshEquipmentBadge();
+            setInterval(() => { if (!document.hidden) refreshEquipmentBadge(); }, 20000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshEquipmentBadge(); });
+        })();
+        {% endif %}
 
         // ============ Global Functions ============
         
@@ -4645,9 +5330,16 @@
                 }
                 
                 const response = await fetch('/api/stats');
-                const data = await response.json();
                 const dotEl = statusEl.querySelector('.status-dot');
                 const textEl = statusEl.querySelector('span');
+                
+                if (!response.ok) {
+                    // Auth error or server error - don't change status display
+                    console.warn('Bot status check returned', response.status);
+                    return;
+                }
+                
+                const data = await response.json();
                 
                 if (data.status === 'online') {
                     statusEl.classList.remove('offline');
@@ -4754,7 +5446,7 @@
                         icon = 'fa-file-alt';
                         iconClass = 'record';
                         title = `User ${result.id}`;
-                        subtitle = `${result.warnings} warnings, ${result.automod_flags || 0} automod, ${result.kicks} kicks, ${result.bans} bans`;
+                        subtitle = `${result.violations} violations, ${result.automod_flags || 0} automod, ${result.kicks} kicks, ${result.bans} bans`;
                         badge = `${result.record_count} records`;
                         badgeClass = 'badge-danger';
                         break;
@@ -4785,7 +5477,7 @@
                 }
                 
                 return `
-                    <div class="search-result-item" onclick="openUserProfile('${result.id}')">
+                    <div class="search-result-item" onclick="openUserProfile('${escapeHtml(result.id)}')">
                         <div class="search-result-icon ${iconClass}">
                             <i class="fas ${icon}"></i>
                         </div>
@@ -4793,7 +5485,7 @@
                             <div class="search-result-title">${escapeHtml(title)}</div>
                             <div class="search-result-subtitle">${escapeHtml(subtitle)}</div>
                         </div>
-                        <span class="search-result-badge ${badgeClass}">${badge}</span>
+                        <span class="search-result-badge ${badgeClass}">${escapeHtml(badge)}</span>
                     </div>
                 `;
             }).join('');
@@ -4891,7 +5583,7 @@
             const getRecordClass = (type) => {
                 const t = (type || '').toLowerCase();
                 if (t.includes('automod')) return 'automod';
-                if (t.includes('warn')) return 'warning';
+                if (t.includes('warn') || t.includes('violation')) return 'warning';
                 if (t.includes('kick')) return 'kick';
                 if (t.includes('ban')) return 'ban';
                 if (t.includes('timeout')) return 'timeout';
@@ -4903,7 +5595,7 @@
             const getRecordIcon = (type) => {
                 const t = (type || '').toLowerCase();
                 if (t.includes('automod')) return 'fa-robot';
-                if (t.includes('warn')) return 'fa-exclamation-triangle';
+                if (t.includes('warn') || t.includes('violation')) return 'fa-exclamation-triangle';
                 if (t.includes('kick')) return 'fa-boot';
                 if (t.includes('ban')) return 'fa-ban';
                 if (t.includes('timeout')) return 'fa-clock';
@@ -4971,7 +5663,7 @@
             const automodFlags = stats.automod_flags || 0;
             
             // Total infractions for header warning
-            const totalInfractions = stats.warnings + automodFlags + stats.kicks + stats.bans + stats.timeouts;
+            const totalInfractions = stats.violations + automodFlags + stats.kicks + stats.bans + stats.timeouts;
             
             // Records timeline
             let recordsHtml = '';
@@ -5078,8 +5770,8 @@
                         <h4 class="profile-section-title"><i class="fas fa-shield-alt"></i> Moderation Overview</h4>
                         <div class="user-stats-grid">
                             <div class="user-stat-box warning">
-                                <div class="value">${stats.warnings}</div>
-                                <div class="label">Warnings</div>
+                                <div class="value">${stats.violations}</div>
+                                <div class="label">Violations</div>
                             </div>
                             <div class="user-stat-box automod">
                                 <div class="value">${automodFlags}</div>
@@ -5829,8 +6521,8 @@
                                     <div style="color: #fafafa; font-size: 18px; font-weight: 600; margin-bottom: 4px;">${escapeHtml(notif.target_name)}</div>
                                     ${notif.target_id ? `
                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                        <span style="color: #52525b; font-size: 13px;">ID: ${notif.target_id}</span>
-                                        <button onclick="navigator.clipboard.writeText('${notif.target_id}'); this.innerHTML='<i class=\\'fas fa-check\\'></i> Copied!'; setTimeout(() => this.innerHTML='<i class=\\'fas fa-copy\\'></i> Copy', 2000)" style="
+                                        <span style="color: #52525b; font-size: 13px;">ID: ${escapeHtml(notif.target_id)}</span>
+                                        <button onclick="navigator.clipboard.writeText('${escapeHtml(notif.target_id)}'); this.innerHTML='<i class=\\'fas fa-check\\'></i> Copied!'; setTimeout(() => this.innerHTML='<i class=\\'fas fa-copy\\'></i> Copy', 2000)" style="
                                             background: rgba(255,255,255,0.1);
                                             border: none;
                                             color: #71717a;
@@ -6399,14 +7091,10 @@
         // Mobile menu toggle
         const menuToggle = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
-        
-        if (window.innerWidth <= 768) {
-            menuToggle.style.display = 'flex';
-        }
-
-        menuToggle?.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
+        // Visibility of #menu-toggle is controlled purely by CSS media queries
+        // (display:flex !important at <=768px). Mobile sidebar open/close is wired
+        // once via toggleMobileSidebar() below — a second toggle here would cancel
+        // it out and leave the sidebar stuck off-screen.
 
         // ============ Modal Helpers ============
         
@@ -6953,6 +7641,351 @@
             });
         }
     </script>
+
+    <script>
+        // ============ Sidebar Collapse/Expand ============
+        
+        function toggleSidebarCollapse() {
+            const body = document.body;
+            const isCollapsed = body.classList.toggle('sidebar-collapsed');
+            // Hide any lingering collapsed-nav tooltip on toggle
+            const _tip = document.querySelector('.sidebar-tooltip');
+            if (_tip) _tip.classList.remove('show');
+            
+            // On any narrow window (icon-rail range), also toggle expanded state
+            if (window.innerWidth <= 1024) {
+                if (isCollapsed) {
+                    body.classList.remove('sidebar-expanded');
+                } else {
+                    body.classList.add('sidebar-expanded');
+                }
+            }
+            
+            localStorage.setItem('sidebar-collapsed', isCollapsed ? 'true' : 'false');
+        }
+
+        // Restore sidebar state from localStorage
+        (function() {
+            const saved = localStorage.getItem('sidebar-collapsed');
+            if (saved === 'true') {
+                document.body.classList.add('sidebar-collapsed');
+            }
+        })();
+
+        // Add data-tooltip attributes to nav links for collapsed tooltips
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.nav-link').forEach(function(link) {
+                // Get the text content (excluding icon)
+                const text = link.textContent.trim();
+                if (text) {
+                    link.setAttribute('data-tooltip', text);
+                }
+                // Wrap text in span for hiding
+                const nodes = Array.from(link.childNodes);
+                nodes.forEach(function(node) {
+                    if (node.nodeType === 3 && node.textContent.trim()) {
+                        const span = document.createElement('span');
+                        span.textContent = node.textContent;
+                        link.replaceChild(span, node);
+                    }
+                });
+            });
+        });
+
+        // Collapsed-sidebar hover tooltip — fixed element so it never clips or triggers a scrollbar
+        (function() {
+            var tip = document.createElement('div');
+            tip.className = 'sidebar-tooltip';
+            document.addEventListener('DOMContentLoaded', function() { document.body.appendChild(tip); });
+            function collapsedNow() {
+                return document.body.classList.contains('sidebar-collapsed') ||
+                       (window.innerWidth <= 1024 && !document.body.classList.contains('sidebar-expanded'));
+            }
+            document.addEventListener('mouseover', function(e) {
+                if (!collapsedNow()) { tip.classList.remove('show'); return; }
+                var link = e.target.closest ? e.target.closest('.sidebar .nav-link') : null;
+                if (!link) return;
+                var label = link.getAttribute('data-tooltip') || (link.textContent || '').trim();
+                if (!label) return;
+                if (!tip.isConnected) document.body.appendChild(tip);
+                var r = link.getBoundingClientRect();
+                tip.textContent = label;
+                tip.style.top = (r.top + r.height / 2) + 'px';
+                tip.style.left = (r.right + 12) + 'px';
+                tip.classList.add('show');
+            });
+            document.addEventListener('mouseout', function(e) {
+                var link = e.target.closest ? e.target.closest('.sidebar .nav-link') : null;
+                if (link) tip.classList.remove('show');
+            });
+            window.addEventListener('scroll', function() { tip.classList.remove('show'); }, true);
+        })();
+
+        // ============ Command Palette ============
+        
+        const CommandPalette = {
+            overlay: null,
+            input: null,
+            results: null,
+            selectedIndex: -1,
+            items: [],
+            searchTimeout: null,
+
+            // All navigable pages
+            pages: [
+                { title: 'Dashboard', desc: 'Main overview', icon: 'fa-chart-line', url: '/dashboard', bot: 'lionbyte' },
+                { title: 'Analytics', desc: 'Server analytics & charts', icon: 'fa-chart-pie', url: '/analytics', bot: 'lionbyte' },
+                { title: 'Server Members', desc: 'View all server members', icon: 'fa-users', url: '/members', bot: 'lionbyte' },
+                { title: 'Guest Management', desc: 'Manage guest passes', icon: 'fa-user-clock', url: '/users', bot: 'lionbyte' },
+                { title: 'Varsity Registrations', desc: 'Team registrations', icon: 'fa-trophy', url: '/varsity', bot: 'lionbyte' },
+                { title: 'Team Manager', desc: 'Manage team rosters', icon: 'fa-users-cog', url: '/rosters', bot: 'lionbyte' },
+                { title: 'Moderation', desc: 'User records & actions', icon: 'fa-shield-alt', url: '/moderation', bot: 'lionbyte' },
+                { title: 'Activity Logs', desc: 'View bot activity logs', icon: 'fa-scroll', url: '/logs', bot: 'lionbyte' },
+                { title: 'Ticket System', desc: 'Manage support tickets', icon: 'fa-ticket-alt', url: '/tickets', bot: 'lionbyte' },
+                { title: 'Reaction Roles', desc: 'Manage reaction roles', icon: 'fa-tags', url: '/reaction-roles', bot: 'lionbyte' },
+                { title: 'VC Generators', desc: 'Voice channel generators', icon: 'fa-headset', url: '/vc-system', bot: 'lionbyte' },
+                { title: 'Bot Settings', desc: 'LionByteGG settings', icon: 'fa-cog', url: '/settings', bot: 'lionbyte' },
+                { title: 'Arena Inventory', desc: 'Manage arena equipment', icon: 'fa-box-open', url: '/arena/inventory', bot: 'arena' },
+                { title: 'Music Dashboard', desc: 'LionBeatsGG overview', icon: 'fa-tachometer-alt', url: '/music/dashboard', bot: 'lionbeats' },
+                { title: 'Music Features', desc: 'All music features', icon: 'fa-star', url: '/music/features', bot: 'lionbeats' },
+                { title: 'BoilerCraft Dashboard', desc: 'Minecraft bot overview', icon: 'fa-cube', url: '/boilercraft/dashboard', bot: 'boilercraft' },
+                { title: 'BoilerCraft FAQ', desc: 'FAQ management', icon: 'fa-question-circle', url: '/boilercraft/faq', bot: 'boilercraft' },
+                { title: 'BoilerCraft Members', desc: 'Server members', icon: 'fa-users', url: '/boilercraft/members', bot: 'boilercraft' },
+                { title: 'Verified Players', desc: 'Verified Minecraft players', icon: 'fa-user-check', url: '/boilercraft/verified-players', bot: 'boilercraft' },
+                { title: 'BoilerCraft Analytics', desc: 'Server analytics', icon: 'fa-chart-line', url: '/boilercraft/analytics', bot: 'boilercraft' },
+                { title: 'BoilerWatch', desc: 'Minecraft moderation', icon: 'fa-shield-halved', url: '/boilercraft/boilerwatch', bot: 'boilercraft' },
+                { title: 'Shift Dashboard', desc: 'LionShiftGG overview', icon: 'fa-tachometer-alt', url: '/lionshift/dashboard', bot: 'lionshift' },
+                { title: 'Schedules', desc: 'View shift schedules', icon: 'fa-calendar-alt', url: '/lionshift/schedules', bot: 'lionshift' },
+                { title: 'Schedule Creator', desc: 'Build and publish shift schedules', icon: 'fa-calendar-plus', url: '/lionshift/schedule-creator', bot: 'lionshift' },
+                { title: 'Workers', desc: 'Worker management', icon: 'fa-users', url: '/lionshift/workers', bot: 'lionshift' },
+                { title: 'Shift Offers', desc: 'Available shift offers', icon: 'fa-hand-paper', url: '/lionshift/offers', bot: 'lionshift' },
+                { title: 'Trade Requests', desc: 'Shift trade requests', icon: 'fa-exchange-alt', url: '/lionshift/trades', bot: 'lionshift' },
+                { title: 'Time Off', desc: 'Time off requests', icon: 'fa-umbrella-beach', url: '/lionshift/timeoff', bot: 'lionshift' },
+                { title: 'Shift Logs', desc: 'Shift activity logs', icon: 'fa-scroll', url: '/lionshift/logs', bot: 'lionshift' },
+                { title: 'Admin Panel', desc: 'Users & permissions', icon: 'fa-shield-alt', url: '/admin', bot: 'admin' }
+            ],
+
+            actions: [
+                { title: 'Refresh Page', desc: 'Reload current data', icon: 'fa-sync-alt', action: () => location.reload() },
+                { title: 'Toggle Sidebar', desc: 'Collapse or expand sidebar', icon: 'fa-columns', action: () => toggleSidebarCollapse() },
+                { title: 'System Diagnostics', desc: 'Run system health check', icon: 'fa-stethoscope', action: () => { if (window.diagnostics) window.diagnostics.openDiagnostics(); } },
+                { title: 'Log Out', desc: 'Sign out of dashboard', icon: 'fa-sign-out-alt', action: () => { window.location.href = '/logout'; } }
+            ],
+
+            init() {
+                this.overlay = document.getElementById('command-palette-overlay');
+                this.input = document.getElementById('command-palette-input');
+                this.results = document.getElementById('command-palette-results');
+
+                if (!this.overlay) return;
+
+                // Keyboard shortcut - Override the old Ctrl+K
+                document.addEventListener('keydown', (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.open();
+                    }
+                }, true);
+
+                // Close on overlay click
+                this.overlay.addEventListener('click', (e) => {
+                    if (e.target === this.overlay) this.close();
+                });
+
+                // Input handler
+                this.input.addEventListener('input', () => {
+                    this.selectedIndex = -1;
+                    this.search(this.input.value);
+                });
+
+                // Keyboard navigation
+                this.input.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this.selectNext();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.selectPrev();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.executeSelected();
+                    } else if (e.key === 'Escape') {
+                        this.close();
+                    }
+                });
+            },
+
+            open() {
+                this.overlay.classList.add('active');
+                this.input.value = '';
+                this.selectedIndex = -1;
+                this.search('');
+                setTimeout(() => this.input.focus(), 50);
+            },
+
+            close() {
+                this.overlay.classList.remove('active');
+                this.input.value = '';
+            },
+
+            search(query) {
+                const q = query.toLowerCase().trim();
+                this.items = [];
+                let html = '';
+
+                // Filter pages
+                const matchedPages = this.pages.filter(p => 
+                    p.title.toLowerCase().includes(q) || 
+                    p.desc.toLowerCase().includes(q) ||
+                    p.bot.toLowerCase().includes(q)
+                );
+
+                // Filter actions
+                const matchedActions = this.actions.filter(a => 
+                    a.title.toLowerCase().includes(q) || 
+                    a.desc.toLowerCase().includes(q)
+                );
+
+                if (matchedPages.length > 0) {
+                    html += '<div class="command-palette-section">Pages</div>';
+                    matchedPages.forEach((page, i) => {
+                        this.items.push({ type: 'page', data: page });
+                        const botLabel = page.bot.charAt(0).toUpperCase() + page.bot.slice(1);
+                        html += `
+                            <div class="command-palette-item" data-index="${this.items.length - 1}" onclick="CommandPalette.executeItem(${this.items.length - 1})">
+                                <div class="command-palette-item-icon page"><i class="fas ${page.icon}"></i></div>
+                                <div class="command-palette-item-info">
+                                    <div class="command-palette-item-title">${this.highlight(page.title, q)}</div>
+                                    <div class="command-palette-item-desc">${page.desc}</div>
+                                </div>
+                                <div class="command-palette-item-badge">${botLabel}</div>
+                            </div>`;
+                    });
+                }
+
+                if (matchedActions.length > 0) {
+                    html += '<div class="command-palette-section">Actions</div>';
+                    matchedActions.forEach((action, i) => {
+                        this.items.push({ type: 'action', data: action });
+                        html += `
+                            <div class="command-palette-item" data-index="${this.items.length - 1}" onclick="CommandPalette.executeItem(${this.items.length - 1})">
+                                <div class="command-palette-item-icon action"><i class="fas ${action.icon}"></i></div>
+                                <div class="command-palette-item-info">
+                                    <div class="command-palette-item-title">${this.highlight(action.title, q)}</div>
+                                    <div class="command-palette-item-desc">${action.desc}</div>
+                                </div>
+                            </div>`;
+                    });
+                }
+
+                // If there's a query and it looks like a user search, add user search option
+                if (q.length >= 2) {
+                    this.items.push({ type: 'search', data: { query: q } });
+                    html += '<div class="command-palette-section">Search</div>';
+                    html += `
+                        <div class="command-palette-item" data-index="${this.items.length - 1}" onclick="CommandPalette.executeItem(${this.items.length - 1})">
+                            <div class="command-palette-item-icon user"><i class="fas fa-search"></i></div>
+                            <div class="command-palette-item-info">
+                                <div class="command-palette-item-title">Search users for "${Utils.escapeHtml(q)}"</div>
+                                <div class="command-palette-item-desc">Find members, guests, or records</div>
+                            </div>
+                        </div>`;
+                }
+
+                if (this.items.length === 0) {
+                    html = `
+                        <div class="command-palette-empty">
+                            <i class="fas fa-search"></i>
+                            <p>No results found</p>
+                        </div>`;
+                }
+
+                this.results.innerHTML = html;
+            },
+
+            highlight(text, query) {
+                if (!query) return text;
+                const regex = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                return text.replace(regex, '<strong style="color: var(--primary-light);">$1</strong>');
+            },
+
+            selectNext() {
+                if (this.items.length === 0) return;
+                this.selectedIndex = (this.selectedIndex + 1) % this.items.length;
+                this.updateSelection();
+            },
+
+            selectPrev() {
+                if (this.items.length === 0) return;
+                this.selectedIndex = this.selectedIndex <= 0 ? this.items.length - 1 : this.selectedIndex - 1;
+                this.updateSelection();
+            },
+
+            updateSelection() {
+                this.results.querySelectorAll('.command-palette-item').forEach((el, i) => {
+                    el.classList.toggle('selected', parseInt(el.dataset.index) === this.selectedIndex);
+                });
+                // Scroll into view
+                const selected = this.results.querySelector('.command-palette-item.selected');
+                if (selected) selected.scrollIntoView({ block: 'nearest' });
+            },
+
+            executeSelected() {
+                if (this.selectedIndex >= 0 && this.selectedIndex < this.items.length) {
+                    this.executeItem(this.selectedIndex);
+                }
+            },
+
+            executeItem(index) {
+                const item = this.items[index];
+                if (!item) return;
+
+                this.close();
+
+                if (item.type === 'page') {
+                    window.location.href = item.data.url;
+                } else if (item.type === 'action') {
+                    item.data.action();
+                } else if (item.type === 'search') {
+                    // Focus the global search and populate query
+                    const globalInput = document.getElementById('global-search-input');
+                    if (globalInput) {
+                        globalInput.value = item.data.query;
+                        globalInput.focus();
+                        globalInput.dispatchEvent(new Event('input'));
+                    }
+                }
+            }
+        };
+
+        // Initialize command palette
+        document.addEventListener('DOMContentLoaded', function() {
+            CommandPalette.init();
+        });
+
+        // Make it globally accessible
+        window.CommandPalette = CommandPalette;
+    </script>
+
+    <!-- Command Palette -->
+    <div class="command-palette-overlay" id="command-palette-overlay">
+        <div class="command-palette">
+            <div class="command-palette-input-wrap">
+                <i class="fas fa-search"></i>
+                <input type="text" class="command-palette-input" id="command-palette-input" placeholder="Search pages, actions, or users..." autocomplete="off">
+                <div class="command-palette-hint"><kbd>Esc</kbd></div>
+            </div>
+            <div class="command-palette-results" id="command-palette-results">
+                <!-- Results populated by JS -->
+            </div>
+            <div class="command-palette-footer">
+                <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> Navigate</span>
+                <span><kbd>Enter</kbd> Open</span>
+                <span><kbd>Esc</kbd> Close</span>
+            </div>
+        </div>
+    </div>
 
     {% block scripts %}{% endblock %}
 </body>

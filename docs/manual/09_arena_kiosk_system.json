@@ -1,0 +1,166 @@
+{
+  "chapter": 9,
+  "title": "Arena Kiosk System — Nova Backend (Sign-in, PC Booking, Locks, Analytics)",
+  "path": "LionByteGG\\web\\app.py (arena section) + templates\\arena*.html",
+  "overview": "The most complex subsystem in Nova. Powers two physical arena rooms: a PC/Island room (kiosk-1) and a console room (kiosk-2), plus the staff-facing 'Arena Staff' dashboard (arena.html). Combines live GGLeap PC status, guest sign-in, PC reservation/locking automation, anti-spam guarding, student profiles/incident reports, and rich analytics.",
+  "servers_and_startup": {
+    "run_command": "cd LionByteGG\\web; $env:FLASK_ENV='production'; python run.py --production  (waitress, port 5000)",
+    "single_instance_guard": "run.py calls _ensure_single_instance(port) which auto-kills any other run.py process on the same port before starting — prevents the #1 cause of login/session bugs (two servers fighting over port 5000)",
+    "no_hot_reload": "Production does NOT auto-reload templates or app.py — the server MUST be restarted after every code/template edit",
+    "restart_pattern": "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ? {$_.CommandLine -like '*run.py*'} | % {taskkill /F /PID $_.ProcessId}; then relaunch python run.py --production"
+  },
+  "kiosk_templates_and_routes": {
+    "kiosk_picker": {"route": "/arena/kiosk", "auth": "public", "template": "arena_kiosk.html", "does": "Grid of available kiosks; hides admin-only kiosks from non-admins"},
+    "kiosk_device_page": {"route": "/arena/kiosk/<kid>", "auth": "public (admin-only kiosks check _is_full_access_user() and redirect to /login if needed)", "does": "kid normalization via _arena_normalize_kid ('1'->'kiosk-1'); renders arena_kiosk1.html if kiosk type=='pc' else arena_kiosk2.html; 404 for unknown kiosk id"},
+    "arena_kiosk1.html": "PC/Island room kiosk — full attract/booking/lock flow (see below)",
+    "arena_kiosk2.html": "Console room kiosk — simpler visiting/play flow, no PC picker",
+    "arena_kiosk.html": "Kiosk selection picker page",
+    "staff_dashboard": {"route": "/arena, /arena/live, /arena/logs, /arena/sessions, /arena/controls, /arena/activity, /arena/students, /arena/reports, /arena/kiosk", "template": "arena.html", "type": "client-rendered SPA-ish page with tabs, JS wrapped in an IIFE, handlers exposed via Object.assign(window,...)"}
+  },
+  "multi_kiosk_architecture": {
+    "note": "Kiosks are NOT hardcoded to just 2 — the system supports N kiosks, each with a type",
+    "kiosk_type": "'pc' (GGLeap PC station picker, uses arena_kiosk1.html) or 'console' (simple visiting/play, uses arena_kiosk2.html)",
+    "defaults": "DEFAULT_ARENA_KIOSKS: kiosk-1 (type pc), kiosk-2 (type console)",
+    "admin_add_remove": [
+      {"path": "/api/arena/kiosks", "method": "POST", "auth": "arena.manage", "body": "{room, label, type}", "does": "Creates a new kiosk id kiosk-N (max existing id + 1)"},
+      {"path": "/api/arena/kiosks/<kid>", "method": "DELETE", "auth": "arena.manage", "does": "Blocks deleting the last remaining kiosk"}
+    ],
+    "nova_ui": "arena.html Kiosk Manager 'Add Kiosk' modal (room/label/type), per-kiosk editor row with Open/Type-dropdown/Delete"
+  },
+  "kiosk_boot_sequence": {
+    "steps_current": ["conn (checks /api/arena/kiosk/<id>/config?boot=1, retries on failure)", "config (loaded, applies label/room)", "input (ready)", "lock (engageTrap, armed)"],
+    "note": "The 'guard' (Guided Access) step was REMOVED after Purdue switched from iPads to laptops (2026-08-22) — laptops rely on the trap (fullscreen + beforeunload) instead of iOS Guided Access",
+    "engageTrap": "Sets window._kioskTrapped=true, disables page-unload navigation, shows a bottom trap-pill (admin mode only), requests wakeLock + fullscreen",
+    "releaseTrap": "Only reachable via Admin Panel 'Release Kiosk' button (passcode-gated, default 1234), shows a green 'released' overlay, allows reload",
+    "reload_skip": "sessionStorage['kioskSessionArmed']='1' set at boot completion — on a same-session reload the kiosk silently re-arms without replaying the full boot animation (resumeAfterReload())"
+  },
+  "pc_availability_and_ggleap": {
+    "source": "GGLeap API (https://api.ggleap.com/beta), machines/get-all",
+    "shared_raw_cache": "_ggleap_get_machines(max_age, force) — ONE cache used by every consumer (status endpoint, lock-loop, lock-status endpoint) to avoid hammering GGLeap's ~10,000 calls/day limit. This was a critical fix after a 429 outage in Aug 2026 caused by TWO independent polling loops.",
+    "adaptive_ttl": "15s while arena is open, 120s while closed (~2,800 calls/day baseline)",
+    "stale_on_error": "Serves the last-good cached machine list on 429/timeout so kiosks never flash '0 machines'",
+    "usage_meter": {"endpoint": "/api/arena/ggleap-usage", "auth": "arena.manage", "tracks": "per-UTC-day call counter by kind (auth/get-all/set-lock/games), persisted to data/ggleap_usage.json, limit 10000/day, shown as a progress bar in Nova Kiosk Manager"},
+    "pause_switch": {"config_key": "ggleap_paused", "effect": "When true, ALL GGLeap calls short-circuit (zero API usage) — read live from config, no restart needed"},
+    "public_endpoint": {
+      "path": "/api/arena/pcs", "auth": "public",
+      "returns": "{available, in_use, offline, total, pcs:[{uuid,name,status,area,state,user_uuid,has_guest,locked}], stage:[...varsity-only, excluded from guest picker...], error, last_updated}",
+      "status_mapping": {"available": "ReadyForUser/IdleShuttingDown", "in_use": "UserLoggedIn/UserLoggingIn/AdminMode/Restarting/StartingUp/ShuttingDown", "offline": "Off"},
+      "stage_exclusion": "Regex-matched 'Stage' machines are excluded entirely from pcs/counts (varsity-only, never shown to guests)"
+    }
+  },
+  "pc_reservation_hold_system": {
+    "model": "Kiosk-side in-memory hold only (NOT a GGLeap booking) — availability is driven by GGLeap login state (UserLoggedIn=occupied), so play time is UNLIMITED and frees automatically on logout",
+    "config_key": "pc_hold_minutes (default 10, clamp 1-120)",
+    "endpoint": {"path": "/api/arena/kiosk/book", "method": "POST", "auth": "public", "body": "{kioskId, machineUuid, name/first/last, email}", "does": "Re-validates machine still available, checks email domain + sign-in guard, sets a hold, records a signin (reason='PC Session — <machine>'), unlocks the PC if pc_lock_enabled"},
+    "history_note": "A real GGLeap booking (15-min-aligned Otp code) flow was built, tested, then fully removed in favor of this simpler kiosk-side hold + screen-lock automation because GGLeap bookings couldn't lock instantly (15-min slot alignment) and had no clean unlock-after-cancel path."
+  },
+  "pc_screen_lock_automation": {
+    "endpoint_used": "POST https://api.ggleap.com/beta/machines/set-screen-lock {LockScreen, Message, MachineUuid}",
+    "config_key": "pc_lock_enabled (default false) — toggle in Nova 'PC Screen Locks' card",
+    "message_shown_when_locked": "'Must be checked in on Kiosk to use system'",
+    "background_loop": "_reconcile_pc_locks(), runs every 12s in a dedicated thread",
+    "logic_summary": "Locks every idle+unlocked Island PC on power-on/idle. NEVER re-locks a PC a HUMAN (worker or Nova 'Unlock all') manually unlocked, until that PC reboots. A kiosk check-in unlock is tracked separately and DOES re-lock automatically if the guest never logs in (no-show) once the hold expires.",
+    "state_sets": ["_pc_we_locked (uuids we locked this power session)", "_pc_human_unlocked (worker/Nova unlocked — leave alone until reboot)", "_pc_kiosk_unlocked (guest checked in — re-lock only if hold lapses with no login)"],
+    "rate_limiting": "_ggleap_throttle_write() serializes all set-screen-lock calls 4.5s apart to avoid GGLeap's write rate limit (a full 24-PC room lock takes ~1.5-2 minutes)",
+    "known_platform_limitation": "GGLeap has NO clean 'unlock after applied lock' API for a normal (non-admin-desktop) session — Admin Mode unlock exposes an admin desktop (security risk, avoided). A worker manually unlocking via the GGLeap dashboard is the only clean path once a lock has been applied and needs releasing outside the automation's own logic.",
+    "nova_controls": {
+      "endpoints": [
+        {"path": "/api/arena/pcs/lock-status", "auth": "arena.manage", "returns": "{locked,lockable,in_use,offline,total,enabled}"},
+        {"path": "/api/arena/pcs/lock-all", "method": "POST", "auth": "arena.manage"},
+        {"path": "/api/arena/pcs/unlock-all", "method": "POST", "auth": "arena.manage"}
+      ],
+      "ui": "arena.html 'PC Screen Locks' card: toggle, live status pills, 'Lock idle PCs now' / 'Unlock all PCs' buttons, hold-minutes field"
+    }
+  },
+  "sign_in_protection_anti_spam": {
+    "config_key": "signin_guard {enabled, cooldown_minutes, max_per_day, max_active_pc, ban_message}",
+    "watchlist_key": "watchlist [{email, mode: ban|watch, reason, added_by, added_at}] — NOW STORED IN arena.db (Fernet-encrypted), NOT in JSON, since 2026-08-10 PII hardening pass",
+    "always_applied": "ban/watch checks run regardless of the numeric guards being enabled",
+    "numeric_guards_default_safe": "cooldown_minutes=0 (off), max_per_day=0 (off), max_active_pc=1 (on) — an earlier default of cooldown 15/maxday 8 accidentally BLOCKED legitimate re-entries and had to be reset",
+    "endpoints": [
+      {"path": "/api/arena/watchlist/add", "method": "POST", "auth": "arena.ban"},
+      {"path": "/api/arena/watchlist/remove", "method": "POST", "auth": "arena.ban"},
+      {"path": "/api/arena/signin-flags", "method": "GET", "auth": "arena.manage", "returns": "recent flags (used for live toasts + sound alerts on the Live Feed)"},
+      {"path": "/api/arena/signin-flags/clear", "method": "POST", "auth": "arena.manage"}
+    ],
+    "flags_storage": "signin_flags table in arena.db (encrypted PII), capped 200 rows",
+    "live_feed_alerts": "arena.html shows a persistent, dismissible flag banner + plays a distinct layered Web-Audio tone (3-note bell for ban, 2-note rising for watch) on new high/med severity flags"
+  },
+  "sign_in_data_model": {
+    "storage": "SQLite arena.db (data/arena.db) via web/arena_db.py — NOT a JSON file. Migrated off arena_signins.json in Aug 2026.",
+    "encryption": "PII fields (name, first/last, email) Fernet-encrypted at rest using the SAME key as roster PII (data/.roster_encrypt_key). Non-PII fields (kiosk, room, reason, checked_in_by, times, flags) stored plaintext for indexing.",
+    "key_functions": ["init_arena_db(legacy_json)", "add_signin(rec)", "get_all()", "replace_all(records)", "prune(days=30)", "clear_all()", "count()"],
+    "duplicate_checkins_allowed": "Both kiosk and manual sign-in ALWAYS create a fresh record (no de-dup) — a person can check in multiple times per day and each shows as its own Live Feed card",
+    "manual_checkin": {"endpoint": "/api/arena/manual-signin", "auth": "page.arena_live", "captures": "reason (<=200 chars) + checked_in_by (staff display name), bypasses hours/domain restrictions"},
+    "public_kiosk_checkin": {"endpoint": "/api/arena/signin", "auth": "public"},
+    "retention": "Live feed = today only (resets at local midnight, or when 'Clear Live Feed' is used — cfg.live_cleared_at); 30-day full history retention"
+  },
+  "per_day_hours_and_announcements": {
+    "day_hours_key": "day_hours = 7 objects (JS weekday 0=Sun..6=Sat) {open:bool, start:'HH:MM', end:'HH:MM'} — replaces legacy single open_hour/close_hour",
+    "helpers": ["_arena_build_day_hours", "_arena_today_entry", "_arena_is_open_now", "_arena_hours_label", "_arena_closed_message", "_arena_hours_summary (grouped weekly string e.g. 'Mon–Fri 9:00 AM – 5:00 PM · Sat–Sun Closed')", "_arena_schedule(cfg) (7-day list for the closed-screen schedule panel)"],
+    "announcement_bar": {"config_key": "announcement {enabled, text(<=200), color(#hex), scroll}", "kiosk_element": "#annBar / #annText, marquee or static, pushes topbar down when shown"}
+  },
+  "activity_analytics": {
+    "route": "/arena/activity", "perm": "page.arena_logs",
+    "endpoint": {"path": "/api/arena/analytics", "returns": "totals(total,unique,avg_per_day,busiest_day,peak_hour,peak_slot,busiest_weekday,accept_rate), by_day/by_hour/by_weekday/by_kiosk, heatmap(7x24)+heatmap_max, top_visitors(8), trend(vs prior period), new_returning"},
+    "export": {"path": "/api/arena/analytics/export", "format": "openpyxl XLSX, 6 sheets: Overview, Daily, Hourly, Entries, Visitors, Heatmap (day×hour ColorScaleRule)"},
+    "ui": "Chart.js charts (daily line, hourly bar, weekday bar, new-vs-returning doughnut, kiosk doughnut) + CSS traffic heatmap grid + top-visitors leaderboard"
+  },
+  "student_profiles_notes_incidents": {
+    "added": "2026-08-10",
+    "data_layer_arena_db": {
+      "student_notes": "id, email_hash, email_enc, name_enc, note_enc, note_type(general|behavior|warning|positive), author, created_at",
+      "incident_reports": "id, title, type, severity, status, involved_hash, involved_name_enc, involved_email_enc, description_enc, author, created_at, resolved_at, resolved_by",
+      "helpers": ["get_visits(email)", "list_students(query) — single-query aggregate, no N+1"]
+    },
+    "endpoints": [
+      {"path": "/api/arena/students", "method": "GET", "auth": "page.arena_students", "returns": "students list + watch/ban status"},
+      {"path": "/api/arena/student", "method": "GET", "query": "email", "returns": "full profile: visits, notes, incidents, flags, status"},
+      {"path": "/api/arena/student/note", "method": "POST", "auth": "arena.notes"},
+      {"path": "/api/arena/student/note/<id>", "method": "DELETE", "auth": "arena.notes"},
+      {"path": "/api/arena/student", "method": "DELETE", "auth": "arena.students_manage", "does": "Deletes ALL signins + notes for that email"},
+      {"path": "/api/arena/student/edit", "method": "POST"},
+      {"path": "/api/arena/student/reset", "method": "POST"},
+      {"path": "/api/arena/incidents", "methods": "GET,POST", "auth_get": "page.arena_reports (own only unless arena.reports_all)", "auth_post": "arena.reports"},
+      {"path": "/api/arena/incidents/<id>/resolve", "method": "POST", "auth": "arena.reports (owner or arena.reports_all)"},
+      {"path": "/api/arena/incidents/<id>", "method": "DELETE", "auth": "arena.reports (owner or arena.reports_all)"}
+    ],
+    "visibility_rule": "Incidents are filtered to author == current staff name UNLESS the user has arena.reports_all",
+    "ui": "arena.html People section: Students tab (search + row list -> profile modal with visits/notes/incidents/ban toggle) + Incident Reports tab"
+  },
+  "permissions_list": [
+    "section.arena", "page.arena_live", "page.arena_sessions", "page.arena_logs", "page.arena_controls",
+    "arena.manage", "arena.unlock", "page.arena_inventory", "equipment.use", "equipment.manage",
+    "page.arena_students", "arena.notes", "arena.ban", "arena.students_manage",
+    "page.arena_reports", "arena.reports_all", "arena.reports"
+  ],
+  "permission_notes": {
+    "page.arena_live_vs_sessions": "page.arena_live used to gate BOTH the Live Feed AND the Sessions (PC room map) tab until they were split into a dedicated page.arena_sessions permission",
+    "arena.manage": "Gates all actual PC control actions (lock/unlock/checkin/cancel/restart/shutdown)",
+    "inventory_note": "The standalone 'Worker On Duty' app was retired 2026-08-08 — its inventory UI now lives under Arena Staff at /arena/inventory (page.arena_inventory)"
+  },
+  "sessions_room_map": {
+    "route": "/arena/sessions", "perm": "page.arena_sessions",
+    "endpoints": [
+      {"path": "/api/arena/sessions", "method": "GET"},
+      {"path": "/api/arena/sessions/<uid>/cancel", "method": "POST"},
+      {"path": "/api/arena/sessions/<uid>/power", "method": "POST"},
+      {"path": "/api/arena/sessions/<uid>/unlock", "method": "POST", "auth": "arena.unlock"},
+      {"path": "/api/arena/sessions/<uid>/lock", "method": "POST"},
+      {"path": "/api/arena/sessions/<uid>/checkin", "method": "POST"}
+    ]
+  },
+  "puid_and_varsity_checkin": {
+    "endpoints": [
+      {"path": "/api/arena/puid-scan", "method": "POST", "does": "Purdue ID card scan lookup via puid_db.py"},
+      {"path": "/api/arena/puid-register", "method": "POST"},
+      {"path": "/api/arena/varsity-checkin", "method": "POST", "does": "Special check-in flow for varsity/JV players using the Stage PCs"}
+    ]
+  },
+  "removed_experimental_feature": {
+    "name": "Digital Signage / 'Signature Configure'",
+    "status": "BUILT THEN FULLY REMOVED (2026-09-04)",
+    "what_it_was": "An admin-configurable slideshow/announcement screen for two 75in arena TVs (weather, live PC counts, event slides, announcements). Backend routes (/signage/*, /api/signage/*), two templates (signage_configure.html, signage_display.html), and a base.html nav link were all built, briefly tested with live data, then completely deleted at the user's request before being polished.",
+    "lesson": "If a similar signage feature is requested again in the future, confirm scope carefully before building — this exact feature was built once already and fully scrapped."
+  }
+}

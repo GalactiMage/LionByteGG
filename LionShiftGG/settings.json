@@ -5,6 +5,12 @@
   "closing_form_url": "",
   "worker_role_id": 1308228847552041080,
   "updated_at": "2026-02-09T18:28:02.984809+00:00",
-  "updated_by": "Jay",
-  "announcement_channel_id": "1405395710500802730"
+  "updated_by": "Jay Moon",
+  "announcement_channel_id": "1405395710500802730",
+  "dm_shift_reminders": true,
+  "dm_late_alerts": false,
+  "reminder_minutes_before": 60,
+  "late_alert_minutes": 10,
+  "dm_new_schedule": true,
+  "allow_shift_trading": true
 }

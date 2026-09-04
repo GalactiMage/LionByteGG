@@ -69,12 +69,14 @@ def main():
     from utils.arena_status import update_arena_status
     from utils.safe_json import safe_json_dump
     
-    # File paths
-    BOT_STATUS_FILE = "data/bot_status.json"
-    MEMBERS_CACHE_FILE = "data/members_cache.json"
-    MODERATION_QUEUE_FILE = "data/moderation_queue.json"
-    ACTIVITY_FILE = "data/bot_activity.json"
-    JOIN_TRACK_FILE = "data/join_times.json"
+    # File paths (use absolute paths based on script location)
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    COMBINED_DATA_DIR = os.path.join(SCRIPT_DIR, "data")
+    BOT_STATUS_FILE = os.path.join(COMBINED_DATA_DIR, "bot_status.json")
+    MEMBERS_CACHE_FILE = os.path.join(COMBINED_DATA_DIR, "members_cache.json")
+    MODERATION_QUEUE_FILE = os.path.join(COMBINED_DATA_DIR, "moderation_queue.json")
+    ACTIVITY_FILE = os.path.join(COMBINED_DATA_DIR, "bot_activity.json")
+    JOIN_TRACK_FILE = os.path.join(COMBINED_DATA_DIR, "join_times.json")
     
     intents = discord.Intents.default()
     intents.message_content = True
@@ -114,7 +116,7 @@ def main():
                 "last_update": datetime.now(timezone.utc).isoformat()
             }
             
-            os.makedirs("data", exist_ok=True)
+            os.makedirs(COMBINED_DATA_DIR, exist_ok=True)
             safe_json_dump(status_data, BOT_STATUS_FILE, indent=2)
             print(f"[SYNC] Bot status updated: {total_members} members, {round(bot.latency * 1000)}ms latency")
         except Exception as e:
@@ -145,7 +147,7 @@ def main():
                     "nick": member.nick
                 })
             
-            os.makedirs("data", exist_ok=True)
+            os.makedirs(COMBINED_DATA_DIR, exist_ok=True)
             safe_json_dump(members_data, MEMBERS_CACHE_FILE, indent=2)
                 
             print(f"[SYNC] Cached {len(members_data)} members for dashboard")
@@ -157,8 +159,14 @@ def main():
     @tasks.loop(seconds=30)
     async def dashboard_sync_loop():
         """Sync bot status and members to files for dashboard"""
-        save_bot_status()
-        save_members_cache()
+        try:
+            save_bot_status()
+        except Exception as e:
+            print(f"[SYNC ERROR] Bot status sync failed: {e}")
+        try:
+            save_members_cache()
+        except Exception as e:
+            print(f"[SYNC ERROR] Members cache sync failed: {e}")
         
         # Check for activity change requests
         try:
@@ -262,7 +270,10 @@ def main():
 
     @tasks.loop(minutes=1)
     async def arena_status_loop():
-        await update_arena_status(bot)
+        try:
+            await update_arena_status(bot)
+        except Exception as e:
+            print(f"[ERROR] Arena status update failed: {e}")
 
     @tasks.loop(minutes=1)
     async def check_for_timeouts():
@@ -372,6 +383,14 @@ def main():
 
             if not check_for_timeouts.is_running():
                 check_for_timeouts.start()
+            
+            # Pass bot instance to web app for live status
+            try:
+                from web.app import set_bot_instance
+                set_bot_instance(bot)
+                print("[SYNC] Bot instance passed to web dashboard")
+            except Exception as e:
+                print(f"[WARN] Could not set bot instance for web: {e}")
             
             # Start dashboard sync loop
             if not dashboard_sync_loop.is_running():

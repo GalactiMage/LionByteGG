@@ -1,77 +1,95 @@
 import discord
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import os
+import json
 import asyncio
 
+_ARENA_TZ = ZoneInfo("America/Chicago")
+
+_HOURS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'arena_hours.json')
+_DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+_DEFAULT_HOURS = {
+    "monday":    {"open": "10:00", "close": "17:00", "closed": False},
+    "tuesday":   {"open": "10:00", "close": "17:00", "closed": False},
+    "wednesday": {"open": "10:00", "close": "17:00", "closed": False},
+    "thursday":  {"open": "10:00", "close": "17:00", "closed": False},
+    "friday":    {"open": "10:00", "close": "17:00", "closed": False},
+    "saturday":  {"open": "10:00", "close": "17:00", "closed": True},
+    "sunday":    {"open": "10:00", "close": "14:00", "closed": False},
+}
+
+def _load_hours():
+    """Load arena hours from the JSON file, falling back to defaults on any error."""
+    try:
+        with open(_HOURS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return _DEFAULT_HOURS
+
+def _parse_time(t):
+    """Parse 'HH:MM' string into (hour, minute) ints."""
+    h, m = t.split(':')
+    return int(h), int(m)
+
+def _next_open(hours_data, start_weekday):
+    """Return (days_offset, open_hour, open_min) for the next open day after start_weekday."""
+    for i in range(1, 8):
+        next_wd = (start_weekday + i) % 7
+        day_name = _DAY_NAMES[next_wd]
+        day = hours_data.get(day_name, _DEFAULT_HOURS[day_name])
+        if not day.get('closed', False):
+            oh, om = _parse_time(day['open'])
+            return i, oh, om
+    return None, None, None
 
 def get_arena_hours_for_today():
-    # Arena hours as posted in the code/comments:
-    # Monday:    10:00 AM – 5:00 PM
-    # Tuesday:   10:00 AM – 5:00 PM
-    # Wednesday: 10:00 AM – 5:00 PM
-    # Thursday:  10:00 AM – 5:00 PM
-    # Friday:    10:00 AM – 5:00 PM
-    # Saturday:  Closed
-    # Sunday:    10:00 AM – 2:00 PM
-    hours = {
-        0: (10, 0, 17, 0),   # Monday
-        1: (10, 0, 17, 0),   # Tuesday
-        2: (10, 0, 17, 0),   # Wednesday
-        3: (10, 0, 17, 0),   # Thursday
-        4: (10, 0, 17, 0),   # Friday (was 20, 0)
-        5: None,             # Saturday Closed
-        6: (10, 0, 14, 0),   # Sunday
-    }
-    now = datetime.now(timezone.utc).astimezone()
-    weekday = now.weekday()
-    return hours.get(weekday), now
+    hours_data = _load_hours()
+    now = datetime.now(_ARENA_TZ)
+    day_name = _DAY_NAMES[now.weekday()]
+    day = hours_data.get(day_name, _DEFAULT_HOURS[day_name])
+    if day.get('closed', False):
+        return None, now
+    oh, om = _parse_time(day['open'])
+    ch, cm = _parse_time(day['close'])
+    return (oh, om, ch, cm), now
 
 async def update_arena_status(bot):
-    # Check if a custom activity is set in AdminCommands cog
+    # Respect any manually set custom activity
     cog = bot.get_cog("AdminCommands")
     if cog and getattr(cog, "_custom_activity", None):
         await bot.change_presence(activity=discord.Game(name=cog._custom_activity))
         return
-    hours, now = get_arena_hours_for_today()
-    if hours is None:
-        # Closed all day
-        # Find next open day
-        for i in range(1, 8):
-            next_day = (now.weekday() + i) % 7
-            next_hours = {
-                0: (10, 0), 1: (10, 0), 2: (10, 0), 3: (10, 0), 4: (10, 0), 5: None, 6: (10, 0)
-            }.get(next_day)
-            if next_hours:
-                from datetime import timedelta
-                next_open = (now + timedelta(days=i)).replace(hour=next_hours[0], minute=next_hours[1], second=0, microsecond=0)
-                open_str = next_open.strftime("%A %I:%M %p")
-                await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens {open_str}"))
-                return
-        await bot.change_presence(activity=discord.Game(name="Arena Closed"))
+
+    hours_data = _load_hours()
+    slot, now = get_arena_hours_for_today()
+
+    if slot is None:
+        # Closed all day — find next open day
+        offset, oh, om = _next_open(hours_data, now.weekday())
+        if offset is not None:
+            next_open = (now + timedelta(days=offset)).replace(hour=oh, minute=om, second=0, microsecond=0)
+            open_str = next_open.strftime("%A %I:%M %p")
+            await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens {open_str}"))
+        else:
+            await bot.change_presence(activity=discord.Game(name="Arena Closed"))
     else:
-        open_hour, open_min, close_hour, close_min = hours
-        open_time = now.replace(hour=open_hour, minute=open_min, second=0, microsecond=0)
-        close_time = now.replace(hour=close_hour, minute=close_min, second=0, microsecond=0)
+        oh, om, ch, cm = slot
+        open_time  = now.replace(hour=oh, minute=om, second=0, microsecond=0)
+        close_time = now.replace(hour=ch, minute=cm, second=0, microsecond=0)
         if open_time <= now < close_time:
             close_str = close_time.strftime("%I:%M %p")
             await bot.change_presence(activity=discord.Game(name=f"Arena Open • Closes at {close_str}"))
+        elif now < open_time:
+            open_str = open_time.strftime("%I:%M %p")
+            await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens at {open_str}"))
         else:
-            # Find next open time (could be today or next day)
-            if now < open_time:
-                open_str = open_time.strftime("%I:%M %p")
-                await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens at {open_str}"))
+            # Past close — find next open day
+            offset, oh, om = _next_open(hours_data, now.weekday())
+            if offset is not None:
+                next_open = (now + timedelta(days=offset)).replace(hour=oh, minute=om, second=0, microsecond=0)
+                open_str = next_open.strftime("%A %I:%M %p")
+                await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens {open_str}"))
             else:
-                # After close, find next open day
-                for i in range(1, 8):
-                    next_day = (now.weekday() + i) % 7
-                    next_hours = {
-                        0: (10, 0), 1: (10, 0), 2: (10, 0),  3: (10, 0), 4: (10, 0), 5: None, 6: (10, 0)
-                    }.get(next_day)
-                    if next_hours:
-                        from datetime import timedelta
-                        next_open = (now + timedelta(days=i)).replace(hour=next_hours[0], minute=next_hours[1], second=0, microsecond=0)
-                        open_str = next_open.strftime("%A %I:%M %p")
-                        await bot.change_presence(activity=discord.Game(name=f"Arena Closed • Opens {open_str}"))
-                        return
                 await bot.change_presence(activity=discord.Game(name="Arena Closed"))
 

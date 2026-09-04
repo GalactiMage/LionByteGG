@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 import asyncio
 import os
 import json
+import copy
 from pathlib import Path
+from cryptography.fernet import Fernet
 from utils.constants import (
     GUILD_ID, REGISTRATION_REVIEW_CHANNEL_NAME, USER_RECORDS_DIR, 
     VARSITY_REG_DIR, SCHEDULE_IMAGES_DIR, LOG_CHANNEL_NAME
@@ -19,6 +21,43 @@ ROSTERS_FILE = os.path.join(DATA_DIR, "rosters.json")
 TEAM_ROLE_SETTINGS_FILE = os.path.join(DATA_DIR, "team_role_settings.json")
 PENDING_REGISTRATIONS_FILE = os.path.join(DATA_DIR, "pending_varsity_registrations.json")
 LIVE_NOTIFICATIONS_FILE = os.path.join(DATA_DIR, "live_notifications.json")
+
+PLAYER_PII_FIELDS = [
+    'purdue_email', 'personal_email', 'puid', 'phone', 'hometown',
+    'year_in_school', 'gpa', 'major', 'jersey_details', 'additional_notes',
+    'schedule_images'
+]
+
+ROSTER_ENCRYPT_KEY_FILE = os.path.join(DATA_DIR, ".roster_encrypt_key")
+_roster_fernet = None
+
+def get_roster_fernet():
+    """Load the shared Fernet key. Never generates here — Nova owns key generation."""
+    global _roster_fernet
+    if _roster_fernet is not None:
+        return _roster_fernet
+    if not os.path.exists(ROSTER_ENCRYPT_KEY_FILE):
+        # Key doesn't exist yet; generate it so approval writes work even before Nova runs
+        key = Fernet.generate_key()
+        os.makedirs(os.path.dirname(ROSTER_ENCRYPT_KEY_FILE), exist_ok=True)
+        with open(ROSTER_ENCRYPT_KEY_FILE, 'wb') as f:
+            f.write(key)
+    else:
+        with open(ROSTER_ENCRYPT_KEY_FILE, 'rb') as f:
+            key = f.read().strip()
+    _roster_fernet = Fernet(key)
+    return _roster_fernet
+
+def encrypt_player_pii(pii_dict):
+    f = get_roster_fernet()
+    return f.encrypt(json.dumps(pii_dict, ensure_ascii=False).encode()).decode()
+
+def decrypt_player_pii(token):
+    try:
+        f = get_roster_fernet()
+        return json.loads(f.decrypt(token.encode()))
+    except Exception:
+        return {}
 
 def add_varsity_notification(title, message, link=None, target_id=None, target_name=None, notif_type="registration"):
     """Add a live notification for varsity events"""
@@ -69,7 +108,12 @@ def load_teams():
     return load_json_file(TEAMS_FILE, {"teams": []})
 
 def load_rosters():
-    return load_json_file(ROSTERS_FILE, {"players": []})
+    data = load_json_file(ROSTERS_FILE, {"players": []})
+    for player in data.get("players", []):
+        if "encrypted_pii" in player:
+            pii = decrypt_player_pii(player.pop("encrypted_pii"))
+            player.update(pii)
+    return data
 
 def load_esports_games():
     """Load esports games from the website-synced JSON file"""
@@ -78,14 +122,23 @@ def load_esports_games():
     return data.get("games", [])
 
 def save_rosters(data):
-    save_json_file(ROSTERS_FILE, data)
+    export = copy.deepcopy(data)
+    for player in export.get("players", []):
+        pii = {}
+        for field in PLAYER_PII_FIELDS:
+            if field in player:
+                pii[field] = player.pop(field)
+        if pii:
+            player["encrypted_pii"] = encrypt_player_pii(pii)
+    save_json_file(ROSTERS_FILE, export)
 
 def load_team_role_settings():
     """Load role mapping settings from JSON file (managed by website)"""
     return load_json_file(TEAM_ROLE_SETTINGS_FILE, {
         "mapping": {},
         "varsity_role_id": None,
-        "jv_role_id": None
+        "jv_role_id": None,
+        "coach_role_id": None
     })
 
 def load_pending_registrations():
@@ -125,6 +178,7 @@ PLAYER_TYPE_DISPLAY = {
     "jv": "JV",
     "sub_varsity": "Substitute Varsity",
     "sub_jv": "Substitute JV",
+    "coach": "Coach",
 }
 
 class PlayerTypeSelectView(discord.ui.View):
@@ -678,28 +732,43 @@ async def sync_player_roles(guild: discord.Guild, member: discord.Member, team_d
     role_settings = load_team_role_settings()
     role_mapping = role_settings.get("mapping", {})
     general_roster_role_id = role_settings.get("varsity_role_id")  # This is now the general roster role for ALL players
+    coach_role_id = role_settings.get("coach_role_id")
     
-    # Get game-specific role (case-insensitive lookup)
-    game_roles = None
-    for mapping_game, roles in role_mapping.items():
-        if mapping_game.lower() == game_name.lower():
-            game_roles = roles
-            break
-    
-    if game_roles:
-        role_id_str = game_roles.get(team_type)
-        if role_id_str:
+    # Coaches don't inherit the team's varsity/jv game role — they just get the
+    # coach role (plus the general roster role below).
+    if player_type == "coach":
+        if coach_role_id:
             try:
-                role = guild.get_role(int(role_id_str))
+                role = guild.get_role(int(coach_role_id))
                 if role:
                     roles_to_add.append(role)
-                    print(f"[ROLE SYNC] Will add game role: {role.name} for {game_name} ({team_type})")
+                    print(f"[ROLE SYNC] Will add coach role: {role.name}")
                 else:
-                    print(f"[ROLE SYNC] Warning: Game role ID {role_id_str} not found in guild for {game_name} ({team_type})")
+                    print(f"[ROLE SYNC] Warning: Coach role ID {coach_role_id} not found in guild")
             except (ValueError, TypeError):
-                print(f"[ROLE SYNC] Warning: Invalid role ID {role_id_str} for {game_name}")
+                print(f"[ROLE SYNC] Warning: Invalid coach role ID {coach_role_id}")
     else:
-        print(f"[ROLE SYNC] Warning: No role mapping found for game '{game_name}'")
+        # Get game-specific role (case-insensitive lookup)
+        game_roles = None
+        for mapping_game, roles in role_mapping.items():
+            if mapping_game.lower() == game_name.lower():
+                game_roles = roles
+                break
+        
+        if game_roles:
+            role_id_str = game_roles.get(team_type)
+            if role_id_str:
+                try:
+                    role = guild.get_role(int(role_id_str))
+                    if role:
+                        roles_to_add.append(role)
+                        print(f"[ROLE SYNC] Will add game role: {role.name} for {game_name} ({team_type})")
+                    else:
+                        print(f"[ROLE SYNC] Warning: Game role ID {role_id_str} not found in guild for {game_name} ({team_type})")
+                except (ValueError, TypeError):
+                    print(f"[ROLE SYNC] Warning: Invalid role ID {role_id_str} for {game_name}")
+        else:
+            print(f"[ROLE SYNC] Warning: No role mapping found for game '{game_name}'")
     
     # ALL roster players get the general roster role (regardless of team type)
     if general_roster_role_id:
@@ -1164,6 +1233,16 @@ class VarsityApproveView(discord.ui.View):
                                 "tracker": player_data.get("Tracker Link"),
                                 "purdue_email": player_data.get("Purdue Email"),
                                 "personal_email": player_data.get("Personal Email"),
+                                # Additional PII stored here — encrypted by save_rosters()
+                                "puid": player_data.get("PUID"),
+                                "phone": player_data.get("Phone Number"),
+                                "hometown": player_data.get("Home Town/City (State)"),
+                                "year_in_school": player_data.get("Year in School"),
+                                "gpa": player_data.get("GPA"),
+                                "major": player_data.get("Major"),
+                                "jersey_details": player_data.get("Jersey Details"),
+                                "additional_notes": player_data.get("Anything Else"),
+                                "schedule_images": player_data.get("attachments_cdn", player_data.get("attachments", [])),
                                 "discord_username": discord_username,
                                 "avatar": discord_avatar,
                                 "is_captain": False,
@@ -1191,6 +1270,17 @@ class VarsityApproveView(discord.ui.View):
                             existing_player["rank"] = player_data.get("Current Rank in Game", existing_player.get("rank"))
                             existing_player["role"] = player_data.get("Primary Role", existing_player.get("role"))
                             existing_player["player_type"] = player_type  # Ensure player_type is updated
+                            existing_player["purdue_email"] = player_data.get("Purdue Email", existing_player.get("purdue_email"))
+                            existing_player["personal_email"] = player_data.get("Personal Email", existing_player.get("personal_email"))
+                            existing_player["puid"] = player_data.get("PUID", existing_player.get("puid"))
+                            existing_player["phone"] = player_data.get("Phone Number", existing_player.get("phone"))
+                            existing_player["hometown"] = player_data.get("Home Town/City (State)", existing_player.get("hometown"))
+                            existing_player["year_in_school"] = player_data.get("Year in School", existing_player.get("year_in_school"))
+                            existing_player["gpa"] = player_data.get("GPA", existing_player.get("gpa"))
+                            existing_player["major"] = player_data.get("Major", existing_player.get("major"))
+                            existing_player["jersey_details"] = player_data.get("Jersey Details", existing_player.get("jersey_details"))
+                            existing_player["additional_notes"] = player_data.get("Anything Else", existing_player.get("additional_notes"))
+                            existing_player["schedule_images"] = player_data.get("attachments_cdn", player_data.get("attachments", existing_player.get("schedule_images", [])))
                             existing_player["updated_at"] = datetime.now(timezone.utc).isoformat()
                             save_rosters(rosters)
                         

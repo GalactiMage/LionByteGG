@@ -1,0 +1,260 @@
+{
+  "chapter": 1,
+  "title": "BoilerCraftGG — Minecraft/Purdue Network Discord Bot",
+  "path": "BoilerCraftGG\\",
+  "overview": {
+    "purpose": "Official Discord bot for Purdue Network, a Minecraft server linked to Discord. Handles student verification, temporary voice channels, support tickets, chat moderation (relays flagged Minecraft chat to Discord staff), and admin controls.",
+    "framework": "discord.py >= 2.3.0, slash commands only (prefix '!' disabled)",
+    "storage": "SQLite (data/boilercraft.db) via aiosqlite + JSON files in data/",
+    "entry_point": "bot.py",
+    "start_script": "start.bat",
+    "stop_script": "stop_bot.bat",
+    "requirements": ["discord.py>=2.3.0", "python-dotenv>=1.0.0", "aiosqlite>=0.19.0"],
+    "env_vars": {
+      "DISCORD_TOKEN": "Required. Bot token from Discord Developer Portal."
+    }
+  },
+  "config_files": {
+    "config.py": {
+      "purpose": "Static constants",
+      "keys": {
+        "BOT_NAME": "BoilerCraftGG",
+        "BOT_VERSION": "1.0.0",
+        "BOT_DESCRIPTION": "Official Discord Bot for Purdue Network Minecraft Server",
+        "DATABASE_PATH": "data/boilercraft.db",
+        "colors": {"primary/purdue_gold": "0xCFB991", "secondary/purdue_black": "0x000000", "success": "0x2ECC71", "error": "0xE74C3C", "warning": "0xF39C12", "info": "0x3498DB"},
+        "CAMPUSES": "west_lafayette, northwest, fort_wayne, indianapolis — each with name/emoji/color"
+      }
+    },
+    "settings.py": {
+      "purpose": "Environment-driven IDs (loaded from .env)",
+      "keys": {
+        "DISCORD_TOKEN": "Bot token (required)",
+        "GUILD_ID": "Server ID",
+        "START_HERE_CHANNEL_ID": "Welcome/verification channel",
+        "VERIFIED_ROLE_ID": "Role granted after verification",
+        "STAFF_ROLE_ID": "Optional staff/moderator role",
+        "CAMPUS_ROLES": "Dict mapping each campus key to a Discord role ID",
+        "ANNOUNCE_CHANNEL_ID": "Maintenance announcement channel",
+        "MINECRAFT_ROLE_ID": "Role for Minecraft players",
+        "MINECRAFT_SERVER_IP": "mc.esports.purdue.edu",
+        "VALID_EMAIL_DOMAINS": "['@purdue.edu', '@pnw.edu', '@pfw.edu']"
+      }
+    }
+  },
+  "core_bot_file": {
+    "file": "bot.py",
+    "class": "BoilerCraftBot(commands.Bot)",
+    "intents": ["message_content", "members", "voice_states", "guilds"],
+    "setup_hook_sequence": [
+      "Initialize SQLite database via Database.initialize()",
+      "Register persistent views: TicketPanelView(), TicketAdminView()",
+      "Load all cogs from cogs/ directory (dynamic import)",
+      "Sync slash commands (guild-scoped if GUILD_ID set, else global)"
+    ],
+    "on_ready_sequence": [
+      "Print bot header + login info",
+      "Set presence: 'watching Purdue Network | /help'",
+      "Restore ticket panel from config if channel is set",
+      "Start background loops: poll_dashboard_commands (5s), members_cache_loop (30s), server_analytics_loop (5m)"
+    ],
+    "connection_events": {
+      "on_connect": "Logs gateway connection",
+      "on_disconnect": "Logs warning, relies on discord.py auto-reconnect",
+      "on_resumed": "Restarts any dead task loops via _restart_task_loops()"
+    },
+    "background_tasks": [
+      {
+        "name": "poll_dashboard_commands",
+        "interval": "5 seconds",
+        "reads": "data/dashboard_commands.json",
+        "purpose": "Executes commands queued by the Nova web dashboard",
+        "supported_command_types": ["deploy_panel", "refresh_panel", "faq_post", "faq_edit", "faq_delete", "faq_renumber", "member_kick", "member_ban", "member_timeout", "member_unban", "send_dm", "ticket_close", "ticket_message"],
+        "status_lifecycle": "pending -> completed | error | dm_failed"
+      },
+      {
+        "name": "members_cache_loop",
+        "interval": "30 seconds",
+        "writes": "data/members_cache.json",
+        "purpose": "Snapshot of every guild member (id, names, avatar, roles, joined_at, status) for the dashboard to read"
+      },
+      {
+        "name": "server_analytics_loop",
+        "interval": "5 minutes",
+        "writes": "data/server_analytics.json",
+        "purpose": "Polls mc.esports.purdue.edu via mcsrvstat.us API, logs online/player-count snapshots",
+        "retention": "30 days (~8640 entries), atomic write via temp file + os.replace()"
+      }
+    ],
+    "helper_functions": {
+      "_save_user_record(user_id, action_type, reason, moderator)": "Appends a moderation record to data/user_records/{user_id}_record.json (source='website')",
+      "_load_faqs / _save_faqs": "Load/save data/faqs.json",
+      "_build_faq_embed(number, question, answer)": "Purdue-gold themed FAQ embed",
+      "close()": "Graceful shutdown, closes DB connection"
+    }
+  },
+  "utils": {
+    "safe_json.py": {
+      "safe_json_dump(data, filepath, **kwargs)": "Atomic write: temp file in same dir then os.replace(); auto-creates parent dirs; cleans up temp file on error"
+    },
+    "database.py": {
+      "class": "Database",
+      "init": "SQLite at config.DATABASE_PATH, WAL mode, 5s busy timeout",
+      "tables": ["verified_users", "temp_voice_channels", "bot_settings", "temp_vc_generators"],
+      "key_methods": {
+        "verified_users": ["add_verified_user(discord_id, minecraft_username, minecraft_uuid, first_name, email, phone, campus)", "get_verified_user(discord_id)", "remove_verified_user(discord_id)", "get_user_by_minecraft(username)", "get_user_by_email(email)"],
+        "temp_vc": ["add_temp_vc(channel_id, owner_id)", "get_temp_vc(channel_id)", "remove_temp_vc(channel_id)", "get_user_temp_vc(owner_id)", "get_all_temp_vcs()"],
+        "settings": ["set_setting(key, value)", "get_setting(key, default)"],
+        "generators": ["add_generator(join_channel_id, category_id, name)", "remove_generator(join_channel_id)", "get_generator(join_channel_id)", "get_all_generators()", "count_generators()"]
+      }
+    },
+    "embeds.py": {
+      "class": "EmbedBuilder",
+      "presets": ["success (green, ✅)", "error (red, ❌)", "warning (orange, ⚠️)", "info (blue, ℹ️)"],
+      "specialized": ["verification_prompt()", "verification_success(minecraft_username)", "temp_vc_created(channel_name)", "help_embed(commands_list)"],
+      "footer": "BoilerCraftGG • Purdue Network"
+    }
+  },
+  "cogs": [
+    {
+      "file": "cogs/admin.py",
+      "class": "Admin",
+      "permission_check": "@is_admin() -> interaction.user.guild_permissions.administrator",
+      "commands": [
+        {"name": "/stop", "perm": "admin", "does": "Shuts bot down immediately via bot.close()"},
+        {"name": "/restart", "perm": "admin", "does": "os.execv() re-executes the bot script"},
+        {"name": "/reload", "params": "cog:str", "perm": "admin", "does": "Hot-reloads a cog via bot.reload_extension()"},
+        {"name": "/sync", "perm": "admin", "does": "Manually re-syncs slash commands, reports count"},
+        {"name": "/status", "perm": "public", "does": "Bot version, latency, guild/user/bot counts, cogs, commands"},
+        {"name": "/mc-maintenance-announcement", "params": "when:str, servers:str", "perm": "admin", "does": "Posts maintenance embed to announce channel, pings @minecraft role"}
+      ],
+      "error_handler": "admin_error(): CheckFailure -> permission-denied message; other exceptions -> generic ephemeral error"
+    },
+    {
+      "file": "cogs/verification.py",
+      "class": "Verification",
+      "purpose": "Student verification flow: modal form -> Mojang username check -> email domain check -> campus role select -> role assignment",
+      "modals": {
+        "VerificationModal": {"fields": ["first_name", "minecraft_ign", "purdue_email", "phone_number (optional)"], "validates": ["MC username format + existence via Mojang API", "email domain in @purdue.edu/@pnw.edu/@pfw.edu", "not already verified"]}
+      },
+      "views": {
+        "CampusSelectView": "Dropdown: West Lafayette / Northwest / Fort Wayne / Indianapolis -> assigns VERIFIED_ROLE_ID + campus role, saves to DB, deletes original welcome message",
+        "StartVerificationView": "Persistent 'Start Verification' button -> opens VerificationModal"
+      },
+      "events": {
+        "on_member_join": "Sends welcome message with Start Verification button to #start-here, stores message id"
+      },
+      "commands": [
+        {"name": "/setup_verification", "perm": "admin", "does": "Deploys the persistent verification panel to current channel"},
+        {"name": "/unverify", "params": "user", "perm": "admin", "does": "Removes verified + campus role, deletes DB record"}
+      ]
+    },
+    {
+      "file": "cogs/tempvc.py",
+      "class": "TempVC",
+      "purpose": "Join-to-Create voice channel system",
+      "constants": {"MAX_GENERATORS": 4},
+      "control_panel": {
+        "view": "TempVCControlPanel (persistent, owner-only)",
+        "buttons": ["Lock", "Unlock", "Hide", "Reveal", "Rename (modal)", "Set Limit (modal)", "Delete"]
+      },
+      "events": {
+        "on_ready": "Cleans up orphaned channels, starts periodic_cleanup loop",
+        "on_voice_state_update": "Creates temp VC when a generator channel is joined; deletes temp VC when it becomes empty"
+      },
+      "background_task": {"name": "periodic_cleanup", "interval": "3 minutes", "does": "Deletes empty temp VCs + removes orphaned DB rows"},
+      "slash_command_group": "/vc",
+      "vc_subcommands": ["rename <name>", "limit <0-99>", "lock", "unlock", "permit <user>", "reject <user>", "claim", "kick <user>", "transfer <user>", "info"],
+      "admin_commands": [
+        {"name": "/setup_tempvc", "params": "category, join_channel, name(optional)", "does": "Registers a new Join-to-Create generator (max 4)"},
+        {"name": "/tempvc_list", "does": "Lists configured generators"},
+        {"name": "/tempvc_remove", "params": "join_channel", "does": "Deletes a generator"}
+      ]
+    },
+    {
+      "file": "cogs/help.py",
+      "class": "Help",
+      "commands": [
+        {"name": "/help", "does": "Full command list grouped by category, admin section only shown to admins"},
+        {"name": "/serverinfo", "does": "Server stats: members, channels, owner, creation date, boosts, roles, emoji"},
+        {"name": "/userinfo", "params": "user(optional)", "does": "Profile: join/creation date, top 10 roles, Minecraft username if verified"},
+        {"name": "/ping", "does": "Latency with color-coded status (🟢<100ms 🟡<200ms 🔴≥200ms)"}
+      ]
+    },
+    {
+      "file": "cogs/chat_monitor.py",
+      "class": "ChatMonitor",
+      "purpose": "Watches DiscordSRV console channel(s) for Minecraft chat, flags toxic/banned words, alerts staff",
+      "config_file": "data/chat_monitor_config.json",
+      "config_shape": {"enabled": "bool", "alert_channel_id": "int", "mod_role_id": "int", "servers": {"<KEY>": {"name": "str", "console_channel_id": "int", "enabled": "bool"}}},
+      "data_files": {"flagged_words.json": "3-tier word list (see moderation note)", "flagged_log.json": "last 500 flagged message alerts"},
+      "message_parsing": ["Whisper pattern: 'player issued server command: /w target message'", "Public chat pattern: '<player> message'"],
+      "dedup": "Whisper text suppresses a matching public-chat line for 30s (DiscordSRV sometimes double-relays)",
+      "events": ["on_message (console channel)", "on_raw_message_edit (captures DiscordSRV edits after restarts)"],
+      "slash_command_group": "/chatmonitor",
+      "subcommands": ["add-word <word>", "remove-word <word>", "list-words", "toggle", "add-server <key><name><console_channel>", "remove-server <key>", "status"],
+      "alert_embed_fields": ["Player (Mojang avatar + Discord link)", "Message type (Public/Whisper)", "Server name", "Full message", "Flagged words", "Central-time timestamp"]
+    },
+    {
+      "file": "cogs/tickets.py",
+      "class": "TicketCommands",
+      "commands": [
+        {"name": "/setup-tickets", "params": "channel", "perm": "admin", "does": "Deploys the support ticket panel"},
+        {"name": "/blacklist-tickets", "params": "user, reason(optional)", "perm": "admin", "does": "Blocks a user from opening tickets"},
+        {"name": "/whitelist-tickets", "params": "user", "perm": "admin", "does": "Removes a user from the ticket blacklist"}
+      ]
+    }
+  ],
+  "views": {
+    "views/ticket_view.py": {
+      "config_file": "data/bot_config.json",
+      "default_config": {
+        "staff_role_id": null, "ticket_panel_channel_id": null, "ticket_category_name": "MC Tickets", "ticket_channel_prefix": "mc-ticket-",
+        "announce_channel_id": null, "minecraft_role_id": null, "faq_channel_id": null,
+        "support_categories": ["Player Support", "Server Bugs", "Report a Player", "Appeal / Unban", "General Question"]
+      },
+      "flow": [
+        "TicketPanelView: 'Contact Support' button -> IssueTypeSelectView dropdown (dynamic from support_categories)",
+        "select -> TicketIssueModal (minecraft_username, purdue_email, explanation)",
+        "on_submit validates: not blacklisted, verified (unless admin/staff), valid email domain, no duplicate open ticket",
+        "creates channel in 'MC Tickets' category named mc-ticket-0001 etc, posts ticket embed + TicketAdminView (Take Ticket / Close Ticket)",
+        "logs to data/ticket_log.json (open array)"
+      ],
+      "closure": [
+        "User closes -> UserCloseConfirmView (Yes/No)",
+        "Staff closes -> TicketCloseModal (reason, required)",
+        "Both paths: collect last 100 messages as transcript, post to auto-created #mc-ticket-logs channel, move entry JSON open->closed, DM user, delete channel after 2s"
+      ],
+      "helper_functions": ["load_bot_config/save_bot_config", "get_ticket_blacklist", "log_ticket", "update_ticket_staff", "get_or_create_ticket_logs_channel", "ensure_ticket_panel_message"]
+    }
+  },
+  "data_files": {
+    "data/boilercraft.db": "SQLite: verified_users, temp_voice_channels, bot_settings, temp_vc_generators",
+    "data/bot_config.json": "Ticket settings, staff role, channel IDs, support categories",
+    "data/chat_monitor_config.json": "Chat monitor servers/alert config",
+    "data/flagged_words.json": "Profanity/toxicity word list (array)",
+    "data/flagged_log.json": "Last 500 flagged Minecraft chat alerts",
+    "data/ticket_log.json": "open/closed/blacklist ticket arrays",
+    "data/members_cache.json": "Guild member snapshot (30s refresh)",
+    "data/server_analytics.json": "MC server player-count history (30-day retention)",
+    "data/faqs.json": "FAQ entries (question, answer, message_id)",
+    "data/moderation_templates.json": "Unused placeholder",
+    "data/player_reports.json": "Unused placeholder",
+    "data/dashboard_commands.json": "Queue of pending commands from the Nova web dashboard",
+    "data/user_records/{user_id}_record.json": "Per-user moderation history"
+  },
+  "database_schema": {
+    "verified_users": "discord_id PK, minecraft_username, minecraft_uuid, first_name, email, phone, campus, verified_at",
+    "temp_voice_channels": "channel_id PK, owner_id, created_at",
+    "bot_settings": "key PK, value",
+    "temp_vc_generators": "id PK autoincrement, join_channel_id UNIQUE, category_id, name, created_at"
+  },
+  "permissions_table": {
+    "administrator_required": ["/stop", "/restart", "/reload", "/sync", "/setup_verification", "/unverify", "/setup_tempvc", "/tempvc_list", "/tempvc_remove", "/setup-tickets", "/blacklist-tickets", "/whitelist-tickets", "/chatmonitor *", "/mc-maintenance-announcement"],
+    "everyone": ["/status", "/help", "/serverinfo", "/userinfo", "/ping", "/vc *  (own channel only)"]
+  },
+  "startup_scripts": {
+    "start.bat": "Sets console title/colors, shows ASCII banner, cd to bot dir, runs 'python bot.py', pauses on exit",
+    "stop_bot.bat": "Kills window titled 'BoilerCraftGG*' + any process whose command line matches 'BoilerCraftGG*bot.py', waits 2s"
+  }
+}

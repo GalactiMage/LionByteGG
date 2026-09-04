@@ -36,7 +36,7 @@ from cogs.moderation import Moderation  # <-- Add this import
 
 from utils.arena_status import update_arena_status
 # Add GGLeapStatus import for extension loading
-from utils.safe_json import safe_json_dump
+from utils.safe_json import safe_json_dump, safe_json_load
 
 # Bot Created By Jay Moon
 
@@ -57,29 +57,18 @@ JOIN_TRACK_FILE = os.path.join(DATA_DIR, "join_times.json")
 WATCHLIST_FILE = os.path.join(DATA_DIR, "watchlist.json")
 
 def load_join_times():
-    if os.path.exists(JOIN_TRACK_FILE):
-        with open(JOIN_TRACK_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    return safe_json_load(JOIN_TRACK_FILE, {})
 
 def save_join_times(data):
-    os.makedirs(os.path.dirname(JOIN_TRACK_FILE), exist_ok=True)
     safe_json_dump(data, JOIN_TRACK_FILE)
 
 # ========== Watchlist Functions ==========
 def load_watchlist():
     """Load watchlist data"""
-    if os.path.exists(WATCHLIST_FILE):
-        try:
-            with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {"watched_users": [], "settings": {}}
-    return {"watched_users": [], "settings": {}}
+    return safe_json_load(WATCHLIST_FILE, {"watched_users": [], "settings": {}})
 
 def save_watchlist(data):
     """Save watchlist data"""
-    os.makedirs(os.path.dirname(WATCHLIST_FILE), exist_ok=True)
     safe_json_dump(data, WATCHLIST_FILE, indent=2)
 
 def is_user_watched(user_id):
@@ -184,39 +173,11 @@ async def send_watchlist_alert(user, activity_type, details, alert_level='normal
 
 def load_job_progress():
     """Load job progress data"""
-    if os.path.exists(JOB_PROGRESS_FILE):
-        try:
-            with open(JOB_PROGRESS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+    return safe_json_load(JOB_PROGRESS_FILE, {})
 
 def save_job_progress(data):
-    """Save job progress data (atomic write with Windows retry for file locking)"""
-    os.makedirs(os.path.dirname(JOB_PROGRESS_FILE), exist_ok=True)
-    import tempfile, time
-    dir_name = os.path.dirname(JOB_PROGRESS_FILE)
-    fd, tmp_path = tempfile.mkstemp(suffix='.tmp', dir=dir_name)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
-        # Retry os.replace up to 5 times - Windows fails if another process has the file open
-        for attempt in range(5):
-            try:
-                os.replace(tmp_path, JOB_PROGRESS_FILE)
-                return
-            except PermissionError:
-                if attempt < 4:
-                    time.sleep(0.1 * (attempt + 1))
-                else:
-                    raise
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    """Save job progress data"""
+    safe_json_dump(data, JOB_PROGRESS_FILE, indent=2)
 
 def update_job_progress(job_id, updates):
     """Update progress for a specific job"""
@@ -373,29 +334,35 @@ async def on_voice_state_update(member, before, after):
 
 @tasks.loop(minutes=1)
 async def check_for_timeouts():
-    from datetime import timezone
-    now = datetime.now(timezone.utc)
-    timeout_duration = timedelta(minutes=1)
-    for user_id, start_time in list(pending_users.items()):
-        if now - start_time > timeout_duration:
-            user = bot.get_user(user_id)
-            if user:
-                try:
-                    embed = discord.Embed(
-                        title="⚠️ Setup Reminder",
-                        description="You started setting up your account, but it looks like you didn’t finish.\n\nPlease go back to the server and complete your setup.",
-                        color=discord.Color.orange()
-                    )
-                    embed.set_footer(text="PNW Esports | Reminder")
-                    await user.send(embed=embed)
-                except discord.Forbidden:
-                    print(f"Could not DM user {user_id}")
-            del pending_users[user_id]
+    try:
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        timeout_duration = timedelta(minutes=1)
+        for user_id, start_time in list(pending_users.items()):
+            if now - start_time > timeout_duration:
+                user = bot.get_user(user_id)
+                if user:
+                    try:
+                        embed = discord.Embed(
+                            title="⚠️ Setup Reminder",
+                            description="You started setting up your account, but it looks like you didn’t finish.\n\nPlease go back to the server and complete your setup.",
+                            color=discord.Color.orange()
+                        )
+                        embed.set_footer(text="PNW Esports | Reminder")
+                        await user.send(embed=embed)
+                    except discord.Forbidden:
+                        print(f"Could not DM user {user_id}")
+                del pending_users[user_id]
+    except Exception as e:
+        print(f"[ERROR] Timeout check failed: {e}")
 
 
 @tasks.loop(minutes=1)
 async def arena_status_loop():
-    await update_arena_status(bot)
+    try:
+        await update_arena_status(bot)
+    except Exception as e:
+        print(f"[ERROR] Arena status update failed: {e}")
 
 # Dashboard sync - write bot status and members cache (using absolute paths)
 BOT_STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
@@ -411,11 +378,7 @@ def add_bot_live_notification(notif_type, title, message, link=None, target_id=N
     """Add a live notification that will appear in the dashboard bell (called from bot)"""
     try:
         # Load existing notifications
-        if os.path.exists(LIVE_NOTIFICATIONS_FILE):
-            with open(LIVE_NOTIFICATIONS_FILE, 'r', encoding='utf-8') as f:
-                notifications = json.load(f)
-        else:
-            notifications = {"notifications": [], "last_cleared": None}
+        notifications = safe_json_load(LIVE_NOTIFICATIONS_FILE, {"notifications": [], "last_cleared": None})
         
         notification = {
             "id": f"notif_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}",
@@ -469,8 +432,7 @@ async def check_bot_control():
         if not os.path.exists(BOT_CONTROL_FILE):
             return
             
-        with open(BOT_CONTROL_FILE, 'r', encoding='utf-8') as f:
-            control_data = json.load(f)
+        control_data = safe_json_load(BOT_CONTROL_FILE, {})
         
         command = control_data.get('command')
         requested_at = control_data.get('requested_at', '')
@@ -512,8 +474,7 @@ async def process_discord_notifications():
         if not os.path.exists(DISCORD_NOTIFICATION_QUEUE_FILE):
             return
         
-        with open(DISCORD_NOTIFICATION_QUEUE_FILE, 'r', encoding='utf-8-sig') as f:
-            notifications = json.load(f)
+        notifications = safe_json_load(DISCORD_NOTIFICATION_QUEUE_FILE, [])
         
         if not notifications:
             return
@@ -1147,11 +1108,13 @@ async def process_discord_notifications():
                     role_mapping = notif.get('role_mapping', {})
                     general_varsity_role = notif.get('general_varsity_role')  # This is now the general roster role for ALL players
                     captain_role_id = notif.get('captain_role_id')  # Role for team captains
+                    coach_role_id = notif.get('coach_role_id')  # Role for coaches
                     
                     print(f"[BULK SYNC] Starting sync for {len(players)} players (Job: {job_id})")
                     print(f"[BULK SYNC] Role mapping: {role_mapping}")
                     print(f"[BULK SYNC] Esports Team Role: {general_varsity_role}")
                     print(f"[BULK SYNC] Captain Role: {captain_role_id}")
+                    print(f"[BULK SYNC] Coach Role: {coach_role_id}")
                     
                     # Update job progress: starting
                     update_job_progress(job_id, {
@@ -1191,6 +1154,9 @@ async def process_discord_notifications():
                     # Captain role for captains
                     if captain_role_id:
                         team_role_ids.add(int(captain_role_id))
+                    # Coach role for coaches
+                    if coach_role_id:
+                        team_role_ids.add(int(coach_role_id))
                     
                     print(f"[BULK SYNC] Team role IDs to manage: {team_role_ids}")
                     
@@ -1208,7 +1174,7 @@ async def process_discord_notifications():
                     for player in players:
                         user_id = player.get('user_id')
                         expected_roles = player.get('expected_roles', [])
-                        player_names[user_id] = player.get('username', 'Unknown')
+                        player_names[user_id] = player.get('username') or 'Unknown'
                         print(f"[BULK SYNC] Player {user_id} ({player.get('username', 'Unknown')}) expects roles: {expected_roles}")
                         if user_id not in expected_roles_by_user:
                             expected_roles_by_user[user_id] = set()
@@ -1295,13 +1261,13 @@ async def process_discord_notifications():
                                 try:
                                     member = await guild.fetch_member(int(user_id))
                                 except discord.NotFound:
-                                    print(f"[BULK SYNC] Member {user_id} not found in guild")
-                                    errors.append(f"Member {user_id} not found in guild")
+                                    print(f"[BULK SYNC] Member {user_id} ({player_name}) not found in guild")
+                                    errors.append({"message": f"{player_name} not found in guild", "user_id": user_id, "name": player_name, "type": "not_found"})
                                     completed_operations += 1
                                     continue
                                 except Exception as fetch_err:
-                                    print(f"[BULK SYNC] Error fetching member {user_id}: {fetch_err}")
-                                    errors.append(f"Error fetching {user_id}: {str(fetch_err)}")
+                                    print(f"[BULK SYNC] Error fetching member {user_id} ({player_name}): {fetch_err}")
+                                    errors.append(f"Error fetching {player_name}: {str(fetch_err)}")
                                     completed_operations += 1
                                     continue
                             
@@ -1351,14 +1317,14 @@ async def process_discord_notifications():
                                     added_count += len(roles_to_add)
                                     print(f"[BULK SYNC] Retry successful: Added {[r.name for r in roles_to_add]} to {member.display_name}")
                                 except Exception as retry_err:
-                                    errors.append(f"Error adding roles for {user_id} (retry): {str(retry_err)}")
+                                    errors.append(f"Error adding roles for {player_name} (retry): {str(retry_err)}")
                             else:
-                                print(f"[BULK SYNC] HTTP Error processing {user_id}: {str(e)}")
-                                errors.append(f"Error adding roles for {user_id}: {str(e)}")
+                                print(f"[BULK SYNC] HTTP Error processing {user_id} ({player_name}): {str(e)}")
+                                errors.append(f"Error adding roles for {player_name}: {str(e)}")
                             completed_operations += 1
                         except Exception as e:
-                            print(f"[BULK SYNC] Error processing {user_id}: {str(e)}")
-                            errors.append(f"Error adding roles for {user_id}: {str(e)}")
+                            print(f"[BULK SYNC] Error processing {user_id} ({player_name}): {str(e)}")
+                            errors.append(f"Error adding roles for {player_name}: {str(e)}")
                             completed_operations += 1
                     
                     # Phase 2: Remove roles from users who shouldn't have them
@@ -1398,6 +1364,9 @@ async def process_discord_notifications():
                         # Captain role is always in scope (captains can be varsity or JV)
                         if captain_role_id:
                             roles_in_scope.add(int(captain_role_id))
+                        # Coach role only in scope for an 'all' or 'coach' sync
+                        if (type_filter == 'all' or type_filter == 'coach') and coach_role_id:
+                            roles_in_scope.add(int(coach_role_id))
                     
                     print(f"[BULK SYNC] Roles in scope for removal (game={game_filter}, type={type_filter}): {roles_in_scope}")
                     
@@ -1801,6 +1770,7 @@ async def process_discord_notifications():
                     user_id = notif.get('user_id')
                     message = notif.get('message', '')
                     moderator = notif.get('moderator', 'Dashboard')
+                    silent = bool(notif.get('silent'))  # frequent/automated DMs skip the staff notification
                     
                     try:
                         user = await bot.fetch_user(int(user_id))
@@ -1817,13 +1787,14 @@ async def process_discord_notifications():
                             await user.send(embed=embed)
                             print(f"[DM] Sent message to user {user_id} from {moderator}")
                             notif['status'] = 'sent'
-                            add_bot_live_notification(
-                                notif_type="success",
-                                title="DM Delivered",
-                                message=f"Message sent to {user.display_name}",
-                                link="/members",
-                                target_id=user_id
-                            )
+                            if not silent:
+                                add_bot_live_notification(
+                                    notif_type="success",
+                                    title="DM Delivered",
+                                    message=f"Message sent to {user.display_name}",
+                                    link="/members",
+                                    target_id=user_id
+                                )
                         else:
                             notif['status'] = 'failed'
                             notif['error'] = 'User not found'
@@ -1832,25 +1803,27 @@ async def process_discord_notifications():
                         print(f"[DM] Could not DM user {user_id} (DMs disabled)")
                         notif['status'] = 'failed'
                         notif['error'] = 'Could not DM user - DMs disabled'
-                        add_bot_live_notification(
-                            notif_type="warning",
-                            title="DM Failed",
-                            message=f"Could not send message. User has DMs disabled.",
-                            link="/members",
-                            target_id=user_id
-                        )
+                        if not silent:
+                            add_bot_live_notification(
+                                notif_type="warning",
+                                title="DM Failed",
+                                message=f"Could not send message. User has DMs disabled.",
+                                link="/members",
+                                target_id=user_id
+                            )
                         processed_any = True
                     except Exception as e:
                         print(f"[DM] Failed to DM user {user_id}: {e}")
                         notif['status'] = 'failed'
                         notif['error'] = str(e)
-                        add_bot_live_notification(
-                            notif_type="error",
-                            title="DM Failed",
-                            message=f"Failed to send message: {str(e)[:50]}",
-                            link="/members",
-                            target_id=user_id
-                        )
+                        if not silent:
+                            add_bot_live_notification(
+                                notif_type="error",
+                                title="DM Failed",
+                                message=f"Failed to send message: {str(e)[:50]}",
+                                link="/members",
+                                target_id=user_id
+                            )
                         processed_any = True
                     
             except discord.Forbidden:
@@ -1900,28 +1873,7 @@ async def process_discord_notifications():
         
         # Save updated queue (keep failed/sent for logging, or remove them)
         if processed_any:
-            # Atomic write with Windows retry for file locking
-            import tempfile, time
-            dir_name = os.path.dirname(DISCORD_NOTIFICATION_QUEUE_FILE)
-            fd, tmp_path = tempfile.mkstemp(suffix='.tmp', dir=dir_name)
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(notifications, f, indent=2)
-                for attempt in range(5):
-                    try:
-                        os.replace(tmp_path, DISCORD_NOTIFICATION_QUEUE_FILE)
-                        break
-                    except PermissionError:
-                        if attempt < 4:
-                            time.sleep(0.1 * (attempt + 1))
-                        else:
-                            raise
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            safe_json_dump(notifications, DISCORD_NOTIFICATION_QUEUE_FILE, indent=2)
             print(f"[NOTIFICATION QUEUE] Finished processing, queue updated")
                 
     except Exception as e:
@@ -1933,6 +1885,15 @@ async def process_discord_notifications():
 async def before_notification_loop():
     await bot.wait_until_ready()
     print("[NOTIFICATION QUEUE] Task loop started and ready")
+
+@process_discord_notifications.error
+async def process_discord_notifications_error(error):
+    print(f"[ERROR] process_discord_notifications task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not process_discord_notifications.is_running():
+        process_discord_notifications.start()
 
 @tasks.loop(seconds=10)
 async def process_moderation_queue():
@@ -2079,6 +2040,24 @@ async def process_moderation_queue():
     except Exception as e:
         print(f"[ERROR] Failed to process moderation queue: {e}")
 
+@process_moderation_queue.error
+async def process_moderation_queue_error(error):
+    print(f"[ERROR] process_moderation_queue task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not process_moderation_queue.is_running():
+        process_moderation_queue.start()
+
+@check_bot_control.error
+async def check_bot_control_error(error):
+    print(f"[ERROR] check_bot_control task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not check_bot_control.is_running():
+        check_bot_control.start()
+
 def save_bot_status():
     """Save bot status to file for dashboard sync"""
     try:
@@ -2201,14 +2180,56 @@ def save_channels_cache():
     except Exception as e:
         print(f"[ERROR] Failed to save channels cache: {e}")
 
+@process_moderation_queue.error
+async def process_moderation_queue_error(error):
+    print(f"[ERROR] process_moderation_queue task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not process_moderation_queue.is_running():
+        process_moderation_queue.start()
+
+@check_bot_control.error
+async def check_bot_control_error(error):
+    print(f"[ERROR] check_bot_control task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not check_bot_control.is_running():
+        check_bot_control.start()
+
 @tasks.loop(seconds=30)
 async def dashboard_sync_loop():
     """Sync bot status and members to files for dashboard"""
-    save_bot_status()
-    save_members_cache()
-    save_roles_cache()
-    save_channels_cache()
-    save_vc_live_cache()
+    try:
+        save_bot_status()
+    except Exception as e:
+        print(f"[SYNC ERROR] Bot status sync failed: {e}")
+    try:
+        save_members_cache()
+    except Exception as e:
+        print(f"[SYNC ERROR] Members cache sync failed: {e}")
+    try:
+        save_roles_cache()
+    except Exception as e:
+        print(f"[SYNC ERROR] Roles cache sync failed: {e}")
+    try:
+        save_channels_cache()
+    except Exception as e:
+        print(f"[SYNC ERROR] Channels cache sync failed: {e}")
+    try:
+        save_vc_live_cache()
+    except Exception as e:
+        print(f"[SYNC ERROR] VC live cache sync failed: {e}")
+
+@dashboard_sync_loop.error
+async def dashboard_sync_loop_error(error):
+    print(f"[ERROR] dashboard_sync_loop task died: {error}")
+    import traceback
+    traceback.print_exc()
+    await asyncio.sleep(30)
+    if not dashboard_sync_loop.is_running():
+        dashboard_sync_loop.start()
 
 def save_vc_live_cache():
     """Cache live VC data for dashboard"""
@@ -2353,6 +2374,15 @@ def save_vc_live_cache():
         traceback.print_exc()
 
 @bot.event
+async def on_resumed():
+    """Restore presence immediately after a gateway resume (reconnect)."""
+    print("[CONNECTION] Bot resumed connection to Discord.")
+    try:
+        await update_arena_status(bot)
+    except Exception as e:
+        print(f"[ERROR] Failed to restore arena status after resume: {e}")
+
+@bot.event
 async def on_ready():
     # Write PID file immediately
     write_pid_file()
@@ -2460,21 +2490,24 @@ async def force_setup_user(ctx, member: discord.Member):
 
 @tasks.loop(hours=1)
 async def registration_timeout_check():
-    now = datetime.utcnow()
-    timeout = timedelta(days=4)
-    for user_id, join_time_str in list(join_times.items()):
-        join_time = datetime.fromisoformat(join_time_str)
-        if now - join_time > timeout:
-            guild = bot.get_guild(GUILD_ID)
-            member = guild.get_member(int(user_id))
-            if member and member.id not in SetupView.selection_made:
-                try:
-                    await guild.kick(member, reason="Having an Incomplete Account")
-                    print(f"Kicked {member} for incomplete registration.")
-                except Exception as e:
-                    print(f"Failed to kick {member}: {e}")
-            join_times.pop(user_id)
-            save_join_times(join_times)
+    try:
+        now = datetime.utcnow()
+        timeout = timedelta(days=4)
+        for user_id, join_time_str in list(join_times.items()):
+            join_time = datetime.fromisoformat(join_time_str)
+            if now - join_time > timeout:
+                guild = bot.get_guild(GUILD_ID)
+                member = guild.get_member(int(user_id))
+                if member and member.id not in SetupView.selection_made:
+                    try:
+                        await guild.kick(member, reason="Having an Incomplete Account")
+                        print(f"Kicked {member} for incomplete registration.")
+                    except Exception as e:
+                        print(f"Failed to kick {member}: {e}")
+                join_times.pop(user_id)
+                save_join_times(join_times)
+    except Exception as e:
+        print(f"[ERROR] Registration timeout check failed: {e}")
 
 if __name__ == "__main__":
     # REMOVE this line:

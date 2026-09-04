@@ -101,11 +101,20 @@ def init_equipment_db():
                 created_by TEXT NOT NULL,
                 FOREIGN KEY (item_id) REFERENCES equipment(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
         """)
 
-        # Seed default items if the table is empty
+        # Seed default items ONLY on first-ever init (not every time the table
+        # is empty) so an intentionally-cleared inventory stays empty on restart.
+        already_seeded = conn.execute(
+            "SELECT value FROM meta WHERE key = 'seeded'"
+        ).fetchone()
         count = conn.execute("SELECT COUNT(*) FROM equipment").fetchone()[0]
-        if count == 0:
+        if not already_seeded and count == 0:
             now = datetime.now(timezone.utc).isoformat()
             defaults = [
                 ("eq_001", "Headphones", "headset", 32, 32, now),
@@ -118,6 +127,11 @@ def init_equipment_db():
                 "INSERT INTO equipment (id, name, category, expected_quantity, current_quantity, added_at) VALUES (?, ?, ?, ?, ?, ?)",
                 defaults,
             )
+        # Mark as seeded regardless, so we never auto-seed again.
+        conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('seeded', ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
 
 
 # ---- Item CRUD ----

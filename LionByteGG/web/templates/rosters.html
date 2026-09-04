@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Team Rosters{% endblock %}
-{% block page_title %}Team & Roster Management{% endblock %}
+{% block title %}Team Manager{% endblock %}
+{% block page_title %}Team Manager{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -54,6 +54,8 @@
 {% endblock %}
 
 {% block content %}
+{% set cur_tab = request.args.get('tab', '') %}
+{% set active_tab = cur_tab if cur_tab else 'rosters-tab' %}
 <!-- Stats Overview -->
 <div class="stats-grid mb-3">
     <div class="stat-card gold">
@@ -256,6 +258,15 @@
             <button class="tab-btn active" data-tab="rosters-tab">
                 <i class="fas fa-users"></i> Rosters
             </button>
+            {% if has_perm('rosters.manage') %}
+            <button class="tab-btn" data-tab="captains-tab">
+                <i class="fas fa-user-tie"></i> Captains
+            </button>
+            <button class="tab-btn" data-tab="coaches-tab">
+                <i class="fas fa-chalkboard-user"></i> Coaches
+            </button>
+            {% endif %}
+            {% if has_perm('rosters.manage') %}
             <button class="tab-btn" data-tab="teams-tab">
                 <i class="fas fa-layer-group"></i> Teams
             </button>
@@ -263,15 +274,18 @@
                 <i class="fas fa-clock"></i> Pending Registrations
                 <span class="badge badge-warning" id="pending-count" style="margin-left: 6px;">0</span>
             </button>
+            {% endif %}
+            {% if has_perm('rosters.manage') %}
             <button class="tab-btn" data-tab="audit-tab">
                 <i class="fas fa-history"></i> Audit Log
             </button>
+            {% endif %}
         </div>
     </div>
 </div>
 
 <!-- Rosters Tab -->
-<div id="rosters-tab" class="tab-content active">
+<div id="rosters-tab" class="tab-content{% if active_tab == 'rosters-tab' %} active{% endif %}">
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">
@@ -296,8 +310,157 @@
     </div>
 </div>
 
+{% if has_perm('rosters.manage') %}
+<!-- Captains Tab (admin/staff only) -->
+<div id="captains-tab" class="tab-content">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-user-tie" style="color: var(--primary);"></i>
+                Team Captains
+            </h3>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" onclick="loadCaptainsTab()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+                Players marked as Captain on the Rosters tab appear here. This just tags their roster
+                record so the Captain role gets applied on Discord — there is no website login for them.
+            </p>
+            <div id="captains-container">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p>Loading captains...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if has_perm('rosters.manage') %}
+<!-- Coaches Tab (admin/staff only) -->
+<div id="coaches-tab" class="tab-content">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-chalkboard-user" style="color: #ef4444;"></i>
+                Coaches
+            </h3>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-danger btn-sm" onclick="openAddCoachModal()">
+                    <i class="fas fa-user-plus"></i> Add Coach
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="loadCoachesTab()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+                Manually add coaching staff (no registration needed) and assign each coach to one or more teams.
+            </p>
+            <div id="coaches-container">
+                <div class="loading-state">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p>Loading coaches...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add / Edit Coach Modal -->
+<div class="roster-modal" id="add-coach-modal">
+    <div class="roster-modal-content enhanced-modal" style="max-width: 580px;">
+        <div class="modal-header-enhanced" style="background: linear-gradient(135deg, rgba(239,68,68,0.18), rgba(153,27,27,0.12)); border-bottom: 1px solid rgba(239,68,68,0.3);">
+            <div class="modal-icon" style="background: rgba(239,68,68,0.18); color: #ef4444;">
+                <i class="fas fa-chalkboard-user"></i>
+            </div>
+            <div class="modal-title-section">
+                <h3 id="add-coach-title">Add Coach</h3>
+                <p>Manually add coaching staff &mdash; no registration required</p>
+            </div>
+            <button class="modal-close-btn" onclick="closeModal('add-coach-modal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="coach-original-discord-id">
+            <div class="form-section">
+                <div class="form-section-title">
+                    <i class="fas fa-id-card"></i> Basic Information
+                </div>
+                <div class="form-row">
+                    <div class="form-group-enhanced">
+                        <label><i class="fab fa-discord"></i> Discord User ID <span class="required-tag">Required</span></label>
+                        <input type="text" id="coach-discord-id" class="form-input-enhanced" placeholder="123456789012345678">
+                    </div>
+                    <div class="form-group-enhanced">
+                        <label><i class="fas fa-user"></i> Full Name <span class="required-tag">Required</span></label>
+                        <input type="text" id="coach-full-name" class="form-input-enhanced" placeholder="Jordan Smith">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group-enhanced">
+                        <label><i class="fas fa-chalkboard-user"></i> Coach Title</label>
+                        <select id="coach-title" class="form-select-enhanced">
+                            <option value="Head Coach">Head Coach</option>
+                            <option value="Assistant Coach">Assistant Coach</option>
+                            <option value="Coach">Coach</option>
+                            <option value="Team Manager">Team Manager</option>
+                            <option value="Analyst">Analyst</option>
+                        </select>
+                    </div>
+                    <div class="form-group-enhanced">
+                        <label><i class="fas fa-phone"></i> Phone Number <span class="optional-tag">Optional</span></label>
+                        <input type="text" id="coach-phone" class="form-input-enhanced" placeholder="(555) 123-4567">
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">
+                    <i class="fas fa-envelope"></i> Contact Info
+                </div>
+                <div class="form-row">
+                    <div class="form-group-enhanced">
+                        <label><i class="fas fa-envelope"></i> Purdue Email <span class="optional-tag">Optional</span></label>
+                        <input type="text" id="coach-purdue-email" class="form-input-enhanced" placeholder="name@purdue.edu">
+                    </div>
+                    <div class="form-group-enhanced">
+                        <label><i class="fas fa-envelope"></i> Personal Email <span class="optional-tag">Optional</span></label>
+                        <input type="text" id="coach-personal-email" class="form-input-enhanced" placeholder="name@email.com">
+                    </div>
+                </div>
+            </div>
+            <div class="form-section">
+                <div class="form-section-title">
+                    <i class="fas fa-layer-group"></i> Team(s) to Coach <span class="required-tag">Select at least one</span>
+                </div>
+                <div id="coach-teams-list" class="team-select-grid"></div>
+            </div>
+            <div class="form-group-enhanced">
+                <label><i class="fas fa-note-sticky"></i> Notes <span class="optional-tag">Optional</span></label>
+                <textarea id="coach-notes" class="form-input-enhanced" rows="2" placeholder="Anything else worth noting about this coach"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer-enhanced">
+            <button class="btn-enhanced secondary" onclick="closeModal('add-coach-modal')">
+                <i class="fas fa-times"></i> Cancel
+            </button>
+            <button class="btn-enhanced" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff;" onclick="submitAddCoach()">
+                <i class="fas fa-user-plus"></i> <span id="add-coach-submit-label">Add Coach</span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Teams Tab -->
-<div id="teams-tab" class="tab-content">
+<div id="teams-tab" class="tab-content{% if active_tab == 'teams-tab' %} active{% endif %}">
     <div class="teams-tab-header">
         <div class="teams-tab-title">
             <h3><i class="fas fa-layer-group"></i> All Teams</h3>
@@ -341,6 +504,7 @@
     </div>
 </div>
 
+{% if has_perm('rosters.manage') %}
 <!-- Audit Log Tab -->
 <div id="audit-tab" class="tab-content">
     <div class="card">
@@ -382,6 +546,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Player Detail Modal -->
 <div class="roster-modal" id="player-detail-modal">
@@ -412,6 +577,8 @@
             <button class="btn-enhanced warning" onclick="editSelectedPlayer()">
                 <i class="fas fa-edit"></i> Edit
             </button>
+            {% endif %}
+            {% if has_perm('rosters.manage_players') %}
             <button class="btn-enhanced danger" onclick="removeSelectedPlayer()">
                 <i class="fas fa-user-minus"></i> Remove
             </button>
@@ -734,6 +901,21 @@
                             </div>
                         </div>
                     </label>
+                    <label class="varsity-type-card" data-value="coach">
+                        <input type="radio" name="varsity-type" value="coach">
+                        <div class="varsity-type-content">
+                            <div class="varsity-type-icon varsity-red">
+                                <i class="fas fa-chalkboard-user"></i>
+                            </div>
+                            <div class="varsity-type-info">
+                                <span class="varsity-type-name">Coach</span>
+                                <span class="varsity-type-desc">Coaching staff, not a player</span>
+                            </div>
+                            <div class="varsity-type-check">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                        </div>
+                    </label>
                 </div>
             </div>
             
@@ -923,14 +1105,35 @@
                 <label><i class="fas fa-chart-line"></i> Tracker Link <span class="optional-tag">Optional</span></label>
                 <input type="text" id="add-tracker" class="form-input-enhanced" placeholder="https://tracker.gg/valorant/...">
             </div>
-            
-            <label class="captain-checkbox">
-                <input type="checkbox" id="add-is-captain">
-                <span class="captain-checkbox-box">
-                    <i class="fas fa-crown"></i>
-                </span>
-                <span class="captain-checkbox-label">Make this player a Team Captain</span>
-            </label>
+
+            {% if has_perm('rosters.manage_players') %}
+            <div class="special-role-section">
+                <label class="captain-checkbox" id="add-is-captain-label">
+                    <input type="checkbox" id="add-is-captain" onchange="toggleAddSpecialRole('captain')">
+                    <span class="captain-checkbox-box">
+                        <i class="fas fa-crown"></i>
+                    </span>
+                    <span class="captain-checkbox-label">Make this player a Team Captain</span>
+                </label>
+                <label class="captain-checkbox coach-checkbox" id="add-is-coach-label">
+                    <input type="checkbox" id="add-is-coach" onchange="toggleAddSpecialRole('coach')">
+                    <span class="captain-checkbox-box">
+                        <i class="fas fa-chalkboard-user"></i>
+                    </span>
+                    <span class="captain-checkbox-label">Make this player a Coach</span>
+                </label>
+                <div class="form-group-enhanced" id="add-coach-title-field" style="display: none;">
+                    <label><i class="fas fa-chalkboard-user"></i> Coach Title</label>
+                    <select id="add-coach-title-select" class="form-select-enhanced">
+                        <option value="Head Coach">Head Coach</option>
+                        <option value="Assistant Coach">Assistant Coach</option>
+                        <option value="Coach">Coach</option>
+                        <option value="Team Manager">Team Manager</option>
+                        <option value="Analyst">Analyst</option>
+                    </select>
+                </div>
+            </div>
+            {% endif %}
         </div>
         <div class="modal-footer-enhanced">
             <button class="btn-enhanced secondary" onclick="closeModal('add-player-modal')">
@@ -1029,6 +1232,33 @@
     font-size: 14px;
     font-weight: 500;
     color: var(--text-primary);
+}
+
+.special-role-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.special-role-section .captain-checkbox {
+    margin-top: 0;
+}
+
+/* Coach Checkbox — red theme, mirrors Captain gold theme */
+.coach-checkbox {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.2);
+}
+
+.coach-checkbox:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.coach-checkbox input:checked + .captain-checkbox-box {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    border-color: #ef4444;
 }
 </style>
 
@@ -1192,11 +1422,30 @@
                 </select>
             </div>
             
-            <div class="checkbox-enhanced">
-                <input type="checkbox" id="edit-is-captain">
+            {% if has_perm('rosters.manage_players') %}
+            <div class="checkbox-enhanced" id="edit-is-captain-row">
+                <input type="checkbox" id="edit-is-captain" onchange="toggleEditSpecialRole('captain')">
                 <label for="edit-is-captain">
                     <i class="fas fa-crown"></i> Team Captain
                 </label>
+            </div>
+            <div class="checkbox-enhanced coach-checkbox-row" id="edit-is-coach-row">
+                <input type="checkbox" id="edit-is-coach" onchange="toggleEditSpecialRole('coach')">
+                <label for="edit-is-coach">
+                    <i class="fas fa-chalkboard-user"></i> Coach
+                </label>
+            </div>
+            {% endif %}
+
+            <div class="form-group-enhanced" id="edit-coach-title-field" style="display: none;">
+                <label><i class="fas fa-chalkboard-user"></i> Coach Title</label>
+                <select id="edit-coach-title-select" class="form-select-enhanced">
+                    <option value="Head Coach">Head Coach</option>
+                    <option value="Assistant Coach">Assistant Coach</option>
+                    <option value="Coach">Coach</option>
+                    <option value="Team Manager">Team Manager</option>
+                    <option value="Analyst">Analyst</option>
+                </select>
             </div>
         </div>
         <div class="modal-footer-enhanced">
@@ -1264,6 +1513,7 @@
                             <option value="all">Both</option>
                             <option value="varsity">Varsity</option>
                             <option value="jv">JV</option>
+                            <option value="coach">Coach</option>
                         </select>
                     </div>
                 </div>
@@ -1403,6 +1653,16 @@
                     <div class="sf-card orange">
                         <div class="sf-val" id="sync-final-errors">0</div>
                         <div class="sf-lbl">Errors</div>
+                    </div>
+                </div>
+                <!-- Error Details (shown only when errors exist) -->
+                <div id="sync-error-details" style="display: none; margin-top: 16px;">
+                    <div onclick="document.getElementById('sync-error-list').style.display = document.getElementById('sync-error-list').style.display === 'none' ? 'block' : 'none'; this.querySelector('.chevron').classList.toggle('open')" style="cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.25); border-radius: 8px; color: #fb923c; font-size: 13px; font-weight: 500;">
+                        <i class="fas fa-chevron-right chevron" style="font-size: 10px; transition: transform 0.2s;"></i>
+                        <i class="fas fa-exclamation-triangle" style="font-size: 12px;"></i>
+                        <span id="sync-error-details-label">View Error Details</span>
+                    </div>
+                    <div id="sync-error-list" style="display: none; margin-top: 8px; max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid rgba(249, 115, 22, 0.15); border-radius: 8px; padding: 10px 14px;">
                     </div>
                 </div>
             </div>
@@ -2038,6 +2298,7 @@
 .sf-card.orange { background: rgba(245,158,11,0.07);  border: 1px solid rgba(245,158,11,0.18); }
 .sf-card.orange .sf-val { color: #f59e0b; }
 .sf-card.orange .sf-lbl { color: rgba(245,158,11,0.75); }
+.chevron.open { transform: rotate(90deg); }
 
 /* ── Utility Keyframes ── */
 @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -3197,6 +3458,7 @@
 
 .player-badge.varsity { background: rgba(212, 175, 55, 0.2); color: #d4af37; }
 .player-badge.jv { background: rgba(124, 58, 237, 0.2); color: #a78bfa; }
+.player-badge.coach { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
 .player-badge.sub_varsity { background: rgba(5, 150, 105, 0.2); color: #34d399; }
 .player-badge.sub_jv { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
 .player-badge.captain { background: rgba(239, 68, 68, 0.2); color: #f87171; }
@@ -4309,6 +4571,147 @@
     gap: 8px;
 }
 
+/* Captain Card */
+.captain-card {
+    background: var(--background-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border-left: 4px solid var(--primary);
+}
+
+.captain-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.captain-info h4 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.captain-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.captain-detail {
+    display: flex;
+    flex-direction: column;
+}
+
+.captain-detail label {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.captain-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.coach-card {
+    border-left-color: #ef4444;
+}
+
+.coach-card .captain-info h4 {
+    color: #ef4444;
+}
+
+.coach-avatar-ico {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.team-select-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.team-select-card {
+    position: relative;
+    cursor: pointer;
+}
+
+.team-select-card input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.team-select-card-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--background-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    transition: all 0.15s;
+}
+
+.team-select-card-content .team-select-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    border: 1.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 9px;
+    color: transparent;
+    transition: all 0.15s;
+}
+
+.team-select-card:hover .team-select-card-content {
+    border-color: #3b82f6;
+    background: var(--background-tertiary);
+}
+
+.team-select-card input:checked + .team-select-card-content {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.team-select-card input:checked + .team-select-card-content .team-select-check {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+}
+
+.team-select-empty {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+    padding: 12px 0;
+}
+
 /* Modal Styles - Modern & Clean */
 .roster-modal {
     position: fixed;
@@ -5391,6 +5794,11 @@
     color: #60a5fa;
 }
 
+.varsity-type-icon.varsity-red {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
 .varsity-type-info {
     flex: 1;
     min-width: 0;
@@ -5577,6 +5985,26 @@
 .checkbox-enhanced label i {
     color: #f59e0b;
     font-size: 12px;
+}
+
+.checkbox-enhanced#edit-is-captain-row {
+    margin-bottom: 10px;
+}
+
+.coach-checkbox-row {
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
+.coach-checkbox-row:hover {
+    border-color: #ef4444;
+}
+
+.coach-checkbox-row input {
+    accent-color: #ef4444;
+}
+
+.coach-checkbox-row label i {
+    color: #ef4444;
 }
 
 /* Enhanced Footer - Always Visible */
@@ -5967,6 +6395,33 @@
     gap: 4px;
 }
 
+.team-coaches-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 0 10px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.coach-strip-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #f87171;
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.coach-strip-badge i {
+    font-size: 10px;
+}
+
 /* Team Actions */
 .team-actions {
     display: flex;
@@ -6255,33 +6710,36 @@
 .team-stats-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
+    gap: 8px;
+    margin-bottom: 14px;
 }
 
 .team-stat-card {
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
+    border-radius: 10px;
+    padding: 8px 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
     transition: all 0.2s;
 }
 
 .team-stat-card:hover {
     border-color: rgba(16, 185, 129, 0.4);
-    transform: translateY(-2px);
 }
 
 .team-stat-card .stat-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 auto 10px;
-    font-size: 18px;
+    margin: 0;
+    font-size: 11px;
+    flex-shrink: 0;
 }
 
 .team-stat-card .stat-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
@@ -6289,18 +6747,25 @@
 .team-stat-card .stat-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
 .team-stat-card .stat-icon.purple { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
 
+.team-stat-card .stat-text { min-width: 0; }
+
 .team-stat-card .stat-value {
-    font-size: 20px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 4px;
+    margin-bottom: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .team-stat-card .stat-label {
-    font-size: 11px;
+    font-size: 9.5px;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.4px;
+    line-height: 1.2;
 }
 
 /* Team Roster Section */
@@ -6450,48 +6915,49 @@
 
 .team-member-card .member-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
     gap: 6px;
     flex-shrink: 0;
 }
 
 .team-member-card .member-action-btn {
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
     border: none;
-    border-radius: 8px;
+    border-radius: 7px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 11px;
     transition: all 0.2s;
 }
 
 .team-member-card .member-action-btn.captain {
-    background: rgba(212, 175, 55, 0.1);
-    color: #d4af37;
+    background: rgba(212, 175, 55, 0.08);
+    color: rgba(212, 175, 55, 0.55);
 }
 
 .team-member-card .member-action-btn.captain:hover {
-    background: rgba(212, 175, 55, 0.25);
-    transform: scale(1.1);
+    background: rgba(212, 175, 55, 0.22);
+    color: #d4af37;
 }
 
 .team-member-card .member-action-btn.captain.active {
-    background: linear-gradient(135deg, #d4af37, #b8960c);
-    color: #1a1a2e;
-    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+    background: rgba(212, 175, 55, 0.18);
+    color: #d4af37;
+    box-shadow: none;
 }
 
 .team-member-card .member-action-btn.remove {
-    background: rgba(239, 68, 68, 0.1);
-    color: #f87171;
+    background: rgba(239, 68, 68, 0.08);
+    color: rgba(248, 113, 113, 0.6);
 }
 
 .team-member-card .member-action-btn.remove:hover {
-    background: rgba(239, 68, 68, 0.25);
-    transform: scale(1.1);
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
 }
 
 /* Empty State */
@@ -6514,17 +6980,17 @@
 }
 
 .team-empty-state button {
-    padding: 10px 20px;
+    padding: 7px 14px;
     background: linear-gradient(135deg, #10b981, #059669);
     border: none;
-    border-radius: 10px;
+    border-radius: 9px;
     color: white;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     transition: all 0.2s;
 }
 
@@ -6549,15 +7015,15 @@
 }
 
 .team-btn {
-    padding: 10px 16px;
+    padding: 7px 13px;
     border: none;
-    border-radius: 10px;
-    font-size: 13px;
+    border-radius: 9px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     transition: all 0.2s;
 }
 
@@ -8078,6 +8544,224 @@
     border-color: rgba(59, 130, 246, 0.3);
     color: #60a5fa;
 }
+
+/* ===== Captain task progress & tasks modal ===== */
+.cap-task-progress { display: flex; align-items: center; gap: 8px; }
+.cap-task-bar { flex: 1; height: 6px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.cap-task-fill { height: 100%; background: linear-gradient(90deg, #f59e0b, #d4af37); border-radius: 4px; transition: width 0.4s ease; }
+.cap-task-fill.done { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.cap-task-count { font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.captain-tasks-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.captain-tasks-add input { flex: 1; }
+.captain-tasks-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+.captain-tasks-loading, .captain-tasks-empty { text-align: center; color: var(--text-secondary); font-size: 13px; padding: 20px; }
+.cap-task-item { display: flex; align-items: flex-start; gap: 10px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 12px; }
+.cap-task-item.done { opacity: 0.72; }
+.cap-task-check { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 17px; padding: 0; margin-top: 1px; flex-shrink: 0; display: flex; }
+.cap-task-item.done .cap-task-check { color: #22c55e; }
+.cap-task-body { flex: 1; min-width: 0; }
+.cap-task-text { font-size: 13.5px; color: #fff; line-height: 1.35; word-break: break-word; }
+.cap-task-item.done .cap-task-text { text-decoration: line-through; opacity: 0.75; }
+.cap-task-meta { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+.cap-task-del { background: none; border: none; color: var(--text-muted, #6b7280); cursor: pointer; font-size: 13px; padding: 0; flex-shrink: 0; opacity: 0.6; transition: 0.15s; }
+.cap-task-del:hover { color: #ef4444; opacity: 1; }
+.mytasks-add { display: flex; gap: 8px; margin-bottom: 16px; }
+.mytasks-add input { flex: 1; }
+.mytasks-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* ===== Captain "My Team" Dashboard ===== */
+.myteam-hero {
+    position: relative; overflow: hidden;
+    border-radius: 22px; padding: 30px; margin-bottom: 20px;
+    background: linear-gradient(135deg, var(--mt-color, #d4af37) 0%, rgba(12,15,22,0.94) 60%);
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.4);
+}
+.myteam-hero::before {
+    content: ''; position: absolute; top: -70px; right: -40px; width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 70%);
+    pointer-events: none;
+}
+.myteam-hero::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(12,15,22,0.05), rgba(12,15,22,0.75));
+    pointer-events: none;
+}
+.myteam-hero-inner { position: relative; z-index: 1; display: flex; align-items: center; gap: 20px; }
+.myteam-hero-badge {
+    width: 62px; height: 62px; border-radius: 16px; flex-shrink: 0;
+    background: rgba(255,255,255,0.16); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+.myteam-hero h2 { margin: 0 0 6px; font-size: 27px; font-weight: 800; color: #fff; letter-spacing: -0.3px; }
+.myteam-hero .myteam-sub { font-size: 13px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.myteam-hero .myteam-sub .dot { opacity: 0.4; }
+.myteam-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.myteam-stat {
+    position: relative; overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 14px;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.myteam-stat:hover { border-color: rgba(255,255,255,0.16); transform: translateY(-3px); box-shadow: 0 12px 26px rgba(0,0,0,0.25); }
+.myteam-stat.attn { border-color: rgba(239,68,68,0.4); background: linear-gradient(180deg, rgba(239,68,68,0.09), rgba(239,68,68,0.02)); }
+.mts-icon { width: 46px; height: 46px; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.mts-icon.blue { background: rgba(59,130,246,0.16); color: #60a5fa; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.22); }
+.mts-icon.green { background: rgba(34,197,94,0.16); color: #22c55e; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.22); }
+.mts-icon.amber { background: rgba(245,158,11,0.16); color: #fbbf24; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.22); }
+.mts-icon.red { background: rgba(239,68,68,0.16); color: #ef4444; box-shadow: inset 0 0 0 1px rgba(239,68,68,0.22); }
+.mts-value { font-size: 24px; font-weight: 800; color: #fff; line-height: 1; letter-spacing: -0.5px; }
+.mts-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+.myteam-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.myteam-hero { animation: mtFadeUp 0.42s cubic-bezier(0.2,0.8,0.2,1) both; }
+.myteam-stats { animation: mtFadeUp 0.42s cubic-bezier(0.2,0.8,0.2,1) both; animation-delay: 0.05s; }
+.myteam-actions { animation: mtFadeUp 0.42s cubic-bezier(0.2,0.8,0.2,1) both; animation-delay: 0.1s; }
+.mt-attention {
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); color: #fca5a5;
+    border-radius: 12px; padding: 11px 15px; font-size: 13px; margin-bottom: 18px; display: flex; align-items: center; gap: 9px;
+}
+.mt-attention i { color: #ef4444; }
+.mt-attention strong { color: #fff; }
+.mt-tasks-banner { background: linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.03)); border: 1px solid rgba(245,158,11,0.3); border-radius: 16px; padding: 15px 18px; margin-bottom: 18px; }
+.mt-tasks-banner-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mt-tasks-banner-head > div { font-size: 14px; color: #fff; font-weight: 600; }
+.mt-tasks-banner-head > div i { color: #fbbf24; margin-right: 6px; }
+.mt-tasks-banner-head strong { color: #fbbf24; }
+.mt-tasks-viewall { font-size: 12px; color: #fbbf24; text-decoration: none; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.mt-tasks-viewall:hover { text-decoration: underline; }
+.mt-tasks-banner-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.mt-tasks-chip { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #e5e9f0; border-radius: 20px; padding: 6px 14px; font-size: 12.5px; cursor: pointer; transition: 0.15s; max-width: 100%; }
+.mt-tasks-chip i { color: #fbbf24; font-size: 9px; transition: 0.15s; }
+.mt-tasks-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.mt-tasks-chip:hover { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #22c55e; }
+.mt-tasks-chip:hover i { color: #22c55e; }
+.mt-tasks-more { font-size: 12px; color: var(--text-secondary); align-self: center; }
+/* ===== Valorant-style captain command center ===== */
+.vlr-topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; padding: 16px 20px; margin-bottom: 16px; border-radius: 16px; background: linear-gradient(135deg, rgba(255,70,85,0.07), rgba(13,16,23,0.5)); border: 1px solid rgba(255,255,255,0.08); }
+.vlr-topbar-center { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; }
+.vlr-team-badge { width: 42px; height: 42px; border-radius: 11px; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 19px; margin-bottom: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+.vlr-team-name { font-size: 23px; font-weight: 800; color: #fff; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.1; }
+.vlr-team-sub { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.vlr-team-sub .dot { opacity: 0.4; }
+.vlr-topbar-side { display: flex; align-items: center; }
+.vlr-topbar-side.vlr-right { justify-content: flex-end; gap: 14px; }
+.vlr-datetime { text-align: right; line-height: 1.25; }
+.vlr-date { font-size: 13px; font-weight: 700; color: #fff; }
+.vlr-time { font-size: 12px; color: var(--text-secondary); }
+.vlr-league-btn { display: inline-flex; align-items: center; gap: 7px; background: #ff4655; color: #fff; border-radius: 9px; padding: 10px 16px; font-size: 12px; font-weight: 700; text-decoration: none; text-transform: uppercase; letter-spacing: 0.4px; transition: 0.18s; box-shadow: 0 6px 18px rgba(255,70,85,0.35); white-space: nowrap; }
+.vlr-league-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.vlr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.vlr-stat { position: relative; background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012)); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 15px 18px; overflow: hidden; transition: transform 0.2s ease, border-color 0.2s ease; }
+.vlr-stat:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.16); }
+.vlr-stat::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #ff4655; }
+.vlr-stat.warn::before { background: #f59e0b; }
+.vlr-stat-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+.vlr-stat-value { font-size: 30px; font-weight: 800; color: #fff; line-height: 1.1; margin: 2px 0; letter-spacing: -0.5px; }
+.vlr-stat-sub { font-size: 11px; color: var(--text-secondary); }
+.vlr-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.vlr-grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+.vlr-grid-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.vlr-panel { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008)); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+.vlr-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); }
+.vlr-panel-head > span:first-child { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #fff; display: flex; align-items: center; gap: 8px; }
+.vlr-panel-head > span:first-child i { color: #ff4655; }
+.vlr-panel-count { background: rgba(255,255,255,0.08); color: var(--text-secondary); font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+.vlr-panel-link { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #ff4655; text-decoration: none; }
+.vlr-panel-link:hover { text-decoration: underline; }
+.vlr-panel-body { padding: 14px 16px; flex: 1; }
+.vlr-tasks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.vlr-task { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: rgba(255,255,255,0.03); font-size: 13px; color: #e5e9f0; }
+.vlr-task-check { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 16px; padding: 0; display: flex; transition: 0.15s; }
+.vlr-task-check:hover { color: #22c55e; transform: scale(1.15); }
+.vlr-task span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vlr-empty { text-align: center; color: var(--text-secondary); font-size: 13px; padding: 16px; }
+.vlr-empty i { color: #22c55e; margin-right: 6px; }
+.vlr-task-add { display: flex; gap: 6px; }
+.vlr-task-add input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 12.5px; outline: none; }
+.vlr-task-add input:focus { border-color: #ff4655; }
+.vlr-task-add button { flex-shrink: 0; width: 34px; border-radius: 8px; background: #ff4655; border: none; color: #fff; cursor: pointer; }
+.vlr-task-add button:hover { filter: brightness(1.1); }
+@media (max-width: 1000px) {
+    .vlr-grid-main, .vlr-grid-sub { grid-template-columns: 1fr; }
+    .vlr-stats { grid-template-columns: repeat(2, 1fr); }
+    .vlr-topbar { grid-template-columns: 1fr; }
+    .vlr-topbar-side.vlr-right { justify-content: center; }
+    .vlr-topbar-side:first-child { display: none; }
+}
+.myteam-section { margin-bottom: 22px; }
+.myteam-section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.myteam-section-head::before { content: ''; width: 4px; height: 18px; border-radius: 3px; background: var(--primary, #d4af37); flex-shrink: 0; }
+.myteam-section-head h3 { margin: 0; font-size: 16px; font-weight: 700; color: #fff; letter-spacing: -0.2px; }
+.myteam-section-head i { color: var(--primary); }
+.mt-count-pill { margin-left: 4px; background: rgba(255,255,255,0.06); color: var(--text-secondary); font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.mt-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.mt-role-col { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012)); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 13px; }
+.mt-role-col.unassigned { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.05); }
+.mt-role-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--primary); margin-bottom: 10px; }
+.mt-role-col.unassigned .mt-role-head { color: #fbbf24; }
+.mt-role-count { background: rgba(255,255,255,0.06); color: var(--text-secondary); border-radius: 20px; padding: 1px 9px; font-size: 11px; }
+.mt-role-chip { display: flex; align-items: center; gap: 10px; padding: 7px; border-radius: 10px; cursor: pointer; transition: 0.15s; }
+.mt-role-chip:hover { background: rgba(255,255,255,0.05); }
+.mt-chip-av { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; overflow: hidden; flex-shrink: 0; }
+.mt-chip-av img { width: 100%; height: 100%; object-fit: cover; }
+.mt-chip-meta { display: flex; flex-direction: column; min-width: 0; }
+.mt-chip-name { font-size: 13px; color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-chip-name .fa-crown { color: #fbbf24; }
+.mt-chip-ign { font-size: 11px; color: var(--text-secondary); }
+.mt-roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.mt-player-card { background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012)); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 15px; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.mt-player-card:hover { border-color: rgba(255,255,255,0.14); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,0.25); }
+.mt-player-card.captain { border-color: rgba(251,191,36,0.3); }
+.mt-player-top { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.mt-player-av { width: 44px; height: 44px; border-radius: 11px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; overflow: hidden; flex-shrink: 0; }
+.mt-player-av img { width: 100%; height: 100%; object-fit: cover; }
+.mt-player-id { flex: 1; min-width: 0; }
+.mt-player-name { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-player-sub { font-size: 12px; color: var(--text-secondary); }
+.mt-player-mid { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; min-height: 22px; }
+.mt-badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; }
+.mt-badge.role { background: rgba(124,58,237,0.15); color: #a78bfa; }
+.mt-badge.type.starter { background: rgba(34,197,94,0.14); color: #22c55e; }
+.mt-badge.type.sub { background: rgba(59,130,246,0.14); color: #60a5fa; }
+.mt-badge.warn { background: rgba(245,158,11,0.14); color: #fbbf24; }
+.mt-player-actions { display: flex; gap: 8px; }
+.mt-act { flex: 1; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--text-secondary); border-radius: 9px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: 0.18s; }
+.mt-act:hover { background: rgba(255,255,255,0.09); color: #fff; }
+.mt-act.danger:hover { background: rgba(239,68,68,0.14); color: #f87171; border-color: rgba(239,68,68,0.3); }
+.myteam-empty { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 13px; grid-column: 1 / -1; }
+.mt-toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.mt-search { position: relative; flex: 1; min-width: 180px; }
+.mt-search i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; }
+.mt-search input { width: 100%; padding: 9px 12px 9px 34px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 13px; outline: none; transition: 0.2s; }
+.mt-search input:focus { border-color: var(--primary); }
+.mt-sort { padding: 9px 12px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 13px; outline: none; cursor: pointer; }
+.mt-sort option { background-color: #12161f; color: #e5e9f0; }
+.mt-role-col { border-left: 3px solid var(--role-accent, rgba(255,255,255,0.06)); }
+.mt-role-head i { color: var(--role-accent, var(--primary)); }
+.mt-role-col.unassigned { border-left-color: #f59e0b; }
+.mt-player-actions .mt-act.danger { flex: 0 0 auto; padding: 8px 12px; }
+@keyframes mtFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.mt-player-card { animation: mtFadeUp 0.34s ease both; }
+.mt-split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mt-split-col { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012)); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 13px; }
+.mt-split-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.mt-split-head.starters { color: #22c55e; }
+.mt-split-head.subs { color: #60a5fa; }
+.mt-split-count { background: rgba(255,255,255,0.06); color: var(--text-secondary); font-size: 11px; padding: 1px 9px; border-radius: 20px; }
+.mt-split-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 10px; }
+.mt-split-row:hover { background: rgba(255,255,255,0.03); }
+.mt-split-av { width: 34px; height: 34px; border-radius: 9px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; overflow: hidden; flex-shrink: 0; }
+.mt-split-av img { width: 100%; height: 100%; object-fit: cover; }
+.mt-split-info { flex: 1; min-width: 0; }
+.mt-split-name { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-split-role { font-size: 11px; color: var(--text-secondary); }
+.mt-split-btn { flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text-secondary); border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: 0.18s; white-space: nowrap; }
+.mt-split-btn.promote:hover { background: rgba(34,197,94,0.15); color: #22c55e; border-color: rgba(34,197,94,0.3); }
+.mt-split-btn.bench:hover { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
+@media (max-width: 640px) { .mt-split-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .myteam-stats { grid-template-columns: repeat(2, 1fr); } }
 </style>
 
 <script>
@@ -8090,7 +8774,9 @@ const ROSTER_PERMS = {
     sync_roles: {{ has_perm('rosters.sync_roles')|tojson }},
     bulk_actions: {{ has_perm('rosters.bulk_actions')|tojson }},
     dm_players: {{ has_perm('rosters.dm_players')|tojson }},
-    send_registration: {{ has_perm('varsity.send_registration')|tojson }}
+    send_registration: {{ has_perm('varsity.send_registration')|tojson }},
+    manage_captains: {{ has_perm('rosters.manage')|tojson }},
+    approve_registrations: {{ has_perm('varsity.manage')|tojson }}
 };
 let rosterData = { players: [], teams: [], pending: [] };
 let selectedPlayer = null;
@@ -8248,6 +8934,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'audit-tab') {
             loadAuditLog();
         }
+        // Load captains when switching to captains tab
+        if (btn.dataset.tab === 'captains-tab') {
+            loadCaptainsTab();
+        }
+        // Load coaches when switching to coaches tab
+        if (btn.dataset.tab === 'coaches-tab') {
+            loadCoachesTab();
+        }
     });
 });
 
@@ -8256,6 +8950,323 @@ document.addEventListener('DOMContentLoaded', () => {
     loadEsportsGames();
     loadRosterData();
 });
+
+// ============ Captains Tab ============
+let captainsListCache = [];
+
+async function loadCaptainsTab() {
+    const container = document.getElementById('captains-container');
+    if (!container) return;
+    try {
+        const response = await fetch('/api/rosters/captains');
+        const data = await response.json();
+        captainsListCache = data.captains || [];
+        renderCaptainsTable();
+    } catch (error) {
+        console.error('Error loading captains:', error);
+        container.innerHTML = '<div class="empty-state"><p>Failed to load captains.</p></div>';
+    }
+}
+
+function renderCaptainsTable() {
+    const container = document.getElementById('captains-container');
+    if (!container) return;
+    if (captainsListCache.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-user-tie"></i>
+                <p>No captains yet. Mark a player as Team Captain from the Rosters tab to get started.</p>
+            </div>
+        `;
+        return;
+    }
+    container.innerHTML = captainsListCache.map(c => {
+        const teamBadges = (c.player_team_names || []).map(n => `<span class="player-badge varsity">${n}</span>`).join(' ') || '<span style="color: var(--text-muted);">No team on roster</span>';
+        return `
+        <div class="captain-card">
+            <div class="captain-header">
+                <div class="captain-info">
+                    <h4>${c.full_name || c.discord_id}</h4>
+                    <span style="font-size: 13px; color: var(--text-secondary);">${c.game || ''}</span>
+                </div>
+            </div>
+            <div class="captain-details">
+                <div class="captain-detail">
+                    <label>Team(s) on Roster</label>
+                    <span>${teamBadges}</span>
+                </div>
+            </div>
+            <div class="captain-actions">
+                <button class="btn btn-danger btn-sm" onclick="toggleCaptain('${c.discord_id}', false)"><i class="fas fa-user-minus"></i> Remove Captain</button>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+// ============ Coaches Tab ============
+function loadCoachesTab() {
+    fetch('/api/rosters/coaches')
+        .then(r => r.json())
+        .then(data => { coachesListCache = data.coaches || []; renderCoachesTable(); })
+        .catch(error => {
+            console.error('Error loading coaches:', error);
+            const container = document.getElementById('coaches-container');
+            if (container) container.innerHTML = '<div class="empty-state"><p>Failed to load coaches.</p></div>';
+        });
+}
+
+let coachesListCache = [];
+
+function renderCoachesTable() {
+    const container = document.getElementById('coaches-container');
+    if (!container) return;
+    const coaches = coachesListCache;
+    if (coaches.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-chalkboard-user"></i>
+                <p>No coaches yet. Click "Add Coach" to add coaching staff.</p>
+            </div>
+        `;
+        return;
+    }
+    container.innerHTML = coaches.map(c => {
+        const player = (rosterData.players || []).find(p => p.discord_id === c.discord_id) || {};
+        const teamBadges = (c.player_team_names || []).map(n => `<span class="player-badge coach">${n}</span>`).join(' ') || '<span style="color: var(--text-muted);">No teams assigned</span>';
+        const coachJson = JSON.stringify(player).replace(/'/g, "&#39;");
+        return `
+        <div class="captain-card coach-card">
+            <div class="captain-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="coach-avatar-ico"><i class="fas fa-chalkboard-user"></i></div>
+                    <div class="captain-info">
+                        <h4>${c.full_name || c.discord_id}</h4>
+                        <span style="font-size: 13px; color: var(--text-secondary);">${player.coach_title || 'Coach'}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="captain-details">
+                <div class="captain-detail">
+                    <label>Team(s) Coaching</label>
+                    <span>${teamBadges}</span>
+                </div>
+                <div class="captain-detail">
+                    <label>Contact</label>
+                    <span>${player.purdue_email || player.personal_email || player.phone || '—'}</span>
+                </div>
+            </div>
+            <div class="captain-actions">
+                <button class="btn btn-secondary btn-sm" onclick='openAddCoachModal(${coachJson})'><i class="fas fa-edit"></i> Edit</button>
+                <button class="btn btn-warning btn-sm" onclick="removeCoachRole('${c.discord_id}')"><i class="fas fa-user-check"></i> Remove Coach</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCoach('${c.discord_id}')"><i class="fas fa-trash"></i> Delete</button>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+function openAddCoachModal(coach) {
+    const isEdit = !!coach;
+    document.getElementById('add-coach-title').textContent = isEdit ? 'Edit Coach' : 'Add Coach';
+    document.getElementById('add-coach-submit-label').textContent = isEdit ? 'Save Changes' : 'Add Coach';
+    document.getElementById('coach-original-discord-id').value = isEdit ? coach.discord_id : '';
+    document.getElementById('coach-discord-id').value = isEdit ? coach.discord_id : '';
+    document.getElementById('coach-discord-id').disabled = isEdit;
+    document.getElementById('coach-full-name').value = isEdit ? (coach.full_name || '') : '';
+    document.getElementById('coach-title').value = isEdit ? (coach.coach_title || 'Head Coach') : 'Head Coach';
+    document.getElementById('coach-phone').value = isEdit ? (coach.phone || '') : '';
+    document.getElementById('coach-purdue-email').value = isEdit ? (coach.purdue_email || '') : '';
+    document.getElementById('coach-personal-email').value = isEdit ? (coach.personal_email || '') : '';
+    document.getElementById('coach-notes').value = isEdit ? (coach.notes || '') : '';
+
+    const teams = (rosterData.teams || []);
+    const selectedTeamIds = isEdit ? (coach.team_ids || (coach.team_id ? [coach.team_id] : [])) : [];
+    const teamsContainer = document.getElementById('coach-teams-list');
+    teamsContainer.innerHTML = teams.map(team => `
+        <label class="team-select-card">
+            <input type="checkbox" value="${team.id}" ${selectedTeamIds.includes(team.id) ? 'checked' : ''}>
+            <span class="team-select-card-content">
+                <span class="team-select-check"><i class="fas fa-check"></i></span>
+                <span>${team.name}${team.type ? ` <span style="color: var(--text-muted); font-weight: 400;">(${team.type})</span>` : ''}</span>
+            </span>
+        </label>
+    `).join('') || '<p class="team-select-empty">No teams available. Create a team first.</p>';
+
+    document.getElementById('add-coach-modal').classList.add('active');
+}
+
+async function submitAddCoach() {
+    const isEdit = !!document.getElementById('coach-original-discord-id').value;
+    const discordId = document.getElementById('coach-discord-id').value.trim();
+    const fullName = document.getElementById('coach-full-name').value.trim();
+    const teamIds = Array.from(document.querySelectorAll('#coach-teams-list input[type="checkbox"]:checked')).map(cb => cb.value);
+
+    if (!discordId) { showToast('Discord User ID is required', 'error'); return; }
+    if (!fullName) { showToast('Full name is required', 'error'); return; }
+    if (teamIds.length === 0) { showToast('Select at least one team for this coach', 'error'); return; }
+
+    const btn = document.querySelector('#add-coach-modal .modal-footer-enhanced button:last-child');
+    const btnLabel = document.getElementById('add-coach-submit-label');
+    const originalLabel = btnLabel.textContent;
+    if (btn) { btn.disabled = true; btnLabel.textContent = isEdit ? 'Saving...' : 'Adding...'; }
+
+    try {
+        const playerPayload = {
+            discord_id: discordId,
+            full_name: fullName,
+            player_type: 'coach',
+            coach_title: document.getElementById('coach-title').value,
+            phone: document.getElementById('coach-phone').value.trim(),
+            purdue_email: document.getElementById('coach-purdue-email').value.trim(),
+            personal_email: document.getElementById('coach-personal-email').value.trim(),
+            notes: document.getElementById('coach-notes').value.trim()
+        };
+        const playerResp = await fetch('/api/rosters/player', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(playerPayload)
+        });
+        const playerResult = await playerResp.json();
+        if (!playerResult.success && playerResult.error) {
+            showToast(playerResult.error, 'error');
+            return;
+        }
+
+        // Reconcile team assignments: add newly-checked teams, remove unchecked ones
+        const existingCoach = (rosterData.players || []).find(p => p.discord_id === discordId);
+        const existingTeamIds = existingCoach ? (existingCoach.team_ids || (existingCoach.team_id ? [existingCoach.team_id] : [])) : [];
+        const toAdd = teamIds.filter(id => !existingTeamIds.includes(id));
+        const toRemove = existingTeamIds.filter(id => !teamIds.includes(id));
+
+        for (const teamId of toAdd) {
+            await fetch('/api/rosters/assign-team', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ discord_id: discordId, team_id: teamId, action: 'add', player_type: 'coach' })
+            });
+        }
+        for (const teamId of toRemove) {
+            await fetch('/api/rosters/assign-team', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ discord_id: discordId, team_id: teamId, action: 'remove' })
+            });
+        }
+
+        showToast(isEdit ? 'Coach updated' : 'Coach added', 'success');
+        closeModal('add-coach-modal');
+        await loadRosterData();
+        loadCoachesTab();
+    } catch (error) {
+        console.error('Error saving coach:', error);
+        showToast('Failed to save coach', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btnLabel.textContent = originalLabel; }
+    }
+}
+
+async function deleteCoach(discordId) {
+    const coach = (rosterData.players || []).find(p => p.discord_id === discordId);
+    const coachName = coach?.full_name || 'this coach';
+    const confirmed = await showConfirmModal({
+        title: 'Remove Coach',
+        message: `Remove ${coachName} from the roster entirely? This deletes their coach record and all team assignments.`,
+        confirmText: 'Remove Coach',
+        headerColor: 'red',
+        confirmButtonClass: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/rosters/player', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discord_id: discordId })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showToast('Coach removed', 'success');
+            await loadRosterData();
+            loadCoachesTab();
+        } else {
+            showToast(data.error || 'Failed to remove coach', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing coach:', error);
+        showToast('Failed to remove coach', 'error');
+    }
+}
+
+// Un-tags someone as Coach and puts them back on the roster as a normal player
+// (keeps their team assignments, unlike deleteCoach which removes them entirely)
+async function removeCoachRole(discordId) {
+    const coach = (rosterData.players || []).find(p => p.discord_id === discordId);
+    const coachName = coach?.full_name || 'this coach';
+    const confirmed = await showConfirmModal({
+        title: 'Remove Coach',
+        message: `Remove ${coachName} as a Coach? They'll just be a regular player on the roster again — their team assignments stay the same, and nothing else about them is deleted.`,
+        confirmText: 'Remove Coach',
+        headerColor: 'gold',
+        confirmButtonClass: 'warning'
+    });
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/rosters/player', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discord_id: discordId, player_type: 'varsity' })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showToast(`${coachName} is back on the roster`, 'success');
+            await loadRosterData();
+            loadCoachesTab();
+        } else {
+            showToast(data.error || 'Failed to update player', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing coach role:', error);
+        showToast('Failed to update player', 'error');
+    }
+}
+
+async function removeCoachFromTeam(discordId, teamId) {
+    const coach = (rosterData.players || []).find(p => p.discord_id === discordId);
+    const coachName = coach?.full_name || 'this coach';
+    const teamName = (rosterData.teams || []).find(t => t.id === teamId)?.name || 'this team';
+    const confirmed = await showConfirmModal({
+        title: 'Remove Coach from Team',
+        message: `Remove ${coachName} from ${teamName}? They will remain in the roster but won't coach this team anymore.`,
+        confirmText: 'Remove from Team',
+        headerColor: 'red',
+        confirmButtonClass: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/rosters/assign-team', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discord_id: discordId, team_id: teamId, action: 'remove' })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Coach removed from team', 'success');
+            await loadRosterData();
+            loadCoachesTab();
+            if (selectedTeam && document.getElementById('team-detail-modal').classList.contains('active')) {
+                openTeamDetail(selectedTeam.id);
+            }
+        } else {
+            showToast(result.error || 'Failed to remove coach from team', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing coach from team:', error);
+        showToast('Failed to remove coach from team', 'error');
+    }
+}
 
 // Esports games from database
 let esportsGamesList = [];
@@ -8337,6 +9348,25 @@ async function loadRosterData() {
     }
 }
 
+// Activate a tab by id
+function activateTab(tabId) {
+    if (!tabId) return;
+    const content = document.getElementById(tabId);
+    if (!content) return;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    content.classList.add('active');
+    const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+    if (btn) btn.classList.add('active');
+    if (tabId === 'audit-tab') { if (typeof loadAuditLog === 'function') loadAuditLog(); }
+    else if (tabId === 'captains-tab') { if (typeof loadCaptainsTab === 'function') loadCaptainsTab(); }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab) setTimeout(() => activateTab(tab), 60);
+});
+
 function updateStats() {
     const players = rosterData.players || [];
     // Single pass to count all stats instead of multiple filter passes
@@ -8350,16 +9380,18 @@ function updateStats() {
         if (p.game) gamesSet.add(p.game);
     }
     
-    domCache.get('stat-varsity').textContent = varsityCount;
-    domCache.get('stat-jv').textContent = jvCount;
-    domCache.get('stat-games').textContent = gamesSet.size;
-    domCache.get('stat-captains').textContent = captainCount;
-    domCache.get('pending-count').textContent = (rosterData.pending || []).length;
+    const setStat = (id, val) => { const el = domCache.get(id); if (el) el.textContent = val; };
+    setStat('stat-varsity', varsityCount);
+    setStat('stat-jv', jvCount);
+    setStat('stat-games', gamesSet.size);
+    setStat('stat-captains', captainCount);
+    setStat('pending-count', (rosterData.pending || []).length);
 }
 
 function populateGameFilter() {
     const games = [...new Set(rosterData.players.map(p => p.game).filter(g => g))];
     const select = domCache.get('filter-game');
+    if (!select) return;
     // Build all options at once instead of repeated innerHTML modifications
     select.innerHTML = '<option value="all">All Games</option>' + 
         games.map(game => `<option value="${game}">${game}</option>`).join('');
@@ -8367,15 +9399,15 @@ function populateGameFilter() {
 
 function renderPlayers(gameFilter, typeFilter, statusFilter, roleFilter) {
     const container = domCache.get('players-container');
-    const allPlayers = rosterData.players || [];
+    const allPlayers = (rosterData.players || []).filter(p => p.player_type !== 'coach');
     const totalCount = allPlayers.length;
     
-    // Get filter values (use cached DOM refs)
-    gameFilter = gameFilter || domCache.get('filter-game').value;
-    typeFilter = typeFilter || domCache.get('filter-type').value;
-    statusFilter = statusFilter || domCache.get('filter-status').value;
-    roleFilter = roleFilter || domCache.get('filter-role').value;
-    const search = domCache.get('search-players').value.toLowerCase();
+    // Get filter values (use cached DOM refs; null-safe for captains where the filter bar is hidden)
+    gameFilter = gameFilter || (domCache.get('filter-game')?.value || 'all');
+    typeFilter = typeFilter || (domCache.get('filter-type')?.value || 'all');
+    statusFilter = statusFilter || (domCache.get('filter-status')?.value || 'all');
+    roleFilter = roleFilter || (domCache.get('filter-role')?.value || 'all');
+    const search = (domCache.get('search-players')?.value || '').toLowerCase();
     
     // Single-pass filtering for better performance
     const players = allPlayers.filter(p => {
@@ -8729,7 +9761,12 @@ async function saveTeamOrder() {
 }
 
 function renderTeamCard(team, index = 0, totalTeams = 1) {
-    const members = (rosterData.players || []).filter(p => p.team_id === team.id);
+    const teamMembers = (rosterData.players || []).filter(p => {
+        const playerTeamIds = p.team_ids || (p.team_id ? [p.team_id] : []);
+        return playerTeamIds.includes(team.id);
+    });
+    const members = teamMembers.filter(p => p.player_type !== 'coach');
+    const coaches = teamMembers.filter(p => p.player_type === 'coach');
     const captains = members.filter(m => m.is_captain);
     const gameIcon = getGameIcon(team.game);
     
@@ -8745,9 +9782,15 @@ function renderTeamCard(team, index = 0, totalTeams = 1) {
                     <i class="fas ${gameIcon}"></i> ${team.game} • 
                     <i class="fas fa-users"></i> ${members.length} players
                     ${captains.length > 0 ? `• <i class="fas fa-crown"></i> ${captains.length} captain${captains.length > 1 ? 's' : ''}` : ''}
+                    ${coaches.length > 0 ? `• <i class="fas fa-chalkboard-user"></i> ${coaches.length} coach${coaches.length > 1 ? 'es' : ''}` : ''}
                 </div>
             </div>
             <div class="team-body">
+                ${coaches.length > 0 ? `
+                <div class="team-coaches-strip">
+                    ${coaches.map(c => `<span class="coach-strip-badge"><i class="fas fa-chalkboard-user"></i> ${c.full_name || c.discord_id}</span>`).join('')}
+                </div>
+                ` : ''}
                 <div class="team-roster">
                     ${members.length > 0 ? [...members].sort((a, b) => (b.is_captain ? 1 : 0) - (a.is_captain ? 1 : 0)).map(m => {
                         const roleMap = {'igl':'IGL','captain':'Captain','coach':'Coach','duelist':'Duelist','controller':'Controller','initiator':'Initiator','sentinel':'Sentinel','awper':'AWPer','rifler':'Rifler','support':'Support','support_moba':'Support','top':'Top','jungle':'Jungle','mid':'Mid','adc':'ADC','tank':'Tank','dps':'DPS','healer':'Healer','flex':'Flex','substitute':'Sub','entry':'Entry','lurker':'Lurker','analyst':'Analyst'};
@@ -8769,12 +9812,14 @@ function renderTeamCard(team, index = 0, totalTeams = 1) {
                     <button class="team-action-btn primary" onclick="openTeamDetail('${team.id}')">
                         <i class="fas fa-users-cog"></i> Manage
                     </button>
+                    ${ROSTER_PERMS.manage_teams ? `
                     <button class="team-action-btn secondary" onclick="openEditTeamModal('${team.id}')">
                         <i class="fas fa-edit"></i> Edit
                     </button>
                     <button class="team-action-btn danger" onclick="deleteTeam('${team.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
+                    ` : ''}
                 </div>
             </div>
         </div>
@@ -8789,7 +9834,8 @@ function renderPending() {
         'varsity': 'Varsity',
         'jv': 'JV',
         'sub_varsity': 'Sub Varsity',
-        'sub_jv': 'Sub JV'
+        'sub_jv': 'Sub JV',
+        'coach': 'Coach'
     };
     
     if (pending.length === 0) {
@@ -8837,12 +9883,14 @@ function renderPending() {
                 </div>
             </div>
             <div class="pending-actions">
+                ${ROSTER_PERMS.approve_registrations ? `
                 <button class="btn btn-success btn-sm" onclick="approveRegistration('${reg.discord_id}')">
                     <i class="fas fa-check"></i> Approve
                 </button>
                 <button class="btn btn-danger btn-sm" onclick="denyRegistration('${reg.discord_id}')">
                     <i class="fas fa-times"></i> Deny
                 </button>
+                ` : ''}
                 <button class="btn btn-secondary btn-sm" onclick="viewRegistrationDetail('${reg.discord_id}')">
                     <i class="fas fa-eye"></i> View Details
                 </button>
@@ -9017,6 +10065,7 @@ function openPlayerDetail(discordId) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     
                     <!-- Captain Toggle Card -->
+                    ${ROSTER_PERMS.manage_players ? `
                     <div style="background: ${player.is_captain ? 'linear-gradient(135deg, rgba(251,191,36,0.1) 0%, rgba(251,191,36,0.05) 100%)' : 'rgba(255,255,255,0.02)'}; border-radius: 12px; padding: 18px; border: 1px solid ${player.is_captain ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.05)'}; display: flex; align-items: center; gap: 14px;">
                         <div style="width: 44px; height: 44px; border-radius: 10px; background: ${player.is_captain ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : 'rgba(255,255,255,0.05)'}; display: flex; align-items: center; justify-content: center; box-shadow: ${player.is_captain ? '0 4px 12px rgba(251,191,36,0.3)' : 'none'};">
                             <span style="font-size: 16px; font-weight: 800; color: ${player.is_captain ? '#000' : '#6b7280'};">C</span>
@@ -9032,6 +10081,26 @@ function openPlayerDetail(discordId) {
                             </span>
                         </label>
                     </div>
+                    ` : ''}
+                    
+                    <!-- Coach Toggle Card -->
+                    ${ROSTER_PERMS.manage_players ? `
+                    <div style="background: ${player.player_type === 'coach' ? 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(239,68,68,0.05) 100%)' : 'rgba(255,255,255,0.02)'}; border-radius: 12px; padding: 18px; border: 1px solid ${player.player_type === 'coach' ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.05)'}; display: flex; align-items: center; gap: 14px;">
+                        <div style="width: 44px; height: 44px; border-radius: 10px; background: ${player.player_type === 'coach' ? 'linear-gradient(135deg, #ef4444, #b91c1c)' : 'rgba(255,255,255,0.05)'}; display: flex; align-items: center; justify-content: center; box-shadow: ${player.player_type === 'coach' ? '0 4px 12px rgba(239,68,68,0.3)' : 'none'};">
+                            <i class="fas fa-chalkboard-user" style="font-size: 15px; color: ${player.player_type === 'coach' ? '#fff' : '#6b7280'};"></i>
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #fff; font-size: 13px;">Coach</div>
+                            <div style="font-size: 10px; color: #6b7280;">${player.player_type === 'coach' ? (player.coach_title || 'Head Coach') : 'Coaching staff'}</div>
+                        </div>
+                        <label style="position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer;">
+                            <input type="checkbox" ${player.player_type === 'coach' ? 'checked' : ''} onchange="toggleCoach('${player.discord_id}', this.checked)" style="opacity: 0; width: 0; height: 0;">
+                            <span style="position: absolute; cursor: pointer; inset: 0; background: ${player.player_type === 'coach' ? 'linear-gradient(90deg, #ef4444, #b91c1c)' : '#374151'}; transition: 0.3s; border-radius: 24px;">
+                                <span style="position: absolute; height: 18px; width: 18px; left: ${player.player_type === 'coach' ? '23px' : '3px'}; bottom: 3px; background: white; transition: 0.3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
+                            </span>
+                        </label>
+                    </div>
+                    ` : ''}
                     
                     <!-- Stats Tracker Card -->
                     <div style="background: rgba(245,158,11,0.08); border-radius: 12px; padding: 18px; border: 1px solid rgba(245,158,11,0.15); display: flex; align-items: center; gap: 14px;">
@@ -9088,6 +10157,22 @@ function openPlayerDetail(discordId) {
 
 function openAddPlayerModal() {
     document.getElementById('add-player-modal').classList.add('active');
+    document.getElementById('add-player-type').value = 'varsity';
+    (document.getElementById('add-is-captain')||{}).checked = false;
+    (document.getElementById('add-is-coach')||{}).checked = false;
+    document.getElementById('add-coach-title-field').style.display = 'none';
+}
+
+// Team Captain and Coach are mutually exclusive on a roster player
+function toggleAddSpecialRole(which) {
+    const captainCheckbox = document.getElementById('add-is-captain');
+    const coachCheckbox = document.getElementById('add-is-coach');
+    if (which === 'captain' && captainCheckbox.checked) {
+        coachCheckbox.checked = false;
+    } else if (which === 'coach' && coachCheckbox.checked) {
+        captainCheckbox.checked = false;
+    }
+    document.getElementById('add-coach-title-field').style.display = coachCheckbox.checked ? 'block' : 'none';
 }
 
 function openCreateTeamModal() {
@@ -9155,8 +10240,8 @@ async function openFullPlayerProfile() {
         const response = await fetch(`/api/varsity-registrations/${discordId}`);
         
         if (!response.ok) {
-            // No registration data found, show basic roster info only
-            renderFullProfileBasic(player);
+            // Registration file deleted — fall back to PII stored in roster record
+            renderFullProfile(player, buildDataFromPlayer(player));
             return;
         }
         
@@ -9164,7 +10249,7 @@ async function openFullPlayerProfile() {
         const registrations = result.registrations || [];
         
         if (registrations.length === 0) {
-            renderFullProfileBasic(player);
+            renderFullProfile(player, buildDataFromPlayer(player));
             return;
         }
         
@@ -9176,8 +10261,33 @@ async function openFullPlayerProfile() {
         
     } catch (error) {
         console.error('Failed to load registration:', error);
-        renderFullProfileBasic(player);
+        renderFullProfile(player, buildDataFromPlayer(player));
     }
+}
+
+function buildDataFromPlayer(player) {
+    // Build a registration-style data object from fields stored directly in the roster record.
+    // This is used as a fallback when the varsity registration file has been deleted.
+    return {
+        'Full Name': player.full_name || '',
+        'Phone Number': player.phone || '',
+        'Home Town/City (State)': player.hometown || '',
+        'Purdue Email': player.purdue_email || '',
+        'Personal Email': player.personal_email || '',
+        'PUID': player.puid || '',
+        'Year in School': player.year_in_school || '',
+        'GPA': player.gpa || '',
+        'Major': player.major || '',
+        'Primary Game Title': player.game || '',
+        'IGN': player.ign || '',
+        'Current Rank in Game': player.rank || '',
+        'Primary Role': player.role || '',
+        'Tracker Link': player.tracker || '',
+        'Jersey Details': player.jersey_details || '',
+        'Anything Else': player.additional_notes || '',
+        'attachments': player.schedule_images || [],
+        'attachments_cdn': player.schedule_images || []
+    };
 }
 
 function renderFullProfileBasic(player) {
@@ -9562,288 +10672,313 @@ function exportProfileAsJSON(player, data, assignedTeams) {
 function exportProfileAsPrint(player, data, assignedTeams, saveAsPdf) {
     const typeLabels = { 'varsity': 'Varsity', 'jv': 'JV', 'sub_varsity': 'Sub Varsity', 'sub_jv': 'Sub JV' };
     const statusLabels = { 'active': 'Active', 'inactive': 'Inactive', 'benched': 'Benched' };
-    
-    const printContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Player Profile - ${data['Full Name'] || player.full_name || 'Player'}</title>
-            <style>
-                * { box-sizing: border-box; margin: 0; padding: 0; }
-                body { 
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                    padding: 40px; 
-                    color: #1f2937;
-                    background: #fff;
-                    line-height: 1.5;
-                }
-                .header { 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 24px; 
-                    margin-bottom: 32px;
-                    padding-bottom: 24px;
-                    border-bottom: 2px solid #d4af37;
-                }
-                .header-avatar {
-                    width: 80px;
-                    height: 80px;
-                    border-radius: 12px;
-                    background: linear-gradient(135deg, #d4af37, #b8960c);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 28px;
-                    font-weight: 700;
-                    color: #fff;
-                }
-                .header-info h1 { font-size: 28px; margin-bottom: 8px; }
-                .header-badges { display: flex; gap: 8px; flex-wrap: wrap; }
-                .badge {
-                    padding: 4px 12px;
-                    border-radius: 6px;
-                    font-size: 11px;
-                    font-weight: 600;
-                    background: #f3f4f6;
-                    color: #374151;
-                }
-                .badge.varsity { background: #fef3c7; color: #92400e; }
-                .badge.captain { background: #fef08a; color: #854d0e; }
-                .badge.active { background: #d1fae5; color: #065f46; }
-                
-                .section { margin-bottom: 28px; }
-                .section-title {
-                    font-size: 14px;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                    color: #6b7280;
-                    margin-bottom: 12px;
-                    padding-bottom: 8px;
-                    border-bottom: 1px solid #e5e7eb;
-                }
-                .fields-grid {
-                    display: grid;
-                    grid-template-columns: repeat(2, 1fr);
-                    gap: 16px;
-                }
-                .field { margin-bottom: 12px; }
-                .field-label {
-                    font-size: 10px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                    color: #9ca3af;
-                    margin-bottom: 2px;
-                }
-                .field-value { font-size: 14px; color: #1f2937; }
-                .field-value.empty { color: #9ca3af; font-style: italic; }
-                
-                .teams-list {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                }
-                .team-badge {
-                    padding: 4px 12px;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    background: #e0f2fe;
-                    color: #0369a1;
-                }
-                
-                .footer {
-                    margin-top: 40px;
-                    padding-top: 20px;
-                    border-top: 1px solid #e5e7eb;
-                    font-size: 11px;
-                    color: #9ca3af;
-                    display: flex;
-                    justify-content: space-between;
-                }
-                
-                .schedule-notice {
-                    background: #f9fafb;
-                    padding: 16px;
-                    border-radius: 8px;
-                    text-align: center;
-                    color: #6b7280;
-                    font-size: 13px;
-                }
-                
-                @media print {
-                    body { padding: 20px; }
-                    .no-print { display: none; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <div class="header-avatar">${(data['Full Name'] || player.full_name || '??').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div>
-                <div class="header-info">
-                    <h1>${data['Full Name'] || player.full_name || 'Player Profile'}</h1>
-                    <div class="header-badges">
-                        <span class="badge varsity">${typeLabels[player.player_type] || 'Player'}</span>
-                        <span class="badge active">${statusLabels[player.status] || 'Active'}</span>
-                        ${player.is_captain ? '<span class="badge captain">Captain</span>' : ''}
-                        ${player.game ? `<span class="badge">${player.game}</span>` : ''}
-                    </div>
+    const origin = window.location.origin;
+    const lionLogo = origin + '/static/images/LionByteGGLogo.png';
+    const playerName = data['Full Name'] || player.full_name || 'Player';
+    const initials = playerName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const exportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const playerType = typeLabels[player.player_type] || 'Player';
+    const playerStatus = statusLabels[player.status] || 'Active';
+    const isCaptain = player.is_captain;
+    const gameName = data['Primary Game Title'] || player.game || '';
+    const statusColor = player.status === 'inactive' ? '#dc2626' : player.status === 'benched' ? '#d97706' : '#16a34a';
+
+    const printContent = `<!DOCTYPE html>
+<html>
+<head>
+<title>Player Profile - ${playerName}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:#1e293b;background:#fff;line-height:1.5}
+
+.page{max-width:800px;margin:0 auto;padding:20px 32px;position:relative}
+
+/* === HEADER BAR === */
+.header-bar{background:#0f1225;padding:18px 24px;border-radius:10px 10px 0 0;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden}
+.header-bar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#d4af37,#f5c842,#d4af37)}
+.header-left{display:flex;align-items:center;gap:14px}
+.header-logo{height:36px;filter:brightness(1.2)}
+.header-sep{width:1px;height:28px;background:rgba(255,255,255,.15)}
+.header-brand{color:#d4af37;font-size:15px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
+.header-brand span{display:block;font-size:9px;letter-spacing:1.5px;color:#8892b0;font-weight:500;margin-top:1px}
+.gold-strip{height:2px;background:linear-gradient(90deg,#d4af37 0%,#f5c842 50%,#d4af37 100%);margin-bottom:22px;border-radius:0 0 2px 2px}
+
+/* === PLAYER HERO === */
+.player-hero{display:flex;align-items:center;gap:22px;padding-bottom:20px;margin-bottom:20px;border-bottom:2px solid #f1f5f9}
+.hero-avatar{width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,#d4af37,#b8960c);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 0 0 3px #fff,0 0 0 5px #d4af37}
+.hero-info h1{font-size:30px;font-weight:900;color:#0f1225;letter-spacing:-.5px;line-height:1.1}
+.hero-sub{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;font-weight:600;margin-top:3px}
+.hero-badges{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.pill{padding:4px 13px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px}
+.pill-gold{background:#fef3c7;color:#92400e;border:1.5px solid #fbbf24}
+.pill-green{background:#dcfce7;color:#166534;border:1.5px solid #4ade80}
+.pill-red{background:#fee2e2;color:#991b1b;border:1.5px solid #f87171}
+.pill-yellow{background:#fef9c3;color:#854d0e;border:1.5px solid #facc15}
+.pill-blue{background:#dbeafe;color:#1e40af;border:1.5px solid #60a5fa}
+
+/* === SECTION BLOCKS === */
+.section-block{margin-bottom:14px;border-radius:10px;overflow:hidden;border:1.5px solid #e2e8f0}
+.section-hdr{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#f8fafc;border-bottom:1.5px solid #e2e8f0}
+.sec-accent{width:4px;height:22px;border-radius:4px;flex-shrink:0}
+.sec-accent.gold{background:#d4af37}
+.sec-accent.blue{background:#3b82f6}
+.sec-accent.green{background:#22c55e}
+.sec-accent.purple{background:#a855f7}
+.sec-accent.red{background:#ef4444}
+.sec-accent.cyan{background:#06b6d4}
+.sec-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#475569}
+.section-body{padding:16px 18px}
+
+/* === DATA GRID === */
+.dgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 20px}
+.dgrid.two-col{grid-template-columns:repeat(2,1fr)}
+.dg-item{}
+.dg-key{font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:#94a3b8;font-weight:700;margin-bottom:2px}
+.dg-val{font-size:13px;color:#1e293b;font-weight:500}
+.dg-val.mono{font-family:'Courier New',Consolas,monospace;font-size:12px;color:#64748b}
+.dg-val.empty{color:#cbd5e1;font-style:italic;font-weight:400}
+.dg-val.accent{color:#b8860b;font-weight:700}
+.dg-item.full{grid-column:1/-1}
+
+/* === TEAMS === */
+.team-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.team-chip{padding:5px 14px;border-radius:6px;font-size:11px;font-weight:700;background:#0f1225;color:#d4af37;letter-spacing:.3px}
+
+/* === SCHEDULE === */
+.sched-placeholder{text-align:center;padding:14px;color:#94a3b8;font-size:12px;border:1.5px dashed #e2e8f0;border-radius:8px;background:#fafafa}
+
+/* === NOTES === */
+.notes-content{background:#fffbeb;border-left:4px solid #d4af37;padding:12px 16px;border-radius:0 8px 8px 0;color:#44403c;font-size:13px;line-height:1.7}
+
+/* === FOOTER === */
+.doc-footer{display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding-top:14px;border-top:2px solid #0f1225}
+.doc-footer-left{display:flex;align-items:center;gap:10px}
+.doc-footer img{height:18px;opacity:.6}
+.doc-footer-text{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;font-weight:700}
+.doc-footer-id{font-family:'Courier New',Consolas,monospace;font-size:8px;color:#cbd5e1;margin-top:1px}
+.doc-footer-date{font-size:9px;color:#94a3b8;letter-spacing:.3px}
+
+/* === PRINT === */
+@media print{
+    body{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
+    .page{padding:12px 20px}
+    .section-block{break-inside:avoid}
+    .player-hero{break-inside:avoid}
+}
+@page{margin:0.3in;size:letter portrait}
+</style>
+</head>
+<body>
+<div class="page">
+    <!-- Header -->
+    <div class="header-bar">
+        <div class="header-left">
+            <img src="${lionLogo}" class="header-logo" alt="LionByte" onerror="this.style.display='none'">
+            <div class="header-sep"></div>
+            <div class="header-brand">PNW Esports<span>Official Player Profile</span></div>
+        </div>
+    </div>
+    <div class="gold-strip"></div>
+
+    <!-- Player Hero -->
+    <div class="player-hero">
+        <div class="hero-avatar">${initials}</div>
+        <div class="hero-info">
+            <h1>${playerName}</h1>
+            <div class="hero-sub">${gameName ? gameName + ' \u2022 ' : ''}${playerType}</div>
+            <div class="hero-badges">
+                <span class="pill pill-gold">${playerType}</span>
+                <span class="pill ${player.status === 'inactive' ? 'pill-red' : player.status === 'benched' ? 'pill-yellow' : 'pill-green'}">${playerStatus}</span>
+                ${isCaptain ? '<span class="pill pill-yellow">\u2605 Captain</span>' : ''}
+                ${gameName ? '<span class="pill pill-blue">' + gameName + '</span>' : ''}
+            </div>
+        </div>
+    </div>
+
+    <!-- Roster Information -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent gold"></div>
+            <div class="sec-label">Roster Information</div>
+        </div>
+        <div class="section-body">
+            <div class="dgrid">
+                <div class="dg-item">
+                    <div class="dg-key">Discord</div>
+                    <div class="dg-val">${player.discord_username || 'Unknown'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Discord ID</div>
+                    <div class="dg-val mono">${player.discord_id}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Member Since</div>
+                    <div class="dg-val">${player.created_at ? new Date(player.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}</div>
                 </div>
             </div>
-            
-            <div class="section">
-                <div class="section-title">Roster Information</div>
-                <div class="fields-grid">
-                    <div class="field">
-                        <div class="field-label">Discord</div>
-                        <div class="field-value">${player.discord_username || 'Unknown'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Discord ID</div>
-                        <div class="field-value" style="font-family: monospace;">${player.discord_id}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Member Since</div>
-                        <div class="field-value">${player.created_at ? new Date(player.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}</div>
-                    </div>
-                </div>
-                <div class="field" style="margin-top: 16px;">
-                    <div class="field-label">Team Assignments</div>
-                    <div class="teams-list" style="margin-top: 8px;">
-                        ${assignedTeams.length > 0 
-                            ? assignedTeams.map(t => `<span class="team-badge">${t.name}</span>`).join('')
-                            : '<span class="field-value empty">Not assigned to any team</span>'
-                        }
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Personal Information</div>
-                <div class="fields-grid">
-                    <div class="field">
-                        <div class="field-label">Full Name</div>
-                        <div class="field-value ${!data['Full Name'] ? 'empty' : ''}">${data['Full Name'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Phone Number</div>
-                        <div class="field-value ${!data['Phone Number'] ? 'empty' : ''}">${data['Phone Number'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Home Town</div>
-                        <div class="field-value ${!data['Home Town/City (State)'] ? 'empty' : ''}">${data['Home Town/City (State)'] || 'Not provided'}</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Contact Information</div>
-                <div class="fields-grid">
-                    <div class="field">
-                        <div class="field-label">Purdue Email</div>
-                        <div class="field-value ${!data['Purdue Email'] ? 'empty' : ''}">${data['Purdue Email'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Personal Email</div>
-                        <div class="field-value ${!data['Personal Email'] ? 'empty' : ''}">${data['Personal Email'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">PUID</div>
-                        <div class="field-value ${!data['PUID'] ? 'empty' : ''}" style="font-family: monospace;">${data['PUID'] || 'Not provided'}</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Academic Information</div>
-                <div class="fields-grid">
-                    <div class="field">
-                        <div class="field-label">Year in School</div>
-                        <div class="field-value ${!data['Year in School'] ? 'empty' : ''}">${data['Year in School'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">GPA</div>
-                        <div class="field-value ${!data['GPA'] ? 'empty' : ''}">${data['GPA'] || 'Not provided'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Major</div>
-                        <div class="field-value ${!data['Major'] ? 'empty' : ''}">${data['Major'] || 'Not provided'}</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Gaming Information</div>
-                <div class="fields-grid">
-                    <div class="field">
-                        <div class="field-label">Primary Game</div>
-                        <div class="field-value ${!data['Primary Game Title'] && !player.game ? 'empty' : ''}">${data['Primary Game Title'] || player.game || 'Not specified'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">In-Game Name (IGN)</div>
-                        <div class="field-value ${!data['IGN'] ? 'empty' : ''}">${data['IGN'] || 'Not specified'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Current Rank</div>
-                        <div class="field-value ${!data['Current Rank in Game'] ? 'empty' : ''}">${data['Current Rank in Game'] || 'Not specified'}</div>
-                    </div>
-                    <div class="field">
-                        <div class="field-label">Primary Role</div>
-                        <div class="field-value ${!data['Primary Role'] ? 'empty' : ''}">${data['Primary Role'] || 'Not specified'}</div>
-                    </div>
-                </div>
-                ${data['Tracker Link'] ? `
-                <div class="field" style="margin-top: 12px;">
-                    <div class="field-label">Stats Tracker</div>
-                    <div class="field-value">${data['Tracker Link']}</div>
-                </div>
-                ` : ''}
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Jersey Details</div>
-                <div class="field">
-                    <div class="field-value ${!data['Jersey Details'] ? 'empty' : ''}">${data['Jersey Details'] || 'Not provided'}</div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Class Schedule</div>
-                <div class="schedule-notice">
-                    ${(data.attachments || []).length > 0 
-                        ? `${(data.attachments || []).length} schedule image(s) on file - view in web dashboard`
-                        : 'No schedule images uploaded'
+            <div class="dg-item full" style="margin-top:14px">
+                <div class="dg-key">Team Assignments</div>
+                <div class="team-chips">
+                    ${assignedTeams.length > 0
+                        ? assignedTeams.map(t => '<span class="team-chip">' + t.name + '</span>').join('')
+                        : '<span class="dg-val empty">Not assigned to any team</span>'
                     }
                 </div>
             </div>
-            
-            ${data['Anything Else'] ? `
-            <div class="section">
-                <div class="section-title">Additional Notes</div>
-                <div class="field">
-                    <div class="field-value">${data['Anything Else']}</div>
+        </div>
+    </div>
+
+    <!-- Personal & Contact -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent blue"></div>
+            <div class="sec-label">Personal & Contact Information</div>
+        </div>
+        <div class="section-body">
+            <div class="dgrid">
+                <div class="dg-item">
+                    <div class="dg-key">Full Name</div>
+                    <div class="dg-val ${!data['Full Name'] ? 'empty' : 'accent'}">${data['Full Name'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Phone Number</div>
+                    <div class="dg-val ${!data['Phone Number'] ? 'empty' : ''}">${data['Phone Number'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Home Town</div>
+                    <div class="dg-val ${!data['Home Town/City (State)'] ? 'empty' : ''}">${data['Home Town/City (State)'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Purdue Email</div>
+                    <div class="dg-val ${!data['Purdue Email'] ? 'empty' : ''}">${data['Purdue Email'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Personal Email</div>
+                    <div class="dg-val ${!data['Personal Email'] ? 'empty' : ''}">${data['Personal Email'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">PUID</div>
+                    <div class="dg-val mono ${!data['PUID'] ? 'empty' : ''}">${data['PUID'] || 'Not provided'}</div>
                 </div>
             </div>
-            ` : ''}
-            
-            <div class="footer">
-                <span>PNW Esports - Player Profile</span>
-                <span>Exported: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+    </div>
+
+    <!-- Academic -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent green"></div>
+            <div class="sec-label">Academic Information</div>
+        </div>
+        <div class="section-body">
+            <div class="dgrid">
+                <div class="dg-item">
+                    <div class="dg-key">Year in School</div>
+                    <div class="dg-val ${!data['Year in School'] ? 'empty' : ''}">${data['Year in School'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">GPA</div>
+                    <div class="dg-val ${!data['GPA'] ? 'empty' : 'accent'}">${data['GPA'] || 'Not provided'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Major</div>
+                    <div class="dg-val ${!data['Major'] ? 'empty' : ''}">${data['Major'] || 'Not provided'}</div>
+                </div>
             </div>
-        </body>
-        </html>
-    `;
-    
+        </div>
+    </div>
+
+    <!-- Gaming -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent purple"></div>
+            <div class="sec-label">Gaming Information</div>
+        </div>
+        <div class="section-body">
+            <div class="dgrid two-col">
+                <div class="dg-item">
+                    <div class="dg-key">Primary Game</div>
+                    <div class="dg-val ${!data['Primary Game Title'] && !player.game ? 'empty' : 'accent'}">${data['Primary Game Title'] || player.game || 'Not specified'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">In-Game Name (IGN)</div>
+                    <div class="dg-val ${!data['IGN'] ? 'empty' : 'accent'}">${data['IGN'] || 'Not specified'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Current Rank</div>
+                    <div class="dg-val ${!data['Current Rank in Game'] ? 'empty' : ''}">${data['Current Rank in Game'] || 'Not specified'}</div>
+                </div>
+                <div class="dg-item">
+                    <div class="dg-key">Primary Role</div>
+                    <div class="dg-val ${!data['Primary Role'] ? 'empty' : ''}">${data['Primary Role'] || 'Not specified'}</div>
+                </div>
+                ${data['Tracker Link'] ? '<div class="dg-item full"><div class="dg-key">Stats Tracker</div><div class="dg-val mono">' + data['Tracker Link'] + '</div></div>' : ''}
+            </div>
+        </div>
+    </div>
+
+    <!-- Jersey -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent red"></div>
+            <div class="sec-label">Jersey Details</div>
+        </div>
+        <div class="section-body">
+            <div class="dg-val ${!data['Jersey Details'] ? 'empty' : ''}">${data['Jersey Details'] || 'Not provided'}</div>
+        </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent cyan"></div>
+            <div class="sec-label">Class Schedule</div>
+        </div>
+        <div class="section-body">
+            <div class="sched-placeholder">
+                ${(data.attachments || []).length > 0
+                    ? (data.attachments || []).length + ' schedule image(s) on file \u2014 view in web dashboard'
+                    : 'No schedule images uploaded'
+                }
+            </div>
+        </div>
+    </div>
+
+    ${data['Anything Else'] ? `
+    <div class="section-block">
+        <div class="section-hdr">
+            <div class="sec-accent gold"></div>
+            <div class="sec-label">Additional Notes</div>
+        </div>
+        <div class="section-body">
+            <div class="notes-content">${data['Anything Else']}</div>
+        </div>
+    </div>
+    ` : ''}
+
+    <!-- Footer -->
+    <div class="doc-footer">
+        <div class="doc-footer-left">
+            <img src="${lionLogo}" alt="" onerror="this.style.display='none'">
+            <div>
+                <div class="doc-footer-text">PNW Esports \u2022 Official Player Profile</div>
+                <div class="doc-footer-id">DOC-${player.discord_id}-${Date.now().toString(36).toUpperCase()}</div>
+            </div>
+        </div>
+        <div class="doc-footer-date">${exportDate}</div>
+    </div>
+</div>
+</body>
+</html>`;
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(printContent);
     printWindow.document.close();
     
     setTimeout(() => {
         printWindow.print();
-        if (!saveAsPdf) {
-            // For regular print, close after a delay
-            // User will see print dialog
-        }
-    }, 250);
+    }, 400);
     
     showToast(saveAsPdf ? 'Print dialog opened - Save as PDF' : 'Print dialog opened', 'success');
 }
@@ -10265,6 +11400,28 @@ function showSyncComplete(progress) {
     document.getElementById('sync-final-skipped').textContent = progress.skipped_count || 0;
     document.getElementById('sync-final-errors').textContent = progress.error_count || 0;
     
+    // Show error details if there are errors
+    const errorDetails = document.getElementById('sync-error-details');
+    const errorList = document.getElementById('sync-error-list');
+    if ((progress.error_count || 0) > 0 && progress.errors && progress.errors.length > 0) {
+        errorDetails.style.display = 'block';
+        const label = document.getElementById('sync-error-details-label');
+        label.textContent = `View ${progress.errors.length}${progress.error_count > progress.errors.length ? ' of ' + progress.error_count : ''} Error${progress.errors.length !== 1 ? 's' : ''}`;
+        errorList.innerHTML = progress.errors.map(err => {
+            const isObj = typeof err === 'object';
+            const message = isObj ? err.message : err;
+            const escaped = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const removeBtn = (isObj && err.type === 'not_found' && err.user_id)
+                ? ` <button onclick="removeSyncErrorPlayer('${err.user_id}', this)" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; border-radius: 4px; cursor: pointer; font-family: inherit;">Remove from Roster</button>`
+                : '';
+            return `<div style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; color: #fbbf24; font-family: 'Courier New', monospace; display: flex; align-items: center; justify-content: space-between;">
+                <span><i class="fas fa-times-circle" style="color: #f97316; margin-right: 6px; font-size: 10px;"></i>${escaped}</span>${removeBtn}
+            </div>`;
+        }).join('');
+    } else {
+        errorDetails.style.display = 'none';
+    }
+    
     // Update summary text
     const added = progress.added_count || 0;
     const removed = progress.removed_count || 0;
@@ -10288,6 +11445,44 @@ function showSyncComplete(progress) {
     `;
     
     showToast(`Sync complete: ${added} added, ${removed} removed${skipped > 0 ? `, ${skipped} skipped` : ''}`, 'success');
+}
+
+function removeSyncErrorPlayer(userId, btn) {
+    if (!confirm('Remove this player from the roster?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Removing...';
+    fetch('/api/rosters/player', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({discord_id: userId})
+    })
+    .then(r => {
+        if (!r.ok) {
+            return r.json().then(d => { throw new Error(d.error || 'Request failed (' + r.status + ')'); });
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data.success) {
+            const row = btn.closest('div');
+            row.style.opacity = '0.4';
+            btn.textContent = 'Removed';
+            btn.style.color = '#4ade80';
+            btn.style.borderColor = 'rgba(74,222,128,0.3)';
+            showToast('Player removed from roster', 'success');
+            // Refresh roster data in background
+            if (typeof loadRosterData === 'function') loadRosterData();
+        } else {
+            btn.disabled = false;
+            btn.textContent = 'Remove from Roster';
+            showToast(data.error || 'Failed to remove player', 'error');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Remove from Roster';
+        showToast(err.message || 'Failed to remove player', 'error');
+    });
 }
 
 function showSyncFailed(errorMessage) {
@@ -10443,10 +11638,16 @@ async function addPlayer() {
         ign: document.getElementById('add-ign').value,
         rank: document.getElementById('add-rank').value,
         tracker: document.getElementById('add-tracker').value,
-        is_captain: document.getElementById('add-is-captain').checked,
+        is_captain: document.getElementById('add-is-captain')?.checked || false,
         role: document.getElementById('add-role').value,
         secondary_role: document.getElementById('add-secondary-role').value
     };
+
+    if (document.getElementById('add-is-coach')?.checked) {
+        data.player_type = 'coach';
+        data.is_captain = false;
+        data.coach_title = document.getElementById('add-coach-title-select')?.value || 'Head Coach';
+    }
     
     if (!data.discord_id || !data.full_name) {
         showToast('Discord ID and Full Name are required', 'error');
@@ -10802,7 +12003,8 @@ function viewRegistrationDetail(discordId) {
         'varsity': 'Varsity',
         'jv': 'JV',
         'sub_varsity': 'Substitute Varsity',
-        'sub_jv': 'Substitute JV'
+        'sub_jv': 'Substitute JV',
+        'coach': 'Coach'
     };
     
     const detailHtml = `
@@ -11014,6 +12216,36 @@ async function toggleCaptain(discordId, isCaptain) {
     }
 }
 
+async function toggleCoach(discordId, isCoach) {
+    const payload = { discord_id: discordId, player_type: isCoach ? 'coach' : 'varsity' };
+    if (isCoach) {
+        payload.is_captain = false;
+        payload.coach_title = 'Head Coach';
+    }
+    try {
+        const response = await fetch('/api/rosters/player', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showToast(isCoach ? 'Player set as coach' : 'Coach status removed', 'success');
+            
+            // Update local data and refresh the player detail panel
+            await loadRosterData();
+            
+            // Re-open the player detail to show updated coach status
+            setTimeout(() => openPlayerDetail(discordId), 100);
+        } else {
+            showToast(result.error || 'Failed to update coach status', 'error');
+        }
+    } catch (error) {
+        showToast('Error updating coach status', 'error');
+    }
+}
+
 function editSelectedPlayer() {
     if (!selectedPlayer) return;
     
@@ -11025,7 +12257,7 @@ function editSelectedPlayer() {
     document.getElementById('add-ign').value = selectedPlayer.ign || '';
     document.getElementById('add-rank').value = selectedPlayer.rank || '';
     document.getElementById('add-tracker').value = selectedPlayer.tracker || '';
-    document.getElementById('add-is-captain').checked = selectedPlayer.is_captain || false;
+    (document.getElementById('add-is-captain')||{}).checked = selectedPlayer.is_captain || false;
     
     closeModal('player-detail-modal');
     openAddPlayerModal();
@@ -11138,10 +12370,12 @@ function openTeamDetail(teamId) {
     heroEl.style.background = `linear-gradient(135deg, ${teamColor} 0%, ${adjustColor(teamColor, -20)} 50%, ${adjustColor(teamColor, -40)} 100%)`;
     
     // Get members - support multi-team (check team_ids array or fallback to team_id)
-    const members = (rosterData.players || []).filter(p => {
+    const teamMembers = (rosterData.players || []).filter(p => {
         const playerTeamIds = p.team_ids || (p.team_id ? [p.team_id] : []);
         return playerTeamIds.includes(teamId);
     });
+    const members = teamMembers.filter(p => p.player_type !== 'coach');
+    const coaches = teamMembers.filter(p => p.player_type === 'coach');
     const captainCount = members.filter(m => m.is_captain).length;
     
     const typeLabels = { 'varsity': 'Varsity', 'jv': 'JV' };
@@ -11153,29 +12387,37 @@ function openTeamDetail(teamId) {
                 <div class="stat-icon green">
                     <i class="fas fa-users"></i>
                 </div>
-                <div class="stat-value">${members.length}</div>
-                <div class="stat-label">Players</div>
+                <div class="stat-text">
+                    <div class="stat-value">${members.length}</div>
+                    <div class="stat-label">Players</div>
+                </div>
             </div>
             <div class="team-stat-card">
                 <div class="stat-icon gold">
                     <i class="fas fa-crown"></i>
                 </div>
-                <div class="stat-value">${captainCount}</div>
-                <div class="stat-label">Captains</div>
+                <div class="stat-text">
+                    <div class="stat-value">${captainCount}</div>
+                    <div class="stat-label">Captains</div>
+                </div>
             </div>
             <div class="team-stat-card">
                 <div class="stat-icon blue">
                     <i class="fas fa-gamepad"></i>
                 </div>
-                <div class="stat-value">${team.game || 'N/A'}</div>
-                <div class="stat-label">Game</div>
+                <div class="stat-text">
+                    <div class="stat-value">${team.game || 'N/A'}</div>
+                    <div class="stat-label">Game</div>
+                </div>
             </div>
             <div class="team-stat-card">
                 <div class="stat-icon purple">
                     <i class="fas fa-medal"></i>
                 </div>
-                <div class="stat-value">${typeLabels[team.type] || 'Varsity'}</div>
-                <div class="stat-label">Type</div>
+                <div class="stat-text">
+                    <div class="stat-value">${typeLabels[team.type] || 'Varsity'}</div>
+                    <div class="stat-label">Type</div>
+                </div>
             </div>
         </div>
         
@@ -11236,6 +12478,46 @@ function openTeamDetail(teamId) {
                 <button onclick="openAddPlayerToTeamModal()">
                     <i class="fas fa-user-plus"></i> Add First Player
                 </button>
+            </div>
+            `}
+        </div>
+        
+        <!-- Coaching Staff -->
+        <div class="team-roster-section" style="margin-top: 16px;">
+            <div class="team-roster-header">
+                <div class="team-roster-title">
+                    <i class="fas fa-chalkboard-user" style="color: #ef4444;"></i>
+                    <span>Coaching Staff</span>
+                </div>
+                <span class="team-roster-count">${coaches.length} coach${coaches.length !== 1 ? 'es' : ''}</span>
+            </div>
+            ${coaches.length > 0 ? `
+            <div class="team-members-grid">
+                ${coaches.map(c => {
+                    const initials = c.full_name ? c.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
+                    return `
+                    <div class="team-member-card">
+                        <div class="member-avatar" style="background: rgba(239,68,68,0.18); color: #ef4444;">
+                            ${c.avatar ? `<img src="${c.avatar}" alt="${c.full_name}">` : initials}
+                        </div>
+                        <div class="member-details">
+                            <div class="member-name">${c.full_name || 'Unknown'}</div>
+                            <div class="member-meta">
+                                <span><i class="fas fa-chalkboard-user"></i> ${c.coach_title || 'Coach'}</span>
+                            </div>
+                        </div>
+                        <div class="member-actions">
+                            <button class="member-action-btn remove" onclick="removeCoachFromTeam('${c.discord_id}','${teamId}')" title="Remove from team">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                `}).join('')}
+            </div>
+            ` : `
+            <div class="team-empty-state">
+                <i class="fas fa-chalkboard-user"></i>
+                <p>No coaches assigned to this team yet</p>
             </div>
             `}
         </div>
@@ -11567,23 +12849,39 @@ async function toggleTeamMemberCaptain(discordId, isCaptain) {
 function openEditPlayerModal() {
     if (!selectedPlayer) return;
     
+    const isCoach = selectedPlayer.player_type === 'coach';
     document.getElementById('edit-discord-id').value = selectedPlayer.discord_id || '';
     document.getElementById('edit-full-name').value = selectedPlayer.full_name || '';
-    document.getElementById('edit-player-type').value = selectedPlayer.player_type || 'varsity';
+    document.getElementById('edit-player-type').value = isCoach ? 'varsity' : (selectedPlayer.player_type || 'varsity');
     document.getElementById('edit-game').value = selectedPlayer.game || 'Valorant';
     document.getElementById('edit-ign').value = selectedPlayer.ign || '';
     document.getElementById('edit-rank').value = selectedPlayer.rank || '';
     document.getElementById('edit-tracker').value = selectedPlayer.tracker || '';
     document.getElementById('edit-purdue-email').value = selectedPlayer.purdue_email || '';
     document.getElementById('edit-personal-email').value = selectedPlayer.personal_email || '';
-    document.getElementById('edit-is-captain').checked = selectedPlayer.is_captain || false;
+    (document.getElementById('edit-is-captain')||{}).checked = !isCoach && (selectedPlayer.is_captain || false);
+    (document.getElementById('edit-is-coach')||{}).checked = isCoach;
     document.getElementById('edit-player-status').value = selectedPlayer.status || 'active';
     document.getElementById('edit-role').value = selectedPlayer.role || '';
     document.getElementById('edit-secondary-role').value = selectedPlayer.secondary_role || '';
+    document.getElementById('edit-coach-title-select').value = selectedPlayer.coach_title || 'Head Coach';
     document.getElementById('edit-player-subtitle').textContent = `Editing ${selectedPlayer.full_name || 'Player'}`;
+    document.getElementById('edit-coach-title-field').style.display = isCoach ? 'block' : 'none';
     
     closeModal('player-detail-modal');
     document.getElementById('edit-player-modal').classList.add('active');
+}
+
+// Team Captain and Coach are mutually exclusive on a roster player
+function toggleEditSpecialRole(which) {
+    const captainCheckbox = document.getElementById('edit-is-captain');
+    const coachCheckbox = document.getElementById('edit-is-coach');
+    if (which === 'captain' && captainCheckbox.checked) {
+        coachCheckbox.checked = false;
+    } else if (which === 'coach' && coachCheckbox.checked) {
+        captainCheckbox.checked = false;
+    }
+    document.getElementById('edit-coach-title-field').style.display = coachCheckbox.checked ? 'block' : 'none';
 }
 
 // Save Player Edit
@@ -11598,11 +12896,17 @@ async function savePlayerEdit() {
         tracker: document.getElementById('edit-tracker').value,
         purdue_email: document.getElementById('edit-purdue-email').value,
         personal_email: document.getElementById('edit-personal-email').value,
-        is_captain: document.getElementById('edit-is-captain').checked,
+        is_captain: document.getElementById('edit-is-captain')?.checked || false,
         status: document.getElementById('edit-player-status').value,
         role: document.getElementById('edit-role').value,
         secondary_role: document.getElementById('edit-secondary-role').value
     };
+
+    if (document.getElementById('edit-is-coach')?.checked) {
+        data.player_type = 'coach';
+        data.is_captain = false;
+        data.coach_title = document.getElementById('edit-coach-title-select')?.value || 'Head Coach';
+    }
     
     if (!data.discord_id) {
         showToast('Player ID is missing', 'error');
@@ -11687,7 +12991,7 @@ document.querySelectorAll('.roster-modal').forEach(modal => {
 // ============ EXPORT Excel Functions ============
 
 function exportPlayersExcel() {
-    const players = rosterData.players || [];
+    const players = (rosterData.players || []).filter(p => p.player_type !== 'coach');
     const teams = rosterData.teams || [];
     const teamsMap = {};
     teams.forEach(t => teamsMap[t.id] = t.name);
@@ -11696,7 +13000,7 @@ function exportPlayersExcel() {
     showToast('Preparing Excel export with academic data...', 'info');
     
     fetch('/api/varsity-registrations')
-        .then(r => r.json())
+        .then(r => (r.ok ? r.json() : []))
         .then(registrations => {
             // Build academic map: discord_id -> latest approved reg data
             const academicMap = {};
@@ -11705,7 +13009,6 @@ function exportPlayersExcel() {
                 if (!uid) return;
                 const status = (reg.status || '').toLowerCase();
                 const d = reg.data || {};
-                // Prefer approved, but take any if no approved exists
                 if (!academicMap[uid] || status === 'approved') {
                     academicMap[uid] = {
                         hometown: d['Home Town/City (State)'] || '',
@@ -11714,13 +13017,13 @@ function exportPlayersExcel() {
                     };
                 }
             });
-            
-            buildPlayersExcel(players, teamsMap, academicMap);
+            return academicMap;
         })
         .catch(err => {
             console.error('Failed to load registrations for export, exporting without academic data:', err);
-            buildPlayersExcel(players, teamsMap, {});
-        });
+            return {};
+        })
+        .then(academicMap => buildPlayersExcel(players, teamsMap, academicMap));
 }
 
 function buildPlayersExcel(players, teamsMap, academicMap) {

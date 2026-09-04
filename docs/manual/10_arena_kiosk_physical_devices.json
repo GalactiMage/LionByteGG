@@ -1,0 +1,66 @@
+{
+  "chapter": 10,
+  "title": "Arena Kiosk — Physical Devices, Templates & Deployment",
+  "overview": "Two distinct things share the name 'kiosk' in this project: (1) the LIVE web templates served by Nova at /arena/kiosk/<id> that the real deployed devices load, and (2) a top-level 'Arena Kiosks' folder containing earlier standalone prototype HTML files. This chapter covers both plus the on-screen UX/UI details.",
+  "live_web_kiosk_templates": {
+    "location": "LionByteGG\\web\\templates\\",
+    "files": {
+      "arena_kiosk.html": "Kiosk picker/selection page (lists all configured kiosks)",
+      "arena_kiosk1.html": "PC/Island room kiosk — full attract screen, choose (Visiting vs Play on a PC), PC picker floor map, sign-in form, success screen with wayfinding route",
+      "arena_kiosk2.html": "Console room kiosk — simpler Visiting/Play flow, no PC picker (uses consoles/get-all from GGLeap, no State enum)"
+    },
+    "sync_requirement": "arena_kiosk1.html and arena_kiosk2.html must be kept in sync for any shared feature (announcement bar, language toggle, boot sequence, admin panel) — historically several bugs came from editing only one file."
+  },
+  "kiosk_ui_general": {
+    "viewport": "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+    "screen_lock_precheck": "A script runs BEFORE page render (using localStorage/cookies) to detect an active lockout and avoid a flash of the sign-in form",
+    "fullscreen_layout": "html,body{height:100%;overflow:hidden}, overscroll-behavior:none, touch-action:manipulation",
+    "no_text_select": "-webkit-user-select:none / -webkit-touch-callout:none (prevents iOS copy/paste popovers)",
+    "brand_colors": {"gold": "#CFB991", "dark_navy": "#0E1730", "success_green": "#34D399"},
+    "top_status_bar": "kiosk-id + live clock, monospace font",
+    "admin_button": "Top-right, opens a passcode-gated modal"
+  },
+  "kiosk1_pc_flow": {
+    "states": ["attract (idle branding + live 'X of Y PCs Available' polling /api/arena/pcs ~12s + 'Touch anywhere to begin')", "choose (Visiting | Play on a PC)", "pcPicker (floor-map grid grouped by island, tap available seat + Continue)", "form (name/email sign-in)", "success (PC: unlock-checkmark animation + arena floor map with YOU highlighted + wayfinding route line to your seat) / (Visiting: simple welcome)"],
+    "floor_map_design": {
+      "layout": "5 islands stacked top-down (portrait orientation), each a 3-col x 2-row seat grid (SEAT_ORDER=[3,2,1,4,5,6], rotated 90° CW from the original 2-col x 3-row layout)",
+      "front_row": "Kiosk (far-left) + Door, wide Stage trapezoid (center, purple, varsity-only, locked), Door + Admin Desk (far-right)",
+      "side_walls": "Thin vertical 'TV' rectangles on both left and right edges",
+      "seat_states": "available(green) / reserved(amber, lock icon SVG) / in-use(red ✕ overlay) / off(dim placeholder, not yet wired in GGLeap)",
+      "responsive_sizing": "--seat CSS var computed via clamp() using container-query units (cqw) so the whole map fits any screen with zero scrollbar",
+      "wayfinding_route": "SVG elbow path from the kiosk position, along the front aisle, then up the gap beside the selected island, into the seat's row — dashed gold line with a marching-ants animation + a start dot at the kiosk"
+    },
+    "hold_model": "Kiosk-side in-memory hold (see chapter 09) — 10-15 min depending on config, no GGLeap booking involved. PC is unlocked immediately on check-in if pc_lock_enabled; auto re-locks if the guest never actually logs in before the hold expires (no-show)."
+  },
+  "kiosk2_console_flow": {
+    "states": ["attract (branded, 'Touch anywhere to begin')", "choose (Visiting | Play)", "form", "success"],
+    "difference_from_kiosk1": "No PC/seat picker — console availability isn't tracked per-seat the same way; uses GGLeap consoles/get-all (Users/Guests arrays, no State enum, must filter Deleted)"
+  },
+  "returning_guest_and_language_features_history": {
+    "returning_guest_lookup": "A 'Welcome back, <name>' tap-to-fill chip (debounced email lookup) was built, then FULLY REMOVED on 2026-08-10 for privacy reasons (the lookup endpoint was public) — HTML/CSS/JS/i18n keys and the backend /api/arena/kiosk/guest-lookup route were all deleted. The underlying arena_db.find_recent_guest() + email_hash column were left in place (harmless, unused) in case it's revisited with proper auth.",
+    "en_es_toggle": "Still active — #langToggle chip (EN|ES), persisted in localStorage 'arena_lang', translates static labels/buttons/hints/success messages via an I18N dict + T(k) helper; server-provided text (rules, welcome message) stays English",
+    "wayfinding_text_removed": "A gold '➤ Head to the <room>' text line was added then removed per user feedback on 2026-08-10 (kept only the arrow icons); the PC floor-map route line (see above) is separate and was kept",
+    "device_health_telemetry_removed": "Battery/charging/network heartbeat reporting (navigator.getBattery(), &batt=&charging=&net= query params) was built then FULLY REMOVED on 2026-08-10 at user request ('delete them and remove the heartbeat like battery and shit'). Kept: basic online/offline + last_seen + locked/attempts tracking, which pre-dated the battery feature."
+  },
+  "admin_panel_on_kiosk": {
+    "access": "Top-right admin button -> passcode modal (default 1234, configurable)",
+    "capabilities": ["Toggle bypass-hours (test the kiosk when arena is officially closed)", "Clear failed sign-in attempts / lockout state", "Show live arena status", "Release Kiosk (clears the fullscreen/beforeunload trap, shows a green 'released' overlay) / Re-Lock (re-runs the full boot sequence)"]
+  },
+  "lockout_and_trap_mechanism": {
+    "lockout": "After 5 failed sign-in attempts the kiosk shows a lockout screen (localStorage + cookie backed so a refresh can't bypass it); optional passcode recovery",
+    "trap": "engageTrap() arms a beforeunload navigation guard + requests fullscreen + wakeLock; a bottom trap-pill is shown only while the Admin panel is open; the trap can ONLY be released via the passcode-gated Admin Panel"
+  },
+  "standalone_legacy_kiosk_files": {
+    "location": "c:\\LionByteGG\\Arena Kiosks\\",
+    "structure": ["Kiosks 1\\Kiosk 1.html", "Kiosks 2\\Kiosk 2.html"],
+    "nature": "Self-contained, single-file HTML+CSS+JS applications (~500 lines / ~24KB each) — an EARLIER, standalone prototype of the sign-in kiosk UI, NOT the currently-served Nova templates.",
+    "features": ["Sign-in form with soft on-screen keyboard (alpha + numeric)", "Email domain suggestion chips (@purdue.edu, @pnw.edu)", "Success/lockout/closed/admin-gate overlays", "Tactile key-press sound via Web Audio sine wave", "Dark navy/gold PNW esports theme"],
+    "relationship_to_live_system": "These files are NOT wired to the live Nova backend (no /api/arena/* calls) — they appear to be an early design reference kept for history/comparison. The ACTUAL deployed kiosks load Nova's /arena/kiosk/<id> route (arena_kiosk1.html / arena_kiosk2.html), which is the fully-featured, live-data-driven version documented above.",
+    "caution": "Do not confuse these with the live templates when making UI changes — always verify which file a request refers to before editing."
+  },
+  "physical_device_notes": {
+    "hardware_transition": "Purdue switched the physical kiosk devices from iPads to laptops around 2026-08-22, which is why the iOS 'Guided Access' boot step was removed from the live boot sequence (see chapter 09) — laptops have real keyboards and don't support Guided Access.",
+    "on_screen_keyboard": "Disabled for the same reason (2026-08-23) — inputs are no longer 'readonly', physical keyboard now types directly into the form.",
+    "recommended_deployment": "Each physical kiosk device's browser should be pointed at Nova's /arena/kiosk/<id> URL in a locked-down/fullscreen kiosk-mode browser, not at the standalone legacy HTML files."
+  }
+}

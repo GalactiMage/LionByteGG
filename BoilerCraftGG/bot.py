@@ -51,8 +51,12 @@ class BoilerCraftBot(commands.Bot):
     async def setup_hook(self):
         """Called when the bot is starting up"""
         # Initialize database
-        self.db = Database()
-        await self.db.initialize()
+        try:
+            self.db = Database()
+            await self.db.initialize()
+        except Exception as e:
+            print(f"[CRITICAL] Database initialization failed: {e}")
+            raise
         
         # Register persistent views for ticket system
         self.add_view(TicketPanelView())
@@ -89,6 +93,7 @@ class BoilerCraftBot(commands.Bot):
                     
     async def on_ready(self):
         """Called when the bot is ready and connected"""
+        self._ready_fired = True
         print("=" * 50)
         print(f"  {config.BOT_NAME} v{config.BOT_VERSION}")
         print(f"  {config.BOT_DESCRIPTION}")
@@ -178,7 +183,10 @@ class BoilerCraftBot(commands.Bot):
     @tasks.loop(seconds=30)
     async def members_cache_loop(self):
         """Periodically save members cache"""
-        self.save_members_cache()
+        try:
+            self.save_members_cache()
+        except Exception as e:
+            print(f"[ERROR] Members cache loop failed: {e}")
 
     @members_cache_loop.before_loop
     async def before_members_cache(self):
@@ -237,6 +245,34 @@ class BoilerCraftBot(commands.Bot):
     @server_analytics_loop.before_loop
     async def before_server_analytics(self):
         await self.wait_until_ready()
+
+    async def on_connect(self):
+        """Called when the bot connects to Discord"""
+        print("[CONNECTION] Bot connected to Discord gateway.")
+
+    async def on_disconnect(self):
+        """Called when the bot disconnects from Discord"""
+        print("[CONNECTION] WARNING: Bot disconnected from Discord gateway. Will auto-reconnect.")
+
+    async def on_resumed(self):
+        """Called when the bot resumes a connection after disconnect"""
+        print("[CONNECTION] Bot resumed connection to Discord.")
+        self._restart_task_loops()
+
+    def _restart_task_loops(self):
+        """Restart any task loops that died during a disconnect."""
+        loop_tasks = [
+            ("poll_dashboard_commands", self.poll_dashboard_commands),
+            ("members_cache_loop", self.members_cache_loop),
+            ("server_analytics_loop", self.server_analytics_loop),
+        ]
+        for name, task_loop in loop_tasks:
+            try:
+                if not task_loop.is_running():
+                    print(f"[RECOVERY] Restarting dead task loop: {name}")
+                    task_loop.start()
+            except Exception as e:
+                print(f"[RECOVERY] Failed to restart {name}: {e}")
 
     @tasks.loop(seconds=5)
     async def poll_dashboard_commands(self):
@@ -495,6 +531,33 @@ class BoilerCraftBot(commands.Bot):
     @poll_dashboard_commands.before_loop
     async def before_poll(self):
         await self.wait_until_ready()
+
+    @poll_dashboard_commands.error
+    async def poll_dashboard_commands_error(self, error):
+        print(f"[ERROR] poll_dashboard_commands task died: {error}")
+        import traceback
+        traceback.print_exc()
+        await asyncio.sleep(30)
+        if not self.poll_dashboard_commands.is_running():
+            self.poll_dashboard_commands.start()
+
+    @members_cache_loop.error
+    async def members_cache_loop_error(self, error):
+        print(f"[ERROR] members_cache_loop task died: {error}")
+        import traceback
+        traceback.print_exc()
+        await asyncio.sleep(30)
+        if not self.members_cache_loop.is_running():
+            self.members_cache_loop.start()
+
+    @server_analytics_loop.error
+    async def server_analytics_loop_error(self, error):
+        print(f"[ERROR] server_analytics_loop task died: {error}")
+        import traceback
+        traceback.print_exc()
+        await asyncio.sleep(30)
+        if not self.server_analytics_loop.is_running():
+            self.server_analytics_loop.start()
 
     # =========================================================================
     # Moderation Helpers

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Worker On Duty{% endblock %}
-{% block page_title %}Worker On Duty{% endblock %}
+{% block title %}{% if arena_mode %}Arena Inventory{% else %}Inventory Manager{% endif %}{% endblock %}
+{% block page_title %}{% if arena_mode %}Arena Inventory{% else %}Inventory Manager{% endif %}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -714,15 +714,68 @@
         .onduty-tab { font-size: 11px; padding: 8px 10px; }
         .onduty-tab span:not([id]) { display: none; }
     }
+{% if arena_mode %}
+    /* ═══════ ARENA THEME: remap amber inventory accents to arena cyan ═══════ */
+    .content-wrapper {
+        --secondary: #22d3ee;
+        --secondary-dark: #06b6d4;
+    }
+    .modal input:focus, .modal select:focus, .modal textarea:focus {
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.14);
+    }
+    /* Inventory intro banner */
+    .arena-inv-hero {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px 24px;
+        margin-bottom: 22px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.10), rgba(14, 165, 233, 0.04));
+        border: 1px solid rgba(34, 211, 238, 0.18);
+        position: relative;
+        overflow: hidden;
+        animation: fadeInUp 0.4s ease;
+    }
+    .arena-inv-hero::after {
+        content: '';
+        position: absolute;
+        right: -40px; top: -60px;
+        width: 220px; height: 220px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(34, 211, 238, 0.12) 0%, transparent 70%);
+        pointer-events: none;
+    }
+    .arena-inv-hero-icon {
+        width: 56px; height: 56px;
+        border-radius: 16px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        background: linear-gradient(135deg, #22d3ee, #0891b2);
+        box-shadow: 0 8px 22px rgba(34, 211, 238, 0.32);
+    }
+    .arena-inv-hero-icon i { font-size: 24px; color: #04222b; }
+    .arena-inv-hero-info h3 { color: var(--text-primary); font-size: 19px; font-weight: 700; margin-bottom: 3px; }
+    .arena-inv-hero-info p { color: var(--text-secondary); font-size: 13.5px; line-height: 1.5; }
+{% endif %}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="content-wrapper">
+    {% if arena_mode %}
+    <div class="arena-inv-hero">
+        <div class="arena-inv-hero-icon"><i class="fas fa-box-open"></i></div>
+        <div class="arena-inv-hero-info">
+            <h3>Arena Inventory</h3>
+            <p>Track equipment, manage check-outs, and log reports for the esports arena — all in one place.</p>
+        </div>
+    </div>
+    {% endif %}
     <!-- Tabs -->
     <div class="onduty-tabs">
         <button class="onduty-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" onclick="switchTab('dashboard')">
-            <i class="fas fa-clipboard-check"></i> Dashboard
+            <i class="fas fa-chart-pie"></i> Overview
         </button>
         <button class="onduty-tab {% if active_tab == 'equipment' %}active{% endif %}" data-tab="equipment" onclick="switchTab('equipment')">
             <i class="fas fa-box-open"></i> Equipment
@@ -740,6 +793,7 @@
 
     <!-- ========== DASHBOARD TAB ========== -->
     <div class="tab-panel {% if active_tab == 'dashboard' %}active{% endif %}" id="tab-dashboard">
+        {% if not arena_mode %}
         <!-- Clock In/Out Banner -->
         <div class="clock-banner">
             <div class="clock-banner-icon">
@@ -753,6 +807,7 @@
                 <i class="fas fa-sign-in-alt"></i> Open WebClock
             </a>
         </div>
+        {% endif %}
 
         <!-- Quick Stats -->
         <div class="inv-stats" id="dashboard-stats">

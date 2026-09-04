@@ -4,21 +4,25 @@ A comprehensive Flask API for managing the Discord bot through a web interface.
 Features Discord OAuth2 authentication with role-based permissions.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory, send_file, Response
 from flask_cors import CORS
 from functools import wraps
 import os
 import sys
 import json
 import uuid
+import copy
 from datetime import datetime, timezone, timedelta
 import hashlib
 import secrets
 import requests
 import tempfile
 import threading
+import time
 import csv
+from collections import defaultdict
 import io
+from cryptography.fernet import Fernet
 
 # Add parent directory imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,20 +33,20 @@ from utils.constants import (
     GUILD_ID, STUDENT_ROLE_ID, GUEST_ROLE_ID, SECURITY_CODE,
     USER_RECORDS_DIR, GUEST_TIMES_DIR, VARSITY_REG_DIR, SCHEDULE_IMAGES_DIR, LOG_CHANNEL_NAME
 )
-from utils.safe_json import safe_json_dump
+from utils.safe_json import safe_json_dump, safe_json_load, safe_queue_append as _safe_queue_append
+from utils import db as user_db
+from utils.automod_sync import sync_automod
 
-# Import OAuth config
-from oauth_config import (
-    DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI,
-    DISCORD_BOT_TOKEN, DISCORD_API_BASE, DISCORD_AUTH_URL, DISCORD_TOKEN_URL,
-    OAUTH_SCOPES, PermissionLevel, ROLE_PERMISSIONS, FEATURE_PERMISSIONS,
-    get_user_permission_level, has_permission, get_user_features,
-    get_permission_level_name, oauth_login_required, permission_required,
-    api_permission_required
-)
+DISCORD_BOT_TOKEN = os.environ.get('DISCORD_BOT_TOKEN', '')
+
+# Initialize the SQLite user-records DB on startup
+user_db.init_db()
 
 # Import auth database
 import auth_db
+# Encrypted SQLite store for arena sign-ins
+import arena_db
+import puid_db
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -103,9 +107,10 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
 @app.context_processor
 def inject_user_perms():
     """Make user_perms and has_perm available in all templates."""
-    perms = get_user_perms() if (session.get('discord_user') or session.get('dashboard_user') or (session.get('authenticated') and session.get('legacy_login'))) else []
+    perms = get_user_perms() if (session.get('dashboard_user') or (session.get('authenticated') and session.get('legacy_login'))) else []
     resolved = set(auth_db.resolve_perm(p) for p in perms)
-    return dict(user_perms=perms, has_perm=lambda p: auth_db.resolve_perm(p) in resolved)
+    return dict(user_perms=perms, has_perm=lambda p: auth_db.resolve_perm(p) in resolved,
+                is_captain=False, account_role='captain')
 
 # Configuration
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
@@ -113,6 +118,11 @@ FLAGGED_WORDS_PATH = os.path.join(DATA_DIR, "flagged_words.json")
 BOT_STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
 MEMBERS_CACHE_FILE = os.path.join(DATA_DIR, "members_cache.json")
 ROLES_CACHE_FILE = os.path.join(DATA_DIR, "roles_cache.json")
+
+# Unique per-process id, regenerated every time the server starts. Kiosks poll
+# this and auto-reload the moment it changes, so a server restart/redeploy
+# never leaves a kiosk stuck on a stale page needing a manual refresh.
+SERVER_BOOT_ID = uuid.uuid4().hex
 BOT_CONTROL_FILE = os.path.join(DATA_DIR, "bot_control.json")
 BOT_PID_FILE = os.path.join(DATA_DIR, "bot.pid")
 JOB_PROGRESS_FILE = os.path.join(DATA_DIR, "job_progress.json")
@@ -137,12 +147,9 @@ def set_bot_process(process):
 # ============ Authentication Decorators ============
 
 def login_required(f):
-    """Decorator to require authentication (OAuth, dashboard user, or legacy)"""
+    """Decorator to require authentication (dashboard user or legacy)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check for Discord OAuth session
-        if session.get('discord_user'):
-            return f(*args, **kwargs)
         # Check for dashboard user (new auth system)
         if session.get('dashboard_user'):
             return f(*args, **kwargs)
@@ -153,12 +160,9 @@ def login_required(f):
     return decorated_function
 
 def api_auth_required(f):
-    """Decorator for API endpoints (supports OAuth, dashboard user, legacy session, and token)"""
+    """Decorator for API endpoints (supports dashboard user, legacy session, and token)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check for Discord OAuth session
-        if session.get('discord_user'):
-            return f(*args, **kwargs)
         # Check for dashboard user (new auth system)
         if session.get('dashboard_user'):
             return f(*args, **kwargs)
@@ -180,10 +184,6 @@ def admin_required(f):
         user = session.get('dashboard_user')
         if user and user.get('is_admin'):
             return f(*args, **kwargs)
-        # Discord OAuth users with OWNER/DIRECTOR level get admin access
-        discord_user = session.get('discord_user')
-        if discord_user and discord_user.get('permission_level', 0) >= PermissionLevel.DIRECTOR:
-            return f(*args, **kwargs)
         # Legacy login gets admin access (they had the security code)
         if session.get('authenticated') and session.get('legacy_login'):
             return f(*args, **kwargs)
@@ -191,25 +191,32 @@ def admin_required(f):
     return decorated_function
 
 def _is_full_access_user():
-    """Check if the current user has full unrestricted access (Discord OAuth or legacy login)."""
-    if session.get('discord_user'):
+    """Check if the current user has full unrestricted access (dashboard admin or legacy login)."""
+    user = session.get('dashboard_user')
+    if user and user.get('is_admin'):
         return True
     if session.get('authenticated') and session.get('legacy_login'):
         return True
     return False
 
+def _perm_keys(permission_key):
+    """Normalize a permission_key argument (str or iterable of str) to a list."""
+    if isinstance(permission_key, (list, tuple, set)):
+        return list(permission_key)
+    return [permission_key]
+
 def page_permission_required(permission_key):
-    """Decorator factory to require a specific page permission"""
+    """Decorator factory to require a specific page permission (or any of a list of permissions)"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             # Discord OAuth users and legacy users get full access
             if _is_full_access_user():
                 return f(*args, **kwargs)
-            # Dashboard users need the specific permission (resolved via alias)
-            resolved = auth_db.resolve_perm(permission_key)
-            perms = session.get('dashboard_permissions', [])
-            if resolved in set(auth_db.resolve_perm(p) for p in perms):
+            # Dashboard users need at least one of the specified permissions (resolved via alias)
+            resolved_required = set(auth_db.resolve_perm(k) for k in _perm_keys(permission_key))
+            resolved_held = set(auth_db.resolve_perm(p) for p in get_user_perms())
+            if resolved_required & resolved_held:
                 return f(*args, **kwargs)
             return redirect(url_for('smart_landing'))
         return decorated_function
@@ -220,17 +227,16 @@ def has_perm(permission_key):
     if _is_full_access_user():
         return True
     resolved = auth_db.resolve_perm(permission_key)
-    perms = session.get('dashboard_permissions', [])
-    return resolved in set(auth_db.resolve_perm(p) for p in perms)
+    return resolved in set(auth_db.resolve_perm(p) for p in get_user_perms())
 
 def get_user_perms():
-    """Get the current user's permission list. Returns ALL_PERMISSIONS for Discord/legacy users."""
+    """Effective permission set for the current session. Discord/legacy users get everything."""
     if _is_full_access_user():
         return auth_db.ALL_PERMISSIONS
-    return session.get('dashboard_permissions', [])
+    return list(session.get('dashboard_permissions', []))
 
 def api_perm_required(permission_key):
-    """Decorator factory for API endpoints requiring a specific action permission"""
+    """Decorator factory for API endpoints requiring a specific action permission (or any of a list)"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -241,178 +247,47 @@ def api_perm_required(permission_key):
             auth_token = request.headers.get('Authorization')
             if auth_token == f"Bearer {SECURITY_CODE}":
                 return f(*args, **kwargs)
-            # Dashboard users need the specific permission (resolved via alias)
-            resolved = auth_db.resolve_perm(permission_key)
-            perms = session.get('dashboard_permissions', [])
-            if resolved in set(auth_db.resolve_perm(p) for p in perms):
+            # Dashboard users need at least one of the specified permissions (resolved via alias)
+            resolved_required = set(auth_db.resolve_perm(k) for k in _perm_keys(permission_key))
+            resolved_held = set(auth_db.resolve_perm(p) for p in get_user_perms())
+            if resolved_required & resolved_held:
                 return f(*args, **kwargs)
             return jsonify({"error": "Permission denied"}), 403
         return decorated_function
     return decorator
 
-# ============ Discord OAuth2 Helper Functions ============
-
-def get_oauth_url(state=None):
-    """Generate Discord OAuth2 authorization URL"""
-    from urllib.parse import urlencode
-    params = {
-        'client_id': DISCORD_CLIENT_ID,
-        'redirect_uri': DISCORD_REDIRECT_URI,
-        'response_type': 'code',
-        'scope': ' '.join(OAUTH_SCOPES),
-    }
-    if state:
-        params['state'] = state
-    return f"{DISCORD_AUTH_URL}?{urlencode(params)}"
-
-def exchange_code(code):
-    """Exchange authorization code for access token"""
-    data = {
-        'client_id': DISCORD_CLIENT_ID,
-        'client_secret': DISCORD_CLIENT_SECRET,
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': DISCORD_REDIRECT_URI,
-    }
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    
-    try:
-        response = requests.post(DISCORD_TOKEN_URL, data=data, headers=headers, timeout=DISCORD_API_TIMEOUT)
-        if response.status_code != 200:
-            print(f"[OAUTH] Token exchange failed: {response.status_code} - {response.text}")
-            return None
-        return response.json()
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"[OAUTH] Token exchange timed out or connection failed: {e}")
-        return None
-
-def get_discord_user(access_token):
-    """Fetch user information from Discord API"""
-    headers = {'Authorization': f'Bearer {access_token}'}
-    try:
-        response = requests.get(f"{DISCORD_API_BASE}/users/@me", headers=headers, timeout=DISCORD_API_TIMEOUT)
-        if response.status_code != 200:
-            print(f"[OAUTH] Failed to fetch user: {response.status_code}")
-            return None
-        return response.json()
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"[OAUTH] Failed to fetch Discord user: {e}")
-        return None
-
-def get_guild_member(user_id):
-    """Fetch guild member data using bot token to get roles"""
-    if not DISCORD_BOT_TOKEN or DISCORD_BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        # Try reading from bot's members cache instead
-        if os.path.exists(MEMBERS_CACHE_FILE):
-            try:
-                with open(MEMBERS_CACHE_FILE, 'r', encoding='utf-8') as f:
-                    members = json.load(f)
-                for member in members:
-                    if str(member.get('id')) == str(user_id):
-                        return {
-                            'roles': [r['id'] for r in member.get('roles', [])],
-                            'nick': member.get('nick'),
-                            'joined_at': member.get('joined_at')
-                        }
-            except (json.JSONDecodeError, IOError, OSError, KeyError) as e:
-                logger.warning(f"[OAUTH] Failed to read members cache: {e}")
-        return None
-    
-    headers = {'Authorization': f'Bot {DISCORD_BOT_TOKEN}'}
-    try:
-        response = requests.get(
-            f"{DISCORD_API_BASE}/guilds/{GUILD_ID}/members/{user_id}",
-            headers=headers,
-            timeout=DISCORD_API_TIMEOUT
-        )
-        if response.status_code != 200:
-            print(f"[OAUTH] Failed to fetch guild member: {response.status_code}")
-            return None
-        return response.json()
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"[OAUTH] Failed to fetch guild member {user_id}: {e}")
-        return None
-
-def get_guild_info():
-    """Fetch guild info to check owner"""
-    if not DISCORD_BOT_TOKEN or DISCORD_BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        return None
-    
-    headers = {'Authorization': f'Bot {DISCORD_BOT_TOKEN}'}
-    try:
-        response = requests.get(f"{DISCORD_API_BASE}/guilds/{GUILD_ID}", headers=headers, timeout=DISCORD_API_TIMEOUT)
-        if response.status_code != 200:
-            return None
-        return response.json()
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"[OAUTH] Failed to fetch guild info: {e}")
-        return None
-
 # ============ Helper Functions ============
-
-# Reentrant lock for JSON file operations to prevent race conditions
-# RLock allows the same thread to re-acquire (needed for safe_queue_append which calls load/save)
-_json_file_lock = threading.RLock()
 
 # Discord API request timeout (seconds) - prevents hanging when Discord is slow/down
 DISCORD_API_TIMEOUT = 10
 
 def load_json_file(filepath, default=None):
-    if default is None:
-        default = {}
-    if os.path.exists(filepath):
-        try:
-            with _json_file_lock:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except (json.JSONDecodeError, IOError, OSError) as e:
-            logger.warning(f"Failed to load JSON file {filepath}: {e}")
-            return default
-    return default
+    """Load JSON file using the shared thread-safe implementation."""
+    return safe_json_load(filepath, default)
 
 def save_json_file(filepath, data):
-    """Atomic JSON save - writes to temp file first, then renames to prevent corruption."""
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    try:
-        dir_name = os.path.dirname(filepath)
-        fd, tmp_path = tempfile.mkstemp(suffix='.tmp', dir=dir_name)
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            # Retry os.replace - Windows fails with PermissionError if another process has the file open
-            for attempt in range(5):
-                try:
-                    with _json_file_lock:
-                        os.replace(tmp_path, filepath)
-                    break
-                except PermissionError:
-                    if attempt < 4:
-                        import time
-                        time.sleep(0.1 * (attempt + 1))
-                    else:
-                        raise
-        except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
-    except Exception as e:
-        logger.error(f"Failed to save JSON file {filepath}: {e}")
-        raise
+    """Save JSON file using the shared thread-safe implementation."""
+    safe_json_dump(data, filepath, indent=2)
 
 def safe_queue_append(filepath, item):
-    """Thread-safe append to a JSON list file (e.g., notification queues)."""
-    with _json_file_lock:
-        queue = load_json_file(filepath, [])
-        queue.append(item)
-        save_json_file(filepath, queue)
+    """Thread-safe append to a JSON list file."""
+    _safe_queue_append(filepath, item)
 
 def load_flagged_words():
     return load_json_file(FLAGGED_WORDS_PATH, {"bannable": [], "kickable": [], "warning": []})
 
 def save_flagged_words(words):
     save_json_file(FLAGGED_WORDS_PATH, words)
+
+def _sync_automod_bg(flagged_words: dict):
+    """Run AutoMod sync in a background thread so the API response isn't delayed."""
+    def _run():
+        try:
+            result = sync_automod(DISCORD_BOT_TOKEN, GUILD_ID, flagged_words)
+            logger.info(f"[AutoMod Sync] Result: {result}")
+        except Exception as exc:
+            logger.error(f"[AutoMod Sync] Unexpected error: {exc}")
+    threading.Thread(target=_run, daemon=True).start()
 
 def delete_schedule_images(attachments):
     """Delete schedule image files from local storage.
@@ -481,13 +356,7 @@ def transform_attachments_to_urls(data):
     return result
 
 def load_user_records():
-    records = {}
-    if os.path.exists(USER_RECORDS_DIR):
-        for fname in os.listdir(USER_RECORDS_DIR):
-            if fname.endswith("_record.json"):
-                user_id = fname.split("_")[0]
-                records[user_id] = load_json_file(os.path.join(USER_RECORDS_DIR, fname), [])
-    return records
+    return user_db.get_all_records()
 
 def get_members_lookup():
     """Build a dict of user_id -> member info for fast lookups."""
@@ -533,16 +402,8 @@ def log_activity(action, category, details, target_id=None, target_name=None, su
             "avatar": None
         }
         
-        discord_user = session.get('discord_user')
         dashboard_user = session.get('dashboard_user')
-        if discord_user:
-            moderator_info = {
-                "type": "discord",
-                "name": discord_user.get('global_name') or discord_user.get('username'),
-                "id": discord_user.get('id'),
-                "avatar": discord_user.get('avatar_url')
-            }
-        elif dashboard_user:
+        if dashboard_user:
             moderator_info = {
                 "type": "dashboard",
                 "name": dashboard_user.get('display_name') or dashboard_user.get('username'),
@@ -593,9 +454,6 @@ def log_activity(action, category, details, target_id=None, target_name=None, su
 
 def get_moderator_name():
     """Get the current moderator's name from session"""
-    discord_user = session.get('discord_user')
-    if discord_user:
-        return discord_user.get('global_name') or discord_user.get('username')
     dashboard_user = session.get('dashboard_user')
     if dashboard_user:
         return dashboard_user.get('display_name') or dashboard_user.get('username')
@@ -604,10 +462,10 @@ def get_moderator_name():
     return 'Dashboard Admin'
 
 def get_moderator_id():
-    """Get the current moderator's Discord ID from session"""
-    discord_user = session.get('discord_user')
-    if discord_user:
-        return discord_user.get('id')
+    """Get the current moderator's ID from session"""
+    dashboard_user = session.get('dashboard_user')
+    if dashboard_user:
+        return dashboard_user.get('id')
     return None
 
 def load_guest_times():
@@ -624,8 +482,8 @@ def get_bot_stats():
     # Try to read from bot status file (written by the bot)
     if os.path.exists(BOT_STATUS_FILE):
         try:
-            with open(BOT_STATUS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = load_json_file(BOT_STATUS_FILE, {})
+            if data:
                 # Check if status is recent (within last 2 minutes)
                 last_update = data.get('last_update', '')
                 if last_update:
@@ -633,8 +491,8 @@ def get_bot_stats():
                     now = datetime.now(timezone.utc)
                     if (now - update_time).total_seconds() < 120:
                         return data
-        except:
-            pass
+        except (json.JSONDecodeError, ValueError, OSError) as e:
+            print(f"[ERROR] Failed to read bot status file: {e}")
     
     # If bot instance is available (integrated mode)
     if bot_instance is not None:
@@ -663,7 +521,7 @@ def get_bot_stats():
 @app.route('/')
 def index():
     # If already logged in, go to dashboard
-    if session.get('discord_user') or (session.get('authenticated') and session.get('legacy_login')) or session.get('dashboard_user'):
+    if (session.get('authenticated') and session.get('legacy_login')) or session.get('dashboard_user'):
         return redirect(url_for('smart_landing'))
     return redirect(url_for('login'))
 
@@ -702,17 +560,12 @@ def validate_login():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # If already logged in via OAuth, redirect to dashboard
-    if session.get('discord_user'):
+    # If already logged in, redirect to dashboard
+    if session.get('dashboard_user') or (session.get('authenticated') and session.get('legacy_login')):
         return redirect(url_for('smart_landing'))
     
     error = request.args.get('error')
     error_messages = {
-        'discord_auth_failed': 'Discord authorization failed. Please try again.',
-        'token_exchange_failed': 'Failed to authenticate with Discord. Please try again.',
-        'failed_to_fetch_user': 'Could not retrieve your Discord profile. Please try again.',
-        'not_server_member': 'You must be a member of the PNW Esports Discord server to access the dashboard.',
-        'no_dashboard_access': 'Your Discord roles do not grant dashboard access. Contact an admin if you believe this is an error.',
         'permission_denied': 'You do not have permission to access that feature.',
     }
     
@@ -743,143 +596,18 @@ def login():
             target_name=username,
             success=False
         )
-        return render_template('login.html', error="Invalid username or password", 
-                             oauth_enabled=_is_oauth_configured())
+        return render_template('login.html', error="Invalid username or password")
     
     return render_template('login.html', 
-                         error=error_messages.get(error),
-                         oauth_enabled=_is_oauth_configured())
-
-def _is_oauth_configured():
-    """Check if Discord OAuth is properly configured"""
-    return (DISCORD_CLIENT_ID and DISCORD_CLIENT_ID != 'YOUR_CLIENT_ID_HERE' and
-            DISCORD_CLIENT_SECRET and DISCORD_CLIENT_SECRET != 'YOUR_CLIENT_SECRET_HERE')
-
-@app.route('/auth/discord')
-def discord_login():
-    """Initiate Discord OAuth2 login flow"""
-    if not _is_oauth_configured():
-        return redirect(url_for('login', error='oauth_not_configured'))
-    
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    session['oauth_state'] = state
-    
-    return redirect(get_oauth_url(state))
-
-@app.route('/auth/callback')
-def discord_callback():
-    """Handle Discord OAuth2 callback"""
-    # Verify state for CSRF protection
-    state = request.args.get('state')
-    stored_state = session.pop('oauth_state', None)
-    
-    if state != stored_state:
-        return redirect(url_for('login', error='invalid_state'))
-    
-    # Check for errors from Discord
-    error = request.args.get('error')
-    if error:
-        error_desc = request.args.get('error_description', 'Unknown error')
-        print(f"[OAUTH] Authorization error: {error} - {error_desc}")
-        return redirect(url_for('login', error='discord_auth_failed'))
-    
-    # Get authorization code
-    code = request.args.get('code')
-    if not code:
-        return redirect(url_for('login', error='discord_auth_failed'))
-    
-    # Exchange code for tokens
-    token_data = exchange_code(code)
-    if not token_data:
-        return redirect(url_for('login', error='token_exchange_failed'))
-    
-    access_token = token_data.get('access_token')
-    refresh_token = token_data.get('refresh_token')
-    
-    # Get user info
-    user_info = get_discord_user(access_token)
-    if not user_info:
-        return redirect(url_for('login', error='failed_to_fetch_user'))
-    
-    user_id = user_info.get('id')
-    
-    # Get guild member info (for roles)
-    member_info = get_guild_member(user_id)
-    is_member = member_info is not None
-    
-    if not is_member:
-        return redirect(url_for('login', error='not_server_member'))
-    
-    # Get guild info to check for owner
-    guild_info = get_guild_info()
-    is_owner = guild_info and str(guild_info.get('owner_id')) == str(user_id)
-    
-    # Build avatar URL
-    avatar_hash = user_info.get('avatar')
-    if avatar_hash:
-        avatar_ext = 'gif' if avatar_hash.startswith('a_') else 'png'
-        avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.{avatar_ext}?size=256"
-    else:
-        discriminator = int(user_info.get('discriminator', '0'))
-        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discriminator % 5}.png"
-    
-    # Build user data
-    user_data = {
-        'id': user_id,
-        'username': user_info.get('username'),
-        'global_name': user_info.get('global_name'),
-        'discriminator': user_info.get('discriminator'),
-        'avatar': avatar_hash,
-        'avatar_url': avatar_url,
-        'roles': member_info.get('roles', []) if member_info else [],
-        'nick': member_info.get('nick') if member_info else None,
-        'joined_at': member_info.get('joined_at') if member_info else None,
-        'is_member': is_member,
-        'is_owner': is_owner,
-    }
-    
-    # Calculate permission level
-    permission_level = get_user_permission_level(user_data)
-    user_data['permission_level'] = permission_level
-    user_data['permission_name'] = get_permission_level_name(permission_level)
-    user_data['features'] = get_user_features(user_data)
-    
-    # Check minimum access
-    if permission_level < PermissionLevel.VIEWER:
-        return redirect(url_for('login', error='no_dashboard_access'))
-    
-    # Store in session
-    session['discord_user'] = user_data
-    session['authenticated'] = True
-    session['user_name'] = user_data.get('global_name') or user_data.get('username')
-    
-    # Log the Discord OAuth login
-    log_activity(
-        action="login",
-        category="auth",
-        details=f"Discord OAuth login - Permission: {user_data['permission_name']}",
-        target_id=user_id,
-        target_name=user_data.get('global_name') or user_data.get('username'),
-        success=True
-    )
-    
-    print(f"[OAUTH] User {user_data['username']} logged in - Permission: {user_data['permission_name']}")
-    
-    return redirect(url_for('smart_landing'))
+                         error=error_messages.get(error))
 
 @app.route('/logout')
 def logout():
-    user = session.get('discord_user')
     dashboard_user = session.get('dashboard_user')
     user_name = None
     user_id = None
     
-    if user:
-        user_name = user.get('global_name') or user.get('username')
-        user_id = user.get('id')
-        print(f"[OAUTH] User {user.get('username')} logged out")
-    elif dashboard_user:
+    if dashboard_user:
         user_name = dashboard_user.get('display_name') or dashboard_user.get('username')
         user_id = dashboard_user.get('id')
     elif session.get('legacy_login'):
@@ -899,91 +627,61 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ============ OAuth API Endpoints ============
+# ============ Auth API Endpoints ============
 
 @app.route('/api/auth/user')
 def get_current_user():
     """API endpoint to get current logged-in user info"""
-    user_data = session.get('discord_user')
-    
-    if not user_data:
-        # Check for dashboard user (new auth)
-        dashboard_user = session.get('dashboard_user')
-        if dashboard_user:
-            return jsonify({
-                'authenticated': True,
-                'dashboard_login': True,
-                'user': {
-                    'id': dashboard_user.get('id'),
-                    'username': dashboard_user.get('username'),
-                    'display_name': dashboard_user.get('display_name'),
-                    'is_admin': dashboard_user.get('is_admin', False),
-                    'permissions': session.get('dashboard_permissions', [])
-                }
-            })
-        # Check for legacy login
-        if session.get('authenticated') and session.get('legacy_login'):
-            return jsonify({
-                'authenticated': True,
-                'legacy_login': True,
-                'user': {
-                    'username': session.get('user_name', 'Admin'),
-                    'permission_level': PermissionLevel.OWNER,  # Legacy has full access
-                    'permission_name': 'Owner (Legacy)',
-                    'features': list(FEATURE_PERMISSIONS.keys())
-                }
-            })
-        return jsonify({'authenticated': False}), 401
-    
-    # Return user data without sensitive tokens
-    safe_user_data = {k: v for k, v in user_data.items() 
-                      if k not in ['access_token', 'refresh_token']}
-    
-    return jsonify({
-        'authenticated': True,
-        'user': safe_user_data
-    })
+    dashboard_user = session.get('dashboard_user')
+    if dashboard_user:
+        return jsonify({
+            'authenticated': True,
+            'dashboard_login': True,
+            'user': {
+                'id': dashboard_user.get('id'),
+                'username': dashboard_user.get('username'),
+                'display_name': dashboard_user.get('display_name'),
+                'is_admin': dashboard_user.get('is_admin', False),
+                'permissions': session.get('dashboard_permissions', [])
+            }
+        })
+    # Check for legacy login
+    if session.get('authenticated') and session.get('legacy_login'):
+        return jsonify({
+            'authenticated': True,
+            'legacy_login': True,
+            'user': {
+                'username': session.get('user_name', 'Admin'),
+                'is_admin': True
+            }
+        })
+    return jsonify({'authenticated': False}), 401
 
 @app.route('/api/auth/permissions')
 def get_user_permissions():
     """API endpoint to get current user's permissions"""
-    user_data = session.get('discord_user')
-    
-    if not user_data:
-        if session.get('authenticated') and session.get('legacy_login'):
-            # Legacy login has full permissions
-            return jsonify({
-                'permission_level': PermissionLevel.OWNER,
-                'permission_name': 'Owner (Legacy)',
-                'features': list(FEATURE_PERMISSIONS.keys()),
-                'is_owner': True,
-                'is_member': True,
-                'legacy_login': True
-            })
-        return jsonify({'authenticated': False}), 401
-    
-    return jsonify({
-        'permission_level': user_data.get('permission_level', 0),
-        'permission_name': user_data.get('permission_name', 'None'),
-        'features': user_data.get('features', []),
-        'is_owner': user_data.get('is_owner', False),
-        'is_member': user_data.get('is_member', False),
-    })
+    dashboard_user = session.get('dashboard_user')
+    if dashboard_user:
+        return jsonify({
+            'permissions': session.get('dashboard_permissions', []),
+            'is_admin': dashboard_user.get('is_admin', False)
+        })
+    if session.get('authenticated') and session.get('legacy_login'):
+        return jsonify({
+            'is_admin': True,
+            'legacy_login': True
+        })
+    return jsonify({'authenticated': False}), 401
 
 @app.route('/api/auth/check-feature/<feature>')
 def check_feature_permission(feature):
     """API endpoint to check if user has permission for a feature"""
-    user_data = session.get('discord_user')
-    
-    if not user_data:
-        if session.get('authenticated') and session.get('legacy_login'):
-            return jsonify({'has_permission': True, 'feature': feature, 'legacy_login': True})
-        return jsonify({'has_permission': False, 'authenticated': False}), 401
-    
-    return jsonify({
-        'has_permission': has_permission(user_data, feature),
-        'feature': feature
-    })
+    if _is_full_access_user():
+        return jsonify({'has_permission': True, 'feature': feature})
+    dashboard_user = session.get('dashboard_user')
+    if dashboard_user:
+        return jsonify({'has_permission': has_perm(feature), 'feature': feature})
+    return jsonify({'has_permission': False, 'authenticated': False}), 401
 
 # ============ Admin Panel Routes ============
 
@@ -992,10 +690,8 @@ def check_feature_permission(feature):
 def admin_panel():
     # Check admin access for page route (redirect instead of JSON 403)
     user = session.get('dashboard_user')
-    discord_user = session.get('discord_user')
     is_admin = (
         (user and user.get('is_admin')) or
-        (discord_user and discord_user.get('permission_level', 0) >= PermissionLevel.DIRECTOR) or
         (session.get('authenticated') and session.get('legacy_login'))
     )
     if not is_admin:
@@ -1260,25 +956,67 @@ def api_admin_get_permissions():
 @app.route('/home')
 @login_required
 def smart_landing():
-    """Redirect to the first section the user has access to."""
+    """Redirect to the first accessible page in the first section the user has access to.
+    Section-aware so a custom group (e.g. Student Worker + Captain) that has section.lionbyte
+    but not page.dashboard specifically still lands inside LionByteGG instead of bouncing to
+    a different section entirely."""
     # Full-access users go to main dashboard
     if _is_full_access_user():
         return redirect(url_for('dashboard'))
-    perms = set(auth_db.resolve_perm(p) for p in session.get('dashboard_permissions', []))
-    # Check sections in priority order
-    if 'section.lionbyte' in perms and 'page.dashboard' in perms:
-        return redirect(url_for('dashboard'))
-    if 'section.boilercraft' in perms and 'page.boilercraft' in perms:
-        return redirect('/boilercraft/dashboard')
-    if 'section.onduty' in perms and 'page.onduty_dashboard' in perms:
-        return redirect('/onduty/dashboard')
-    if 'section.lionshift' in perms and 'page.shift_dashboard' in perms:
-        return redirect('/lionshift/dashboard')
-    if 'section.lionbeats' in perms and 'page.music_dashboard' in perms:
-        return redirect('/music/dashboard')
+    # Use the unioned permission set (group perms + captain/coach baseline, if applicable)
+    perms = set(auth_db.resolve_perm(p) for p in get_user_perms())
+    # (section_perm, [(page_perm, url), ...]) — first section the user can access wins; within
+    # that section, the first page permission they actually hold wins (not just the dashboard).
+    section_fallbacks = [
+        ('section.lionbyte', [
+            ('page.dashboard', '/dashboard'),
+            ('page.rosters', '/rosters'),
+            ('page.members', '/members'),
+            ('page.varsity', '/varsity'),
+            ('page.analytics', '/analytics'),
+            ('page.users', '/users'),
+            ('page.moderation', '/moderation'),
+            ('page.tickets', '/tickets'),
+            ('page.reaction_roles', '/reaction-roles'),
+            ('page.vc_system', '/vc-system'),
+            ('page.logs', '/logs'),
+            ('page.settings', '/settings'),
+        ]),
+        ('section.boilercraft', [
+            ('page.boilercraft', '/boilercraft/dashboard'),
+            ('page.boilercraft_faq', '/boilercraft/faq'),
+        ]),
+        ('section.lionshift', [
+            ('page.shift_dashboard', '/lionshift/dashboard'),
+            ('page.shift_schedules', '/lionshift/schedules'),
+            ('page.shift_workers', '/lionshift/workers'),
+            ('page.shift_offers', '/lionshift/offers'),
+            ('page.shift_trades', '/lionshift/trades'),
+            ('page.shift_timeoff', '/lionshift/timeoff'),
+            ('page.shift_logs', '/lionshift/logs'),
+        ]),
+        ('section.lionbeats', [
+            ('page.music_dashboard', '/music/dashboard'),
+            ('page.music_features', '/music/features'),
+        ]),
+        ('section.arena', [
+            ('page.arena_live', '/arena/live'),
+            ('page.arena_students', '/arena/students'),
+            ('page.arena_reports', '/arena/reports'),
+            ('page.arena_logs', '/arena/logs'),
+            ('page.arena_controls', '/arena/controls'),
+            ('page.arena_inventory', '/arena/inventory'),
+            ('page.arena_sessions', '/arena/sessions'),
+        ]),
+    ]
+    for section_perm, pages in section_fallbacks:
+        if section_perm in perms:
+            for page_perm, url in pages:
+                if page_perm in perms:
+                    return redirect(url)
     if 'admin.panel' in perms:
         return redirect('/admin')
-    # No sections accessible — show an error
+    # No sections or pages accessible — show an error
     return redirect(url_for('login', error='no_dashboard_access'))
 
 @app.route('/dashboard')
@@ -1305,19 +1043,20 @@ def users():
 def tickets():
     return render_template('tickets.html')
 
-# ============ WORKER ON DUTY ROUTES ============
+# ============ ARENA INVENTORY (moved from the retired "Worker On Duty" app) ============
 
-@app.route('/onduty/dashboard')
+@app.route('/arena/inventory')
 @login_required
-@page_permission_required('page.onduty_dashboard')
-def onduty_dashboard():
-    return render_template('onduty.html', active_tab='dashboard')
+@page_permission_required('page.arena_inventory')
+def arena_inventory():
+    return render_template('onduty.html', active_tab='equipment', arena_mode=True)
 
+# Old On-Duty inventory URLs now live under Arena Staff.
+@app.route('/onduty/dashboard')
 @app.route('/onduty/equipment')
 @login_required
-@page_permission_required('page.onduty_equipment')
-def onduty_equipment():
-    return render_template('onduty.html', active_tab='equipment')
+def onduty_inventory_redirect():
+    return redirect('/arena/inventory')
 
 # ============ LIONBEATSGG MUSIC BOT ROUTES ============
 
@@ -1948,6 +1687,947 @@ def api_assign_ticket(ticket_id):
     
     return jsonify({"success": True, "message": f"Ticket assigned to {assigned_to}"})
 
+# ============ LionShiftGG Dashboard ============
+
+LIONSHIFT_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "LionShiftGG")
+LIONSHIFT_SCHEDULES = os.path.join(LIONSHIFT_DATA_DIR, "schedules.json")
+LIONSHIFT_SHIFT_BOARD = os.path.join(LIONSHIFT_DATA_DIR, "shift_board.json")
+LIONSHIFT_SHIFT_LOGS = os.path.join(LIONSHIFT_DATA_DIR, "shift_logs.json")
+LIONSHIFT_TRADES = os.path.join(LIONSHIFT_DATA_DIR, "trades.json")
+LIONSHIFT_TIMEOFF = os.path.join(LIONSHIFT_DATA_DIR, "timeoff_requests.json")
+LIONSHIFT_WORKERS = os.path.join(LIONSHIFT_DATA_DIR, "workers_cache.json")
+LIONSHIFT_SETTINGS = os.path.join(LIONSHIFT_DATA_DIR, "settings.json")
+LIONSHIFT_AVAILABILITY = os.path.join(LIONSHIFT_DATA_DIR, "worker_availability.json")
+LIONSHIFT_SHIFT_DUTIES = os.path.join(LIONSHIFT_DATA_DIR, "shift_duties.json")
+
+def load_shift_schedules():
+    return load_json_file(LIONSHIFT_SCHEDULES, [])
+
+def load_shift_board():
+    return load_json_file(LIONSHIFT_SHIFT_BOARD, {"shift_board": {}, "shift_counter": 0})
+
+def load_shift_logs():
+    return load_json_file(LIONSHIFT_SHIFT_LOGS, [])
+
+def load_shift_trades():
+    return load_json_file(LIONSHIFT_TRADES, [])
+
+def load_shift_timeoff():
+    return load_json_file(LIONSHIFT_TIMEOFF, [])
+
+def load_shift_workers():
+    return load_json_file(LIONSHIFT_WORKERS, [])
+
+def load_shift_settings():
+    return load_json_file(LIONSHIFT_SETTINGS, {})
+
+def load_shift_availability():
+    return load_json_file(LIONSHIFT_AVAILABILITY, {})
+
+
+# -- Rooms / locations (configurable; shared with the bot) --------------
+LIONSHIFT_ROOMS = os.path.join(LIONSHIFT_DATA_DIR, "rooms.json")
+
+_ROOM_DEFAULTS = [
+    {"id": "pc", "name": "PC Room", "emoji": "\U0001f5a5\ufe0f", "color": "#3b82f6", "order": 0},
+    {"id": "console", "name": "Console Room", "emoji": "\U0001f3ae", "color": "#a855f7", "order": 1},
+]
+
+
+def load_shift_rooms():
+    """Configurable arena rooms. Seeds a default PC + Console on first use."""
+    rooms = load_json_file(LIONSHIFT_ROOMS, None)
+    if not rooms or not isinstance(rooms, list):
+        rooms = [dict(r) for r in _ROOM_DEFAULTS]
+        save_json_file(LIONSHIFT_ROOMS, rooms)
+    rooms.sort(key=lambda r: r.get("order", 0))
+    return rooms
+
+
+def default_room_id():
+    rooms = load_shift_rooms()
+    return rooms[0]["id"] if rooms else "pc"
+
+
+_ROLE_KEYS = ("opener", "mid", "closer")
+_ROLE_GREETINGS = {
+    "opener": "\U0001f305 You're the Opener today! Here's what you need to take care of:",
+    "mid": "\u2600\ufe0f You're the Mid-Shift worker today! Here's what you need to take care of:",
+    "closer": "\U0001f319 You're the Closer tonight! Here's what you need to take care of:",
+}
+
+
+def _blank_room_duties():
+    return {role: {"greeting": _ROLE_GREETINGS[role], "tasks": []} for role in _ROLE_KEYS}
+
+
+def load_room_duties():
+    """Return shift duties keyed by room id -> role -> {greeting, tasks}.
+
+    Migrates the legacy flat {opener,mid,closer} format (single implicit room)
+    into the first room the first time it is read, so old checklists are kept.
+    """
+    raw = load_json_file(LIONSHIFT_SHIFT_DUTIES, None)
+    rooms = load_shift_rooms()
+    room_ids = [r["id"] for r in rooms]
+    out = {}
+    legacy = isinstance(raw, dict) and any(k in raw for k in _ROLE_KEYS)
+    for rid in room_ids:
+        if isinstance(raw, dict) and isinstance(raw.get(rid), dict) and any(k in raw[rid] for k in _ROLE_KEYS):
+            src = raw[rid]
+        elif legacy and rid == room_ids[0]:
+            src = raw  # migrate the old single checklist onto the first room
+        else:
+            src = None
+        room = _blank_room_duties()
+        if isinstance(src, dict):
+            for role in _ROLE_KEYS:
+                rd = src.get(role) or {}
+                if isinstance(rd, dict):
+                    room[role]["greeting"] = str(rd.get("greeting") or _ROLE_GREETINGS[role])
+                    room[role]["tasks"] = rd.get("tasks") or []
+        out[rid] = room
+    return out
+
+
+@app.route('/lionshift')
+@app.route('/lionshift/')
+@app.route('/lionshift/dashboard')
+@app.route('/lionshift/calendar')
+@login_required
+@page_permission_required('page.shift_dashboard')
+def lionshift_dashboard():
+    return render_template('lionshift.html', active_tab='calendar')
+
+
+@app.route('/lionshift/schedules')
+@login_required
+@page_permission_required('page.shift_schedules')
+def lionshift_schedules():
+    return render_template('lionshift.html', active_tab='schedules')
+
+
+@app.route('/lionshift/workers')
+@login_required
+@page_permission_required('page.shift_workers')
+def lionshift_workers():
+    return render_template('lionshift.html', active_tab='workers')
+
+
+@app.route('/lionshift/activity')
+@app.route('/lionshift/offers')
+@login_required
+@page_permission_required('page.shift_offers')
+def lionshift_activity():
+    return render_template('lionshift.html', active_tab='activity')
+
+
+@app.route('/lionshift/trades')
+@login_required
+@page_permission_required('page.shift_trades')
+def lionshift_trades():
+    return render_template('lionshift.html', active_tab='activity')
+
+
+@app.route('/lionshift/timeoff')
+@login_required
+@page_permission_required('page.shift_timeoff')
+def lionshift_timeoff():
+    return render_template('lionshift.html', active_tab='activity')
+
+
+@app.route('/lionshift/logs')
+@login_required
+@page_permission_required('page.shift_logs')
+def lionshift_logs():
+    return render_template('lionshift.html', active_tab='logs')
+
+
+
+@app.route('/lionshift/tasks')
+@login_required
+@page_permission_required('page.shift_dashboard')
+def lionshift_tasks():
+    return render_template('lionshift.html', active_tab='tasks')
+
+@app.route('/lionshift/bot-settings')
+@login_required
+@page_permission_required('page.shift_dashboard')
+def lionshift_bot_settings():
+    return render_template('lionshift.html', active_tab='bot-settings')
+
+# ── LionShift API Endpoints ─────────────────────────────────────────────
+
+@app.route('/api/lionshift/stats')
+@api_auth_required
+def api_lionshift_stats():
+    """Quick stats for shift dashboard."""
+    schedules = load_shift_schedules()
+    board = load_shift_board()
+    workers = load_shift_workers()
+    trades = load_shift_trades()
+    timeoff = load_shift_timeoff()
+    logs = load_shift_logs()
+
+    offers = board.get("shift_board", {})
+    open_offers = sum(1 for o in offers.values() if not o.get("taken_by"))
+    taken_offers = sum(1 for o in offers.values() if o.get("taken_by"))
+    pending_trades = sum(1 for t in trades if t.get("status", "").lower() == "pending")
+    pending_timeoff = sum(1 for t in timeoff if t.get("status", "").lower() == "pending")
+    clocked_in = sum(1 for w in workers if w.get("clocked_in"))
+
+    return jsonify({
+        "success": True,
+        "schedule_count": len(schedules),
+        "worker_count": len(workers),
+        "clocked_in": clocked_in,
+        "open_offers": open_offers,
+        "taken_offers": taken_offers,
+        "pending_trades": pending_trades,
+        "pending_timeoff": pending_timeoff,
+        "log_count": len(logs),
+    })
+
+
+@app.route('/api/lionshift/schedules')
+@api_auth_required
+def api_lionshift_schedules():
+    return jsonify({"success": True, "schedules": load_shift_schedules()})
+
+
+@app.route('/api/lionshift/workers')
+@api_auth_required
+def api_lionshift_workers():
+    return jsonify({"success": True, "workers": load_shift_workers()})
+
+
+@app.route('/api/lionshift/offers')
+@api_auth_required
+def api_lionshift_offers():
+    board = load_shift_board()
+    offers = []
+    for offer_id, offer in board.get("shift_board", {}).items():
+        offer["id"] = offer_id
+        offers.append(offer)
+    # Also include taken_shifts history for the web
+    taken = board.get("taken_shifts", [])
+    return jsonify({"success": True, "offers": offers, "taken_shifts": taken})
+
+
+@app.route('/api/lionshift/trades')
+@api_auth_required
+def api_lionshift_trades():
+    return jsonify({"success": True, "trades": load_shift_trades()})
+
+
+@app.route('/api/lionshift/timeoff')
+@api_auth_required
+def api_lionshift_timeoff():
+    return jsonify({"success": True, "requests": load_shift_timeoff()})
+
+
+@app.route('/api/lionshift/logs')
+@api_auth_required
+def api_lionshift_logs():
+    logs = load_shift_logs()
+    # Return newest-first, limit to 100
+    return jsonify({"success": True, "logs": list(reversed(logs))[:100]})
+
+
+# -- LionShift Schedule Creator ------------------------------------------
+
+LIONSHIFT_NOTIFICATION_QUEUE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "LionByteGG", "data", "lionshift_notification_queue.json")
+
+@app.route('/lionshift/schedule-creator')
+@login_required
+@page_permission_required('page.shift_schedules')
+def lionshift_schedule_creator():
+    return redirect(url_for('lionshift_schedules'))
+
+
+@app.route('/api/lionshift/schedules', methods=['POST'])
+@api_auth_required
+def api_lionshift_schedule_create():
+    """Create a new schedule (draft or published)."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "message": "No data provided"}), 400
+
+    name = (data.get('name') or '').strip()
+    start_date = (data.get('start_date') or '').strip()
+    end_date = (data.get('end_date') or '').strip()
+
+    if not name or not start_date or not end_date:
+        return jsonify({"success": False, "message": "Name, start date, and end date are required"}), 400
+
+    schedule_link = (data.get('schedule_link') or '').strip()
+    allow_offers = data.get('allow_offers', True)
+    status = data.get('status', 'draft')  # 'draft' or 'published'
+    shifts = data.get('shifts', [])
+    announce_at = data.get('announce_at')  # ISO datetime string or null
+    custom_message = (data.get('custom_message') or '').strip()
+    _shift_defaults = load_shift_settings()
+    notify_workers = data.get('notify_workers', _shift_defaults.get('dm_new_schedule', True))
+
+    if status not in ('draft', 'published'):
+        status = 'draft'
+
+    moderator = get_moderator_name()
+    now = datetime.now(timezone.utc).isoformat()
+
+    schedule = {
+        "name": name,
+        "start_date": start_date,
+        "end_date": end_date,
+        "schedule_link": schedule_link,
+        "allow_offers": bool(allow_offers),
+        "status": status,
+        "shifts": shifts,
+        "announce_at": announce_at,
+        "custom_message": custom_message,
+        "notify_workers": bool(notify_workers),
+        "created_at": now,
+        "created_by": moderator,
+    }
+
+    schedules = load_shift_schedules()
+    schedules.append(schedule)
+    save_json_file(LIONSHIFT_SCHEDULES, schedules)
+
+    # If published immediately, queue announcement
+    if status == 'published' and not announce_at:
+        _queue_schedule_announcement(schedule, custom_message, notify_workers)
+
+    return jsonify({"success": True, "message": f"Schedule '{name}' {'published' if status == 'published' else 'saved as draft'}.", "index": len(schedules) - 1})
+
+
+@app.route('/api/lionshift/schedules/<int:index>', methods=['PUT'])
+@api_auth_required
+def api_lionshift_schedule_update(index):
+    """Update an existing schedule."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "message": "No data provided"}), 400
+
+    schedules = load_shift_schedules()
+    if index < 0 or index >= len(schedules):
+        return jsonify({"success": False, "message": "Schedule not found"}), 404
+
+    schedule = schedules[index]
+    old_status = schedule.get('status', 'published')
+
+    for field in ('name', 'start_date', 'end_date', 'schedule_link', 'custom_message'):
+        if field in data:
+            schedule[field] = (data[field] or '').strip() if isinstance(data[field], str) else data[field]
+
+    if 'allow_offers' in data:
+        schedule['allow_offers'] = bool(data['allow_offers'])
+    if 'shifts' in data:
+        schedule['shifts'] = data['shifts']
+    if 'status' in data and data['status'] in ('draft', 'published'):
+        schedule['status'] = data['status']
+    if 'announce_at' in data:
+        schedule['announce_at'] = data['announce_at']
+    if 'notify_workers' in data:
+        schedule['notify_workers'] = bool(data['notify_workers'])
+
+    schedule['updated_at'] = datetime.now(timezone.utc).isoformat()
+    schedule['updated_by'] = get_moderator_name()
+
+    schedules[index] = schedule
+    save_json_file(LIONSHIFT_SCHEDULES, schedules)
+
+    # If just changed from draft to published, announce
+    if old_status == 'draft' and schedule.get('status') == 'published' and not schedule.get('announce_at'):
+        _queue_schedule_announcement(schedule, schedule.get('custom_message', ''), schedule.get('notify_workers', False))
+
+    return jsonify({"success": True, "message": f"Schedule '{schedule.get('name', '')}' updated."})
+
+
+@app.route('/api/lionshift/schedules/<int:index>', methods=['DELETE'])
+@api_auth_required
+def api_lionshift_schedule_delete(index):
+    """Delete a schedule."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    schedules = load_shift_schedules()
+    if index < 0 or index >= len(schedules):
+        return jsonify({"success": False, "message": "Schedule not found"}), 404
+
+    removed = schedules.pop(index)
+    save_json_file(LIONSHIFT_SCHEDULES, schedules)
+    return jsonify({"success": True, "message": f"Schedule '{removed.get('name', '')}' deleted."})
+
+
+@app.route('/api/lionshift/schedules/<int:index>/publish', methods=['POST'])
+@api_auth_required
+def api_lionshift_schedule_publish(index):
+    """Publish a draft schedule and optionally announce it."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    data = request.json or {}
+    schedules = load_shift_schedules()
+    if index < 0 or index >= len(schedules):
+        return jsonify({"success": False, "message": "Schedule not found"}), 404
+
+    schedule = schedules[index]
+    schedule['status'] = 'published'
+    schedule['updated_at'] = datetime.now(timezone.utc).isoformat()
+    schedule['updated_by'] = get_moderator_name()
+
+    custom_message = data.get('custom_message', schedule.get('custom_message', ''))
+    notify_workers = data.get('notify_workers', schedule.get('notify_workers', False))
+    announce_at = data.get('announce_at')
+
+    if announce_at:
+        schedule['announce_at'] = announce_at
+    else:
+        # Announce immediately
+        _queue_schedule_announcement(schedule, custom_message, notify_workers)
+
+    schedules[index] = schedule
+    save_json_file(LIONSHIFT_SCHEDULES, schedules)
+    return jsonify({"success": True, "message": f"Schedule '{schedule.get('name', '')}' published!"})
+
+
+@app.route('/api/lionshift/schedules/<int:index>/announce', methods=['POST'])
+@api_auth_required
+def api_lionshift_schedule_announce(index):
+    """Manually announce a published schedule."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    data = request.json or {}
+    schedules = load_shift_schedules()
+    if index < 0 or index >= len(schedules):
+        return jsonify({"success": False, "message": "Schedule not found"}), 404
+
+    schedule = schedules[index]
+    custom_message = data.get('custom_message', schedule.get('custom_message', ''))
+    notify_workers = data.get('notify_workers', schedule.get('notify_workers', False))
+
+    _queue_schedule_announcement(schedule, custom_message, notify_workers)
+    return jsonify({"success": True, "message": f"Announcement queued for '{schedule.get('name', '')}'!"})
+
+
+@app.route('/api/lionshift/dm-workers', methods=['POST'])
+@api_auth_required
+def api_lionshift_dm_workers():
+    """Queue DM notifications to workers."""
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "message": "No data provided"}), 400
+
+    worker_ids = data.get('worker_ids', [])
+    message = (data.get('message') or '').strip()
+
+    if not message:
+        return jsonify({"success": False, "message": "Message is required"}), 400
+
+    if not worker_ids:
+        wk = load_shift_workers()
+        worker_ids = [w.get('discord_id') or w.get('id') for w in wk if w.get('discord_id') or w.get('id')]
+
+    safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+        "type": "dm_workers",
+        "status": "pending",
+        "worker_ids": worker_ids,
+        "message": message,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": get_moderator_name(),
+    })
+
+    return jsonify({"success": True, "message": f"DM queued for {len(worker_ids)} worker(s)."})
+
+
+# -- Worker Hours Calculation ------------------------------------------
+
+@app.route('/api/lionshift/worker-hours')
+@api_auth_required
+def api_lionshift_worker_hours():
+    """Calculate hours for all workers from schedules (primary) and shift logs (if available)."""
+    schedules = load_shift_schedules()
+    logs = load_shift_logs()
+    workers = load_shift_workers()
+
+    worker_map = {w.get('id') or w.get('discord_id'): w for w in workers}
+
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # -- 1. Calculate SCHEDULED hours from schedules.json --------------
+    sched_data = defaultdict(lambda: {"total_s": 0, "week_s": 0, "month_s": 0, "count": 0, "name": "Unknown"})
+    for schedule in schedules:
+        for shift in schedule.get("shifts", []):
+            wid = str(shift.get("worker_id", "") or "")
+            if not wid:
+                continue
+            date_str = shift.get("date", "")
+            start_str = shift.get("start", "")
+            end_str = shift.get("end", "")
+            if not (date_str and start_str and end_str):
+                continue
+            try:
+                start_dt = datetime.fromisoformat(f"{date_str}T{start_str}:00").replace(tzinfo=timezone.utc)
+                end_dt = datetime.fromisoformat(f"{date_str}T{end_str}:00").replace(tzinfo=timezone.utc)
+                diff = (end_dt - start_dt).total_seconds()
+                if diff <= 0:
+                    continue
+                sched_data[wid]["total_s"] += diff
+                sched_data[wid]["count"] += 1
+                sched_data[wid]["name"] = shift.get("worker_name") or worker_map.get(wid, {}).get("name", "Unknown")
+                if start_dt >= week_start:
+                    sched_data[wid]["week_s"] += diff
+                if start_dt >= month_start:
+                    sched_data[wid]["month_s"] += diff
+            except Exception:
+                continue
+
+    # -- 2. Calculate LOGGED hours from shift_logs.json (clock in/out) --
+    user_logs = defaultdict(list)
+    for log in sorted(logs, key=lambda x: x.get('timestamp', '')):
+        uid = str(log.get('user_id', ''))
+        if uid:
+            user_logs[uid].append(log)
+
+    logged_data = {}
+    for uid, ulogs in user_logs.items():
+        total_s = week_s = month_s = shift_count = 0
+        active_start = None
+        for entry in ulogs:
+            ts_str = entry.get('timestamp', '')
+            if entry.get('action') == 'start':
+                try:
+                    active_start = datetime.fromisoformat(ts_str)
+                    if active_start.tzinfo is None:
+                        active_start = active_start.replace(tzinfo=timezone.utc)
+                except Exception:
+                    active_start = None
+            elif entry.get('action') == 'end' and active_start:
+                try:
+                    end_time = datetime.fromisoformat(ts_str)
+                    if end_time.tzinfo is None:
+                        end_time = end_time.replace(tzinfo=timezone.utc)
+                    diff = (end_time - active_start).total_seconds()
+                    if 0 < diff < 86400:
+                        total_s += diff
+                        shift_count += 1
+                        if active_start >= week_start:
+                            week_s += diff
+                        if active_start >= month_start:
+                            month_s += diff
+                except Exception:
+                    pass
+                active_start = None
+        logged_data[uid] = {"total_s": total_s, "week_s": week_s, "month_s": month_s, "count": shift_count}
+
+    # -- 3. Merge: prefer logged hours if they exist, else use scheduled -
+    all_ids = set(sched_data.keys()) | set(logged_data.keys()) | set(worker_map.keys())
+    results = []
+    for uid in all_ids:
+        s = sched_data.get(uid, {})
+        l = logged_data.get(uid, {})
+        w = worker_map.get(uid, {})
+        name = s.get("name") or w.get("name", "Unknown")
+        has_logs = l.get("count", 0) > 0
+        if has_logs:
+            total_h = round(l["total_s"] / 3600, 2)
+            week_h = round(l["week_s"] / 3600, 2)
+            month_h = round(l["month_s"] / 3600, 2)
+            count = l["count"]
+            source = "logged"
+        else:
+            total_h = round(s.get("total_s", 0) / 3600, 2)
+            week_h = round(s.get("week_s", 0) / 3600, 2)
+            month_h = round(s.get("month_s", 0) / 3600, 2)
+            count = s.get("count", 0)
+            source = "scheduled"
+        results.append({
+            "user_id": uid,
+            "name": name,
+            "total_hours": total_h,
+            "week_hours": week_h,
+            "month_hours": month_h,
+            "shift_count": count,
+            "is_clocked_in": w.get("clocked_in", False),
+            "source": source
+        })
+
+    results.sort(key=lambda x: x["total_hours"], reverse=True)
+    return jsonify({"success": True, "hours": results})
+
+
+# -- Worker Availability CRUD ------------------------------------------
+
+@app.route('/api/lionshift/availability')
+@api_auth_required
+def api_lionshift_availability():
+    """Get all worker availability."""
+    return jsonify({"success": True, "availability": load_shift_availability()})
+
+
+@app.route('/api/lionshift/availability/<worker_id>', methods=['GET', 'PUT', 'DELETE'])
+@api_auth_required
+def api_lionshift_worker_availability(worker_id):
+    """Get, update, or delete a worker's availability."""
+    avail = load_shift_availability()
+    
+    if request.method == 'GET':
+        return jsonify({"success": True, "availability": avail.get(worker_id, {})})
+    
+    if request.method == 'DELETE':
+        if worker_id in avail:
+            del avail[worker_id]
+            save_json_file(LIONSHIFT_AVAILABILITY, avail)
+            return jsonify({"success": True, "message": "Availability deleted."})
+        return jsonify({"success": False, "message": "Worker availability not found."}), 404
+    
+    # PUT — update availability
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "message": "No data provided"}), 400
+    
+    # Expected format: { "monday": [{"start": "09:00", "end": "14:00"}], "tuesday": [...], ... }
+    avail[worker_id] = {
+        "slots": data.get('slots', {}),
+        "notes": (data.get('notes') or '').strip(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": get_moderator_name()
+    }
+    save_json_file(LIONSHIFT_AVAILABILITY, avail)
+    return jsonify({"success": True, "message": "Availability updated."})
+
+
+
+# -- Bot Settings API --
+
+# -- Rooms / locations CRUD ---------------------------------------------
+
+@app.route('/api/lionshift/rooms', methods=['GET'])
+@api_auth_required
+def api_lionshift_rooms_get():
+    return jsonify({"success": True, "rooms": load_shift_rooms()})
+
+
+@app.route('/api/lionshift/rooms', methods=['POST'])
+@api_auth_required
+def api_lionshift_rooms_post():
+    """Replace the full rooms list (managers configure/add/rename/remove rooms)."""
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    import re as _re
+    data = request.json or {}
+    raw = data.get('rooms', [])
+    if not isinstance(raw, list) or not raw:
+        return jsonify({"success": False, "message": "At least one room is required"}), 400
+    rooms, seen = [], set()
+    for i, r in enumerate(raw):
+        if not isinstance(r, dict):
+            continue
+        name = str(r.get('name', '')).strip()[:40]
+        if not name:
+            continue
+        rid = _re.sub(r'[^a-z0-9_-]+', '-', str(r.get('id', '')).strip().lower()).strip('-')
+        if not rid:
+            rid = _re.sub(r'[^a-z0-9_-]+', '-', name.lower()).strip('-') or f'room{i}'
+        base, n = rid, 2
+        while rid in seen:
+            rid = f'{base}-{n}'; n += 1
+        seen.add(rid)
+        color = str(r.get('color', '') or '').strip()
+        if not _re.match(r'^#[0-9a-fA-F]{6}$', color):
+            color = '#3b82f6'
+        rooms.append({'id': rid, 'name': name, 'emoji': str(r.get('emoji', '') or '').strip()[:8],
+                      'color': color, 'order': i})
+    if not rooms:
+        return jsonify({"success": False, "message": "At least one valid room is required"}), 400
+    save_json_file(LIONSHIFT_ROOMS, rooms)
+    return jsonify({"success": True, "rooms": rooms, "message": "Rooms saved."})
+
+
+# -- Shift Duties CRUD (per room + role) --------------------------------
+
+@app.route('/api/lionshift/shift-duties', methods=['GET'])
+@api_auth_required
+def api_lionshift_shift_duties_get():
+    return jsonify({"success": True, "duties": load_room_duties(), "rooms": load_shift_rooms()})
+
+
+@app.route('/api/lionshift/shift-duties', methods=['POST'])
+@api_auth_required
+def api_lionshift_shift_duties_post():
+    if not has_perm('schedules.manage'):
+        return jsonify({"success": False, "message": "Permission denied"}), 403
+    data = request.json or {}
+    incoming = data.get('duties', data)  # accept {duties:{room:{role}}} or bare {room:{role}}
+    out = {}
+    for rid in [r['id'] for r in load_shift_rooms()]:
+        room_in = incoming.get(rid, {}) if isinstance(incoming, dict) else {}
+        room_out = {}
+        for role in _ROLE_KEYS:
+            role_data = room_in.get(role, {}) if isinstance(room_in, dict) else {}
+            greeting = str((role_data or {}).get('greeting', '')).strip()[:500] or _ROLE_GREETINGS[role]
+            raw_tasks = (role_data or {}).get('tasks', []) if isinstance(role_data, dict) else []
+            tasks = []
+            for t in raw_tasks:
+                if isinstance(t, str):
+                    text = t.strip()[:200]
+                    if text:
+                        tasks.append({'text': text, 'show_on': 'both', 'required': False})
+                elif isinstance(t, dict):
+                    text = str(t.get('text', '')).strip()[:200]
+                    if not text:
+                        continue
+                    show_on = t.get('show_on', 'both')
+                    if show_on not in ('start', 'end', 'both'):
+                        show_on = 'both'
+                    tasks.append({'text': text, 'show_on': show_on, 'required': bool(t.get('required', False))})
+            room_out[role] = {'greeting': greeting, 'tasks': tasks[:30]}
+        out[rid] = room_out
+    save_json_file(LIONSHIFT_SHIFT_DUTIES, out)
+    return jsonify({"success": True, "message": "Shift duties saved."})
+
+
+@app.route('/api/lionshift/bot-settings', methods=['GET'])
+@api_auth_required
+def api_lionshift_bot_settings_get():
+    settings = load_shift_settings()
+    return jsonify({
+        "success": True,
+        "dm_shift_reminders": settings.get("dm_shift_reminders", True),
+        "dm_late_alerts": settings.get("dm_late_alerts", True),
+        "reminder_minutes_before": int(settings.get("reminder_minutes_before", 60)),
+        "late_alert_minutes": int(settings.get("late_alert_minutes", 10)),
+        "dm_new_schedule": settings.get("dm_new_schedule", True),
+        "allow_shift_trading": settings.get("allow_shift_trading", True),
+    })
+
+
+@app.route('/api/lionshift/bot-settings', methods=['POST'])
+@api_auth_required
+def api_lionshift_bot_settings_post():
+    data = request.json or {}
+    settings = load_shift_settings()
+    changed = []
+    # Boolean toggles
+    for key in ("dm_shift_reminders", "dm_late_alerts", "dm_new_schedule", "allow_shift_trading"):
+        if key in data:
+            settings[key] = bool(data[key])
+            changed.append(key)
+    # Integer timing values — validated to reasonable ranges
+    if "reminder_minutes_before" in data:
+        val = int(data["reminder_minutes_before"])
+        if not (5 <= val <= 480):
+            return jsonify({"success": False, "message": "reminder_minutes_before must be between 5 and 480"}), 400
+        settings["reminder_minutes_before"] = val
+        changed.append("reminder_minutes_before")
+    if "late_alert_minutes" in data:
+        val = int(data["late_alert_minutes"])
+        if not (1 <= val <= 60):
+            return jsonify({"success": False, "message": "late_alert_minutes must be between 1 and 60"}), 400
+        settings["late_alert_minutes"] = val
+        changed.append("late_alert_minutes")
+    if not changed:
+        return jsonify({"success": False, "message": "No valid settings provided"}), 400
+    settings["updated_by"] = get_moderator_name()
+    save_json_file(LIONSHIFT_SETTINGS, settings)
+    return jsonify({"success": True, "message": "Bot settings saved."})
+
+
+# -- Approve/Decline Trades & TimeOff from Web --------------------------
+
+@app.route('/api/lionshift/trades/<trade_id>/approve', methods=['POST'])
+@api_auth_required
+def api_lionshift_trade_approve(trade_id):
+    """Approve a trade from the web dashboard."""
+    trades = load_shift_trades()
+    found = False
+    for trade in trades:
+        if str(trade.get('id')) == str(trade_id):
+            trade['status'] = 'approved'
+            trade['updated_at'] = datetime.now(timezone.utc).isoformat()
+            trade['updated_by'] = get_moderator_name()
+            found = True
+            break
+    if not found:
+        return jsonify({"success": False, "message": "Trade not found"}), 404
+    save_json_file(LIONSHIFT_TRADES, trades)
+    
+    # Queue DM notifications to both parties
+    requester_id = trade.get('requester_id')
+    target_id = trade.get('target_id')
+    shift_info = f"{trade.get('shift_type','?').title()} on {trade.get('date','?')} ({trade.get('start','?')}–{trade.get('end','?')})"
+    requester_msg = f"Your shift trade (ID #{trade_id}) for **{shift_info}** has been **approved** by {get_moderator_name()}. {trade.get('target_name','Your trade partner')} will now cover that shift."
+    target_msg = f"Your shift trade (ID #{trade_id}) has been **approved** by {get_moderator_name()}. You are now covering **{shift_info}**."
+    for wid, dm_msg in [(requester_id, requester_msg), (target_id, target_msg)]:
+        if wid:
+            safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+                "type": "dm_workers",
+                "status": "pending",
+                "worker_ids": [str(wid)],
+                "message": dm_msg,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": get_moderator_name()
+            })
+    
+    return jsonify({"success": True, "message": "Trade approved. Workers will be notified."})
+
+
+@app.route('/api/lionshift/trades/<trade_id>/decline', methods=['POST'])
+@api_auth_required
+def api_lionshift_trade_decline(trade_id):
+    """Decline a trade from the web dashboard."""
+    data = request.json or {}
+    reason = (data.get('reason') or 'Declined from dashboard').strip()
+    
+    trades = load_shift_trades()
+    found = False
+    for trade in trades:
+        if str(trade.get('id')) == str(trade_id):
+            trade['status'] = 'declined'
+            trade['decline_reason'] = reason
+            trade['updated_at'] = datetime.now(timezone.utc).isoformat()
+            trade['updated_by'] = get_moderator_name()
+            found = True
+            break
+    if not found:
+        return jsonify({"success": False, "message": "Trade not found"}), 404
+    save_json_file(LIONSHIFT_TRADES, trades)
+    
+    # DM both parties
+    requester_id = trade.get('requester_id')
+    target_id = trade.get('target_id')
+    msg = f"Your shift trade (ID #{trade_id}) has been **declined** by {get_moderator_name()}.\n**Reason:** {reason}"
+    for wid in [requester_id, target_id]:
+        if wid:
+            safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+                "type": "dm_workers",
+                "status": "pending",
+                "worker_ids": [str(wid)],
+                "message": msg,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": get_moderator_name()
+            })
+    
+    return jsonify({"success": True, "message": "Trade declined. Workers will be notified."})
+
+
+@app.route('/api/lionshift/timeoff/<request_id>/approve', methods=['POST'])
+@api_auth_required
+def api_lionshift_timeoff_approve(request_id):
+    """Approve a time-off request from the web dashboard."""
+    requests_list = load_shift_timeoff()
+    found = False
+    req = None
+    for r in requests_list:
+        if str(r.get('id')) == str(request_id):
+            r['status'] = 'approved'
+            r['approved_at'] = datetime.now(timezone.utc).isoformat()
+            r['approved_by'] = get_moderator_name()
+            found = True
+            req = r
+            break
+    if not found:
+        return jsonify({"success": False, "message": "Request not found"}), 404
+    save_json_file(LIONSHIFT_TIMEOFF, requests_list)
+    
+    # DM the worker
+    if req and req.get('user_id'):
+        msg = f"Your time-off request ({req.get('from_date')} to {req.get('to_date')}) has been **approved** by {get_moderator_name()}."
+        safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+            "type": "dm_workers",
+            "status": "pending",
+            "worker_ids": [str(req['user_id'])],
+            "message": msg,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": get_moderator_name()
+        })
+    
+    return jsonify({"success": True, "message": "Time-off request approved."})
+
+
+@app.route('/api/lionshift/timeoff/<request_id>/decline', methods=['POST'])
+@api_auth_required
+def api_lionshift_timeoff_decline(request_id):
+    """Decline a time-off request from the web dashboard."""
+    data = request.json or {}
+    reason = (data.get('reason') or 'Declined from dashboard').strip()
+    
+    requests_list = load_shift_timeoff()
+    found = False
+    req = None
+    for r in requests_list:
+        if str(r.get('id')) == str(request_id):
+            r['status'] = 'declined'
+            r['declined_at'] = datetime.now(timezone.utc).isoformat()
+            r['decline_reason'] = reason
+            r['declined_by'] = get_moderator_name()
+            found = True
+            req = r
+            break
+    if not found:
+        return jsonify({"success": False, "message": "Request not found"}), 404
+    save_json_file(LIONSHIFT_TIMEOFF, requests_list)
+    
+    # DM the worker
+    if req and req.get('user_id'):
+        msg = f"Your time-off request ({req.get('from_date')} to {req.get('to_date')}) has been **declined**.\n**Reason:** {reason}"
+        safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+            "type": "dm_workers",
+            "status": "pending",
+            "worker_ids": [str(req['user_id'])],
+            "message": msg,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": get_moderator_name()
+        })
+    
+    return jsonify({"success": True, "message": "Time-off request declined."})
+
+
+def _queue_schedule_announcement(schedule, custom_message='', notify_workers=False):
+    """Queue a schedule announcement for the LionShift bot to process."""
+    settings = load_shift_settings()
+    channel_id = settings.get('announcement_channel_id') or settings.get('schedule_announcement_channel_id', '')
+    if not channel_id:
+        return
+
+    # Build shift summary for richer Discord embed
+    shifts = schedule.get('shifts', [])
+    _rooms_by_id = {r['id']: r for r in load_shift_rooms()}
+    shift_summary = {}
+    for s in shifts:
+        day = s.get('date', 'Unknown')
+        if day not in shift_summary:
+            shift_summary[day] = []
+        worker = s.get('worker_name') or 'Unassigned'
+        _room = _rooms_by_id.get(s.get('room'))
+        _room_sfx = f" | {_room['name']}" if _room else ""
+        shift_summary[day].append(f"{(s.get('type') or '?').title()}: {s.get('start','?')}-{s.get('end','?')} ({worker}){_room_sfx}")
+
+    safe_queue_append(LIONSHIFT_NOTIFICATION_QUEUE, {
+        "type": "schedule_announcement",
+        "status": "pending",
+        "channel_id": str(channel_id),
+        "schedule": {
+            "name": schedule.get("name", ""),
+            "start_date": schedule.get("start_date", ""),
+            "end_date": schedule.get("end_date", ""),
+            "schedule_link": schedule.get("schedule_link", ""),
+            "allow_offers": schedule.get("allow_offers", True),
+            "created_by": schedule.get("created_by", "Dashboard Admin"),
+            "shift_count": len(shifts),
+            "shift_summary": shift_summary,
+        },
+        "custom_message": custom_message,
+        "notify_workers": notify_workers,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
 # ============ BoilerCraftGG Dashboard ============
 
 BOILERCRAFT_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "BoilerCraftGG", "data")
@@ -1967,8 +2647,8 @@ def save_boilercraft_tickets(data):
 @page_permission_required('page.boilercraft')
 def boilercraft_dashboard():
     perms = list(session.get('dashboard_permissions', []))
-    # Discord users & legacy admin get full boilercraft access
-    if session.get('discord_user') or session.get('legacy_login'):
+    # Legacy admin gets full boilercraft access
+    if session.get('legacy_login'):
         perms = perms + ['boilercraft.blacklist', 'boilercraft.settings']
     return render_template('boilercraft.html', bc_perms=perms)
 
@@ -2107,7 +2787,7 @@ def api_boilercraft_blacklist_add():
     if str(user_id) in existing_ids:
         return jsonify({"error": "User is already blacklisted"}), 400
 
-    dashboard_user = session.get('dashboard_user', {}).get('username') or session.get('discord_user', {}).get('username') or 'Dashboard'
+    dashboard_user = session.get('dashboard_user', {}).get('username') or 'Dashboard'
     data.setdefault("blacklist", []).append({
         "user_id": str(user_id),
         "username": username,
@@ -2623,9 +3303,37 @@ def api_boilercraft_member_detail(user_id):
     # Get user's moderation records
     records = load_json_file(os.path.join(BOILERCRAFT_USER_RECORDS_DIR, f"{user_id}_record.json"), [])
     
+    # Get verification data from SQLite database
+    import sqlite3
+    verification = None
+    if os.path.exists(BOILERCRAFT_DB_PATH):
+        try:
+            conn = sqlite3.connect(BOILERCRAFT_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT discord_id, minecraft_username, minecraft_uuid, first_name, email, phone, campus, verified_at FROM verified_users WHERE discord_id = ?",
+                (int(user_id),)
+            )
+            row = cursor.fetchone()
+            if row:
+                verification = {
+                    "discord_id": str(row["discord_id"]),
+                    "minecraft_username": row["minecraft_username"],
+                    "minecraft_uuid": row["minecraft_uuid"],
+                    "first_name": row["first_name"],
+                    "email": row["email"],
+                    "phone": row["phone"],
+                    "campus": row["campus"],
+                    "verified_at": row["verified_at"],
+                }
+            conn.close()
+        except Exception:
+            pass
+    
     return jsonify({
         "member": member,
-        "records": records
+        "records": records,
+        "verification": verification
     })
 
 @app.route('/api/boilercraft/members/<user_id>/action', methods=['POST'])
@@ -2654,7 +3362,7 @@ def api_boilercraft_member_action(user_id):
         
         records.append({
             "user_id": str(user_id),
-            "type": "Warning",
+            "type": "Violation",
             "reason": reason,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "moderator": moderator_name,
@@ -2666,7 +3374,7 @@ def api_boilercraft_member_action(user_id):
         
         return jsonify({
             "success": True,
-            "message": f"Warning issued to {target_name} and added to their record."
+            "message": f"Violation issued to {target_name} and added to their record."
         })
     
     # For kick/ban/timeout/unban - queue for BoilerCraftGG bot
@@ -3243,12 +3951,6 @@ def reaction_roles_page():
 def vc_system():
     return render_template('vc_system.html')
 
-@app.route('/ggleap')
-@login_required
-@page_permission_required('page.ggleap')
-def ggleap():
-    return render_template('ggleap.html')
-
 @app.route('/rosters')
 @login_required
 @page_permission_required('page.rosters')
@@ -3284,7 +3986,7 @@ def api_bot_activity():
                 activity_data['activity'] = None  # Reset to default
             
             activity_data['updated_at'] = datetime.now(timezone.utc).isoformat()
-            activity_data['updated_by'] = session.get('discord_user', {}).get('username', 'Dashboard')
+            activity_data['updated_by'] = get_moderator_name()
             
             # Save to file
             save_json_file(BOT_ACTIVITY_FILE, activity_data)
@@ -3314,7 +4016,7 @@ def api_bot_restart():
         queue_discord_notification({
             'type': 'bot_restart',
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'requested_by': session.get('discord_user', {}).get('username', 'Dashboard')
+            'requested_by': get_moderator_name()
         })
         
         log_activity(
@@ -3338,7 +4040,7 @@ def api_bot_stop():
         queue_discord_notification({
             'type': 'bot_stop',
             'timestamp': datetime.now(timezone.utc).isoformat(),
-            'requested_by': session.get('discord_user', {}).get('username', 'Dashboard')
+            'requested_by': get_moderator_name()
         })
         
         log_activity(
@@ -3423,8 +4125,7 @@ def api_logs():
                 if filename.endswith('.json'):
                     filepath = os.path.join(VARSITY_REG_DIR, filename)
                     try:
-                        with open(filepath, 'r', encoding='utf-8') as f:
-                            regs = json.load(f)
+                        regs = load_json_file(filepath, [])
                         for reg in regs:
                             if reg.get('type') == 'VarsityRegistration':
                                 status = reg.get('status', 'Pending')
@@ -3561,7 +4262,7 @@ def api_stats():
     user_records = load_user_records()
     guest_times = load_guest_times()
     
-    stats["total_warnings"] = sum(len([r for r in records if r.get("type") == "Warning"]) 
+    stats["total_violations"] = sum(len([r for r in records if r.get("type") in ("Warning", "Violation")]) 
                                    for records in user_records.values())
     stats["total_kicks"] = sum(len([r for r in records if r.get("type") == "Kick"]) 
                                 for records in user_records.values())
@@ -3624,7 +4325,7 @@ def api_search():
                 for user_id, records in user_records.items():
                     if query in user_id.lower():
                         # Calculate record stats
-                        warnings = len([r for r in records if r.get('type') == 'Warning'])
+                        violations = len([r for r in records if r.get('type') in ('Warning', 'Violation')])
                         automod_flags = len([r for r in records if r.get('type') == 'AutoMod Flag'])
                         kicks = len([r for r in records if r.get('type') == 'Kick'])
                         bans = len([r for r in records if r.get('type') == 'Ban'])
@@ -3632,7 +4333,7 @@ def api_search():
                             "type": "user_record",
                             "id": user_id,
                             "record_count": len(records),
-                            "warnings": warnings,
+                            "violations": violations,
                             "automod_flags": automod_flags,
                             "kicks": kicks,
                             "bans": bans,
@@ -3709,7 +4410,7 @@ def api_analytics():
     """Get analytics data for the analytics dashboard"""
     # User records stats
     user_records = load_user_records()
-    total_warnings = sum(len([r for r in records if r.get("type") == "Warning"]) 
+    total_violations = sum(len([r for r in records if r.get("type") in ("Warning", "Violation")]) 
                          for records in user_records.values())
     total_kicks = sum(len([r for r in records if r.get("type") == "Kick"]) 
                       for records in user_records.values())
@@ -3754,7 +4455,7 @@ def api_analytics():
             "guests": len(guest_times)
         },
         "moderation": {
-            "total_warnings": total_warnings,
+            "total_violations": total_violations,
             "total_kicks": total_kicks,
             "total_bans": total_bans,
             "users_with_records": len(user_records)
@@ -3837,12 +4538,14 @@ def api_flagged_words():
             if word not in words[category]:
                 words[category].append(word.lower())
                 save_flagged_words(words)
+                _sync_automod_bg(words)
                 return jsonify({"success": True, "message": f"Added '{word}' to {category}"})
         
         elif action == 'remove' and category in words and word:
             if word.lower() in words[category]:
                 words[category].remove(word.lower())
                 save_flagged_words(words)
+                _sync_automod_bg(words)
                 return jsonify({"success": True, "message": f"Removed '{word}' from {category}"})
         
         return jsonify({"success": False, "message": "Invalid action or word"})
@@ -3863,7 +4566,7 @@ def api_user_records():
             "display_name": member.get('display_name', member.get('username', member.get('name', ''))),
             "avatar_url": member.get('avatar') or member.get('avatar_url'),
             "records": user_records,
-            "warning_count": len([r for r in user_records if r.get("type") == "Warning"]),
+            "violation_count": len([r for r in user_records if r.get("type") in ("Warning", "Violation")]),
             "automod_count": len([r for r in user_records if r.get("type") == "AutoMod Flag"]),
             "kick_count": len([r for r in user_records if r.get("type") == "Kick"]),
             "ban_count": len([r for r in user_records if r.get("type") == "Ban"])
@@ -3874,19 +4577,15 @@ def api_user_records():
 @app.route('/api/user-records/<user_id>')
 @api_auth_required
 def api_user_record(user_id):
-    filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    records = load_json_file(filepath, [])
+    records = user_db.get_records(user_id)
     return jsonify({"user_id": user_id, "records": records})
 
 @app.route('/api/user-records/<user_id>/clear', methods=['POST'])
 @api_auth_required
 @api_perm_required('moderation.user_records')
 def api_clear_user_record(user_id):
-    filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        return jsonify({"success": True, "message": f"Cleared records for user {user_id}"})
-    return jsonify({"success": False, "message": "User record not found"})
+    user_db.clear_records(user_id)
+    return jsonify({"success": True, "message": f"Cleared records for user {user_id}"})
 
 @app.route('/api/send-dm', methods=['POST'])
 @api_auth_required
@@ -3942,20 +4641,14 @@ def api_warn_user():
     if not user_id:
         return jsonify({"success": False, "message": "User ID is required"})
     
-    # Add record to user's file
-    filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    records = load_json_file(filepath, [])
-    
-    record = {
-        "user_id": str(user_id),
-        "type": "Warning",
-        "reason": reason,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "moderator": moderator
-    }
-    records.append(record)
-    
-    safe_json_dump(records, filepath, indent=2)
+    # Add record to DB
+    user_db.add_record(
+        user_id=str(user_id),
+        type_="Violation",
+        reason=reason,
+        moderator=moderator,
+        source="website"
+    )
     
     # Queue notification to bot to DM the user
     queue_discord_notification({
@@ -3965,7 +4658,7 @@ def api_warn_user():
         "moderator": moderator
     })
     
-    return jsonify({"success": True, "message": f"Warning sent to user {user_id}"})
+    return jsonify({"success": True, "message": f"Violation issued to user {user_id}"})
 
 @app.route('/api/user-records/<user_id>/remove-warning', methods=['POST'])
 @api_auth_required
@@ -3973,33 +4666,38 @@ def api_warn_user():
 def api_remove_warning(user_id):
     """Remove a specific warning from a user's record"""
     data = request.get_json()
-    warning_index = data.get('index')
+    violation_index = data.get('index')
     
-    if warning_index is None:
-        return jsonify({"success": False, "message": "Warning index is required"})
+    if violation_index is None:
+        return jsonify({"success": False, "message": "Violation index is required"})
     
-    filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    records = load_json_file(filepath, [])
-    
-    if not records:
-        return jsonify({"success": False, "message": "No records found for this user"})
-    
-    # Filter to only warnings
-    warnings = [(i, r) for i, r in enumerate(records) if r.get('type') == 'Warning']
-    
-    if warning_index < 0 or warning_index >= len(warnings):
-        return jsonify({"success": False, "message": "Invalid warning index"})
-    
-    # Get the actual index in the records list
-    actual_index = warnings[warning_index][0]
-    removed = records.pop(actual_index)
-    
-    # Save updated records
-    safe_json_dump(records, filepath, indent=2)
+    removed = user_db.remove_warning_by_index(user_id, violation_index)
+    if removed is None:
+        return jsonify({"success": False, "message": "Invalid violation index"})
     
     return jsonify({
-        "success": True, 
-        "message": f"Removed warning: {removed.get('reason', 'No reason')}"
+        "success": True,
+        "message": f"Removed violation: {removed.get('reason', 'No reason')}"
+    })
+
+@app.route('/api/user-records/<user_id>/remove-record', methods=['POST'])
+@api_auth_required
+@api_perm_required('moderation.user_records')
+def api_remove_record(user_id):
+    """Remove a specific record (any type) from a user's record by index"""
+    data = request.get_json()
+    record_index = data.get('index')
+    
+    if record_index is None:
+        return jsonify({"success": False, "message": "Record index is required"})
+    
+    removed = user_db.remove_record_by_index(user_id, record_index)
+    if removed is None:
+        return jsonify({"success": False, "message": "Invalid record index"})
+    
+    return jsonify({
+        "success": True,
+        "message": f"Removed {removed.get('type', 'record')}: {removed.get('reason', 'No reason')}"
     })
 
 @app.route('/api/user/<user_id>/full-profile')
@@ -4014,7 +4712,7 @@ def api_user_full_profile(user_id):
             "guest_time": None,
             "varsity_registrations": [],
             "stats": {
-                "warnings": 0,
+                "violations": 0,
                 "automod_flags": 0,
                 "kicks": 0,
                 "bans": 0,
@@ -4047,24 +4745,22 @@ def api_user_full_profile(user_id):
             }
         
         # Get user records and calculate stats
-        record_filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-        if os.path.exists(record_filepath):
-            records = load_json_file(record_filepath, [])
-            profile["records"] = records
-            
-            # Calculate stats from records
-            for record in records:
-                record_type = record.get('type', '').lower()
-                if record_type == 'warning':
-                    profile["stats"]["warnings"] += 1
-                elif record_type == 'automod flag':
-                    profile["stats"]["automod_flags"] += 1
-                elif record_type == 'kick':
-                    profile["stats"]["kicks"] += 1
-                elif record_type == 'ban':
-                    profile["stats"]["bans"] += 1
-                elif record_type == 'timeout':
-                    profile["stats"]["timeouts"] += 1
+        records = user_db.get_records(user_id)
+        profile["records"] = records
+        
+        # Calculate stats from records
+        for record in records:
+            record_type = record.get('type', '').lower()
+            if record_type in ('warning', 'violation'):
+                profile["stats"]["violations"] += 1
+            elif record_type == 'automod flag':
+                profile["stats"]["automod_flags"] += 1
+            elif record_type == 'kick':
+                profile["stats"]["kicks"] += 1
+            elif record_type == 'ban':
+                profile["stats"]["bans"] += 1
+            elif record_type == 'timeout':
+                profile["stats"]["timeouts"] += 1
         
         # Get guest info (frontend expects 'guest_time')
         guest_filepath = os.path.join(GUEST_TIMES_DIR, f"{user_id}_guest_time.json")
@@ -4131,22 +4827,13 @@ def api_add_user_note(user_id):
         if not note_content:
             return jsonify({"success": False, "message": "Note content is required"})
         
-        # Load existing records
-        filepath = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-        records = load_json_file(filepath, [])
-        
-        # Add new record
-        new_record = {
-            "type": note_type,
-            "reason": note_content,
-            "moderator": "Dashboard Admin",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        records.append(new_record)
-        
-        # Save records
-        os.makedirs(USER_RECORDS_DIR, exist_ok=True)
-        save_json_file(filepath, records)
+        user_db.add_record(
+            user_id=user_id,
+            type_=note_type,
+            reason=note_content,
+            moderator="Dashboard Admin",
+            source="website"
+        )
         
         return jsonify({"success": True, "message": "Note added successfully"})
     except Exception as e:
@@ -4247,7 +4934,8 @@ def api_team_role_settings():
             "mapping": {},
             "varsity_role_id": None,
             "captain_role_id": None,
-            "jv_role_id": None
+            "jv_role_id": None,
+            "coach_role_id": None
         })
         return jsonify(settings)
     
@@ -4261,6 +4949,7 @@ def api_team_role_settings():
             "varsity_role_id": data.get("varsity_role_id"),
             "captain_role_id": data.get("captain_role_id"),
             "jv_role_id": data.get("jv_role_id"),
+            "coach_role_id": data.get("coach_role_id"),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
@@ -4377,11 +5066,61 @@ GGLEAP_BASE_URL = "https://api.ggleap.com/beta"
 ggleap_jwt_token = None
 ggleap_games_jwt_token = None
 
+# -- GGLeap daily API-usage meter --------------------------------------------
+# Counts every real request we make to GGLeap so staff can see how close we are
+# to the plan's daily cap. Persisted so it survives restarts; rolls over on the
+# UTC date (GGLeap's quota resets daily).
+GGLEAP_DAILY_LIMIT = 10000
+_GGLEAP_USAGE_FILE = os.path.join(DATA_DIR, "ggleap_usage.json")
+_ggleap_usage_lock = threading.Lock()
+_ggleap_usage = {"date": "", "total": 0, "by_kind": {}}
+
+def _ggleap_usage_today():
+    """Current UTC date key for the usage meter."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+def _ggleap_count(kind="get-all", n=1):
+    """Record n GGLeap API request(s) of a given kind toward today's usage."""
+    with _ggleap_usage_lock:
+        today = _ggleap_usage_today()
+        if _ggleap_usage.get("date") != today:
+            _ggleap_usage["date"] = today
+            _ggleap_usage["total"] = 0
+            _ggleap_usage["by_kind"] = {}
+        _ggleap_usage["total"] += n
+        _ggleap_usage["by_kind"][kind] = _ggleap_usage["by_kind"].get(kind, 0) + n
+        try:
+            save_json_file(_GGLEAP_USAGE_FILE, _ggleap_usage)
+        except Exception:
+            pass
+
+def _ggleap_usage_load():
+    """Load the persisted usage meter at startup (ignore if it's from a past day)."""
+    global _ggleap_usage
+    try:
+        saved = load_json_file(_GGLEAP_USAGE_FILE, None)
+        if isinstance(saved, dict) and saved.get("date") == _ggleap_usage_today():
+            _ggleap_usage = {"date": saved["date"], "total": int(saved.get("total", 0)),
+                             "by_kind": dict(saved.get("by_kind", {}))}
+    except Exception:
+        pass
+
+_ggleap_usage_load()
+
+def _ggleap_is_paused():
+    """Master kill-switch: when True the server makes NO GGLeap calls at all
+    (status, locks, auth). Toggled via the arena config `ggleap_paused`."""
+    try:
+        return bool(load_arena_config().get("ggleap_paused", False))
+    except Exception:
+        return False
+
 def get_ggleap_jwt():
     """Refresh JWT token for GGLeap status API"""
     global ggleap_jwt_token
     try:
         import requests
+        _ggleap_count("auth")
         r = requests.post(
             f"{GGLEAP_BASE_URL}/authorization/public-api/auth",
             headers={"Content-Type": "application/json-patch+json"},
@@ -4400,6 +5139,7 @@ def get_ggleap_games_jwt():
     global ggleap_games_jwt_token
     try:
         import requests
+        _ggleap_count("auth")
         r = requests.post(
             f"{GGLEAP_BASE_URL}/authorization/public-api/auth",
             headers={"Content-Type": "application/json-patch+json"},
@@ -4558,134 +5298,1160 @@ def _classify_event(old_status, new_status, old_raw, new_raw):
         return "shutting_down"
     return "state_change"
 
-# ── Server-side cache for GGLeap status (avoids burning API rate limits) ──
-_ggleap_status_cache = {"data": None, "fetched_at": 0}
-_GGLEAP_CACHE_TTL = 15  # seconds — one real API call per 15s max
+# -- Shared GGLeap machines cache (protects the 10k/day API budget) ----------
+# Every consumer (kiosk status, the lock loop, lock-status, bulk actions) goes
+# through _ggleap_get_machines() so we make at most ONE real machines/get-all per
+# cache window no matter how many callers/kiosks. The window widens when the arena
+# is closed since nobody's using the kiosks then.
+_ggleap_machines_cache = {"machines": None, "fetched_at": 0, "error": None}
+_ggleap_status_cache = {"data": None, "raw_at": -1}
 
-def _fetch_ggleap_status():
-    """Fetch live PC status from GGLeap API, with 15-second server-side cache.
-    Rate budget: Basic plan = 20 req/min, 10k/day.
-    Cached: 4 req/min max regardless of viewer count."""
-    import time as _time
+def _ggleap_cache_ttl():
+    """Seconds between real get-all calls: short while open (kiosks live), long
+    when closed. Keeps daily usage far under GGLeap's 10k/day budget."""
+    try:
+        return 8 if _arena_is_open_now(load_arena_config()) else 120
+    except Exception:
+        return 20
+
+def _ggleap_get_machines(max_age=None, force=False):
+    """One shared machines/get-all, server-cached. Returns (machines, error).
+    On any error (e.g. 429) the last good list is served stale so the kiosks never
+    flash '0 machines' and the lock loop keeps its state."""
     global ggleap_jwt_token
-
-    now_ts = _time.time()
-    if _ggleap_status_cache["data"] and (now_ts - _ggleap_status_cache["fetched_at"]) < _GGLEAP_CACHE_TTL:
-        return _ggleap_status_cache["data"]
-
-    import requests as _req
-
+    import time as _t, requests as _req
+    if _ggleap_is_paused():
+        return (_ggleap_machines_cache["machines"] or []), "GGLeap paused"
+    if max_age is None:
+        max_age = _ggleap_cache_ttl()
+    now = _t.time()
+    cached = _ggleap_machines_cache["machines"]
+    # Throttle by last ATTEMPT (success or failure) so a 429 outage backs off to the
+    # same cadence instead of hammering every loop tick.
+    if not force and (now - _ggleap_machines_cache["fetched_at"]) < max_age:
+        return (cached or []), _ggleap_machines_cache["error"]
     if not ggleap_jwt_token:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
-        return {
-            "error": "Failed to authenticate with GGLeap API",
-            "pcs": [], "available": 0, "in_use": 0, "offline": 0,
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
-
+        _ggleap_machines_cache["fetched_at"] = now
+        _ggleap_machines_cache["error"] = "Failed to authenticate with GGLeap API"
+        return (cached or []), _ggleap_machines_cache["error"]
+    hdrs = {"Accept": "application/json", "Authorization": f"Bearer {ggleap_jwt_token}"}
     try:
-        r = _req.get(
-            f"{GGLEAP_BASE_URL}/machines/get-all",
-            headers={"Accept": "application/json", "Authorization": f"Bearer {ggleap_jwt_token}"},
-            timeout=15
-        )
+        _ggleap_count("get-all")
+        r = _req.get(f"{GGLEAP_BASE_URL}/machines/get-all", headers=hdrs, timeout=15)
         if r.status_code == 401:
             get_ggleap_jwt()
-            if ggleap_jwt_token:
-                r = _req.get(
-                    f"{GGLEAP_BASE_URL}/machines/get-all",
-                    headers={"Accept": "application/json", "Authorization": f"Bearer {ggleap_jwt_token}"},
-                    timeout=15
-                )
+            hdrs["Authorization"] = f"Bearer {ggleap_jwt_token}"
+            _ggleap_count("get-all")
+            r = _req.get(f"{GGLEAP_BASE_URL}/machines/get-all", headers=hdrs, timeout=15)
         r.raise_for_status()
-        data = r.json()
-        devices = data.get("Machines", [])
-
-        pcs = []
-        available = 0
-        in_use = 0
-        offline = 0
-
-        for device in devices:
-            name = device.get("Name", "Unknown")
-            if device.get("GgRockVm", False):
-                continue
-
-            state = device.get("State", "Unknown")
-            if state in {"ReadyForUser", "IdleShuttingDown"}:
-                status = "available"
-                available += 1
-            elif state == "Off":
-                status = "offline"
-                offline += 1
-            elif state in {"UserLoggedIn", "UserLoggingIn", "AdminMode", "Restarting", "StartingUp", "ShuttingDown"}:
-                status = "in-use"
-                in_use += 1
-            else:
-                status = "offline"
-                offline += 1
-
-            user_uuid = device.get("UserUuid")
-            has_guest = device.get("HasGuest", False)
-            open_windows = [w.get("Title", "") for w in device.get("OpenedWindows", []) if w.get("Title")]
-            last_state_update = device.get("LastStateUpdate")
-
-            pcs.append({
-                "name": format_pc_name(name),
-                "status": status,
-                "state": state,
-                "user_uuid": user_uuid,
-                "has_guest": has_guest,
-                "open_windows": open_windows,
-                "last_state_update": last_state_update,
-            })
-
-        def pc_sort_key(pc):
-            m = re.match(r"Island (\d+) S(\d+)", pc["name"], re.IGNORECASE)
-            if m:
-                return (0, int(m.group(1)), int(m.group(2)))
-            m = re.match(r"Stage S(\d+)", pc["name"], re.IGNORECASE)
-            if m:
-                return (1, 0, int(m.group(1)))
-            return (2, 999, 999)
-
-        pcs.sort(key=pc_sort_key)
-
-        try:
-            _track_pc_sessions(pcs)
-        except Exception as e:
-            logger.warning(f"[ARENA] Session tracking error: {e}")
-
-        result = {
-            "pcs": pcs,
-            "available": available,
-            "in_use": in_use,
-            "offline": offline,
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
-        _ggleap_status_cache["data"] = result
-        _ggleap_status_cache["fetched_at"] = now_ts
-        return result
-
-    except _req.exceptions.Timeout:
-        return {
-            "error": "GGLeap API request timed out",
-            "pcs": [], "available": 0, "in_use": 0, "offline": 0,
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
+        machines = (r.json() or {}).get("Machines", [])
+        _ggleap_machines_cache["machines"] = machines
+        _ggleap_machines_cache["fetched_at"] = now
+        _ggleap_machines_cache["error"] = None
+        return machines, None
     except _req.exceptions.RequestException as e:
+        _ggleap_machines_cache["fetched_at"] = now  # back off retries during an outage
+        _ggleap_machines_cache["error"] = str(e)
+        return (cached or []), f"Failed to connect to GGLeap API: {str(e)}"
+
+def _ggleap_patch_machine_lock(machine_uuid, lock, message=None):
+    """Optimistically update the cached machine's lock fields after a successful
+    set-screen-lock so the lock loop reads a consistent state without an extra fetch."""
+    for m in (_ggleap_machines_cache["machines"] or []):
+        if m.get("Uuid") == machine_uuid:
+            m["IsLocked"] = bool(lock)
+            m["LockedByAdmin"] = bool(lock)
+            m["AdminLockMessage"] = message if lock else None
+            break
+
+def _fetch_ggleap_status():
+    """Live PC status for the kiosk display, derived from the shared machines
+    cache. The transform (and session tracking) only re-runs when the underlying
+    get-all actually refreshed."""
+    machines, error = _ggleap_get_machines()
+
+    # Reuse the last transform unless the raw data changed since we built it.
+    if _ggleap_status_cache["data"] is not None and _ggleap_status_cache["raw_at"] == _ggleap_machines_cache["fetched_at"]:
+        return _ggleap_status_cache["data"]
+
+    if not machines and error:
         return {
-            "error": f"Failed to connect to GGLeap API: {str(e)}",
+            "error": error,
             "pcs": [], "available": 0, "in_use": 0, "offline": 0,
             "last_updated": datetime.now(timezone.utc).isoformat()
         }
+
+    pcs = []
+    available = 0
+    in_use = 0
+    offline = 0
+
+    for device in machines:
+        name = device.get("Name", "Unknown")
+        if device.get("GgRockVm", False):
+            continue
+
+        state = device.get("State", "Unknown")
+        if state in {"ReadyForUser", "IdleShuttingDown"}:
+            status = "available"
+            available += 1
+        elif state == "Off":
+            status = "offline"
+            offline += 1
+        elif state in {"UserLoggedIn", "UserLoggingIn", "AdminMode", "Restarting", "StartingUp", "ShuttingDown"}:
+            status = "in-use"
+            in_use += 1
+        else:
+            status = "offline"
+            offline += 1
+
+        pcs.append({
+            "uuid": device.get("Uuid"),
+            "name": format_pc_name(name),
+            "status": status,
+            "state": state,
+            "user_uuid": device.get("UserUuid"),
+            "has_guest": device.get("HasGuest", False),
+            "locked": bool(device.get("IsLocked")) and bool(device.get("LockedByAdmin")),
+            "open_windows": [w.get("Title", "") for w in device.get("OpenedWindows", []) if w.get("Title")],
+            "last_state_update": device.get("LastStateUpdate"),
+        })
+
+    def pc_sort_key(pc):
+        m = re.match(r"Island (\d+) S(\d+)", pc["name"], re.IGNORECASE)
+        if m:
+            return (0, int(m.group(1)), int(m.group(2)))
+        m = re.match(r"Stage S(\d+)", pc["name"], re.IGNORECASE)
+        if m:
+            return (1, 0, int(m.group(1)))
+        return (2, 999, 999)
+
+    pcs.sort(key=pc_sort_key)
+
+    try:
+        _track_pc_sessions(pcs)
+    except Exception as e:
+        logger.warning(f"[ARENA] Session tracking error: {e}")
+
+    result = {
+        "pcs": pcs,
+        "available": available,
+        "in_use": in_use,
+        "offline": offline,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    if error:
+        result["error"] = error  # serving slightly stale data
+    _ggleap_status_cache["data"] = result
+    _ggleap_status_cache["raw_at"] = _ggleap_machines_cache["fetched_at"]
+    return result
 
 @app.route('/api/ggleap/status')
 @api_auth_required
 def api_ggleap_status():
-    """Get live PC status from GGLeap API (server-cached, 15s TTL)."""
+    """Get live PC status from GGLeap API (server-cached)."""
     return jsonify(_fetch_ggleap_status())
+
+
+# -- Kiosk PC picker + booking (public — used by the arena kiosks) ----------
+
+def _pc_area(name):
+    """Group label for the kiosk PC picker, derived from the machine name."""
+    m = re.match(r"Island\s+(\d+)", name or "", re.IGNORECASE)
+    if m:
+        return f"Island {m.group(1)}"
+    if re.match(r"Stage", name or "", re.IGNORECASE):
+        return "Stage"
+    return "Other"
+
+
+@app.route('/api/arena/pcs')
+def api_arena_pcs_public():
+    """Public: live PC availability for the kiosk attract screen + picker.
+    Read-only, server-cached. Overlays kiosk-side reservation holds so a
+    just-picked PC shows 'reserved' until the guest logs in or the hold lapses.
+    Stage (varsity-only) stations are returned in a separate `stage` array so the
+    guest picker can show them as locked, and the varsity picker can select them."""
+    data = _fetch_ggleap_status()
+    pcs = []
+    stage = []
+    available = in_use = offline = 0
+    for p in data.get("pcs", []):
+        name = p.get("name", "")
+        uid = p.get("uuid")
+        status = p.get("status")       # available | in-use | offline
+        if status == "in-use":
+            _pc_clear_hold(uid)        # they arrived & logged in — hold is done
+        elif status == "available" and _pc_hold_active(uid):
+            status = "reserved"        # held for an arriving guest
+        entry = {"uuid": uid, "name": name, "status": status, "area": _pc_area(name)}
+        if _is_varsity_pc(name):
+            stage.append(entry)        # varsity-only — kept out of the guest counts
+            continue
+        if status == "available":
+            available += 1
+        elif status == "in-use":
+            in_use += 1
+        elif status == "offline":
+            offline += 1
+        pcs.append(entry)
+    return jsonify({
+        "available": available,
+        "in_use": in_use,
+        "offline": offline,
+        "total": len(pcs),
+        "pcs": pcs,
+        "stage": stage,
+        "error": data.get("error"),
+        "last_updated": data.get("last_updated"),
+    })
+
+
+# Kiosk-side PC reservations: when a guest signs in for a PC we "hold" it for a
+# few minutes so nobody else can pick it while they walk over. The kiosk is in
+# full control — GGLeap is never told to book/lock. If they don't log in within
+# the hold window the PC frees again; once they log in (GGLeap State =
+# UserLoggedIn) it shows occupied for as long as they stay, then frees on logout.
+KIOSK_HOLD_MINUTES = 10
+_arena_pc_holds = {}   # machine_uuid -> {"name", "email", "kiosk_id", "until"}
+
+def _pc_hold_active(machine_uuid):
+    import time as _t
+    h = _arena_pc_holds.get(machine_uuid)
+    if not h:
+        return None
+    if _t.time() > h.get("until", 0):
+        _arena_pc_holds.pop(machine_uuid, None)
+        return None
+    return h
+
+def _pc_set_hold(machine_uuid, name, email, kiosk_id):
+    import time as _t
+    minutes = KIOSK_HOLD_MINUTES
+    try:
+        minutes = max(1, min(120, int(load_arena_config().get("pc_hold_minutes", KIOSK_HOLD_MINUTES))))
+    except (ValueError, TypeError):
+        pass
+    _arena_pc_holds[machine_uuid] = {
+        "name": name, "email": email, "kiosk_id": kiosk_id,
+        "until": _t.time() + minutes * 60,
+    }
+
+def _pc_clear_hold(machine_uuid):
+    _arena_pc_holds.pop(machine_uuid, None)
+
+
+# Who is on / reserved each PC (for the Active Sessions tab). Unlike a hold, this
+# is NOT cleared when the guest logs in — it persists through their session so the
+# Sessions tab can name them. Cleared on logout/cancel or when the slot frees.
+_arena_pc_occupants = {}   # machine_uuid -> {"name","email","kiosk_id","reserved_at","varsity"}
+
+def _arena_set_occupant(machine_uuid, name, email, kiosk_id, varsity=False):
+    _arena_pc_occupants[machine_uuid] = {
+        "name": name, "email": email, "kiosk_id": kiosk_id,
+        "reserved_at": datetime.now().isoformat(timespec="seconds"),
+        "varsity": bool(varsity),
+    }
+
+def _arena_clear_occupant(machine_uuid):
+    _arena_pc_occupants.pop(machine_uuid, None)
+
+
+# -- GGLeap screen lock/unlock (kiosk gating) -------------------------------
+KIOSK_PC_LOCK_MESSAGE = "Must be checked in on Kiosk to use system"
+KIOSK_VARSITY_LOCK_MESSAGE = "Varsity Members must check in on the Kiosk"
+
+def _is_island_pc(name):
+    return bool(re.match(r"\s*island", name or "", re.IGNORECASE))
+
+def _is_varsity_pc(name):
+    """Stage machines are the varsity-only stations."""
+    return bool(re.match(r"\s*stage", name or "", re.IGNORECASE))
+
+def _is_kiosk_pc(name):
+    """Machines the kiosk lock loop manages: Island (guest) + Stage (varsity)."""
+    return _is_island_pc(name) or _is_varsity_pc(name)
+
+def _pc_lock_message(name):
+    """The on-screen lock message for a managed PC (varsity wording for Stage)."""
+    return KIOSK_VARSITY_LOCK_MESSAGE if _is_varsity_pc(name) else KIOSK_PC_LOCK_MESSAGE
+
+# GGLeap is rate-limited (~20 write req/min on our plan). Serialize + space out
+# all screen-lock writes so a full-room lock/unlock never trips a 429.
+_ggleap_write_lock = threading.Lock()
+_ggleap_last_write = [0.0]
+_GGLEAP_WRITE_INTERVAL = 4.5  # seconds between screen-lock writes (~13/min)
+
+def _ggleap_throttle_write():
+    """Block until at least _GGLEAP_WRITE_INTERVAL has passed since the last write."""
+    with _ggleap_write_lock:
+        wait = _GGLEAP_WRITE_INTERVAL - (time.time() - _ggleap_last_write[0])
+        if wait > 0:
+            time.sleep(wait)
+        _ggleap_last_write[0] = time.time()
+
+def _ggleap_set_screen_lock(machine_uuid, lock, message=None):
+    """Lock/unlock a single PC's screen via GGLeap. Returns (ok, error).
+    Locking blanks the screen with an optional message; unlocking clears it."""
+    global ggleap_jwt_token
+    import requests as _req
+    if not machine_uuid:
+        return False, "no machine"
+    if _ggleap_is_paused():
+        return False, "GGLeap paused"
+    if not ggleap_jwt_token:
+        get_ggleap_jwt()
+    if not ggleap_jwt_token:
+        return False, "GGLeap auth failed"
+    body = {"LockScreen": bool(lock), "Message": message, "MachineUuid": machine_uuid}
+    hdrs = {"Accept": "application/json", "Content-Type": "application/json",
+            "Authorization": f"Bearer {ggleap_jwt_token}"}
+    _ggleap_throttle_write()
+    try:
+        _ggleap_count("set-lock")
+        r = _req.post(f"{GGLEAP_BASE_URL}/machines/set-screen-lock", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 401:
+            get_ggleap_jwt()
+            hdrs["Authorization"] = f"Bearer {ggleap_jwt_token}"
+            _ggleap_throttle_write()
+            _ggleap_count("set-lock")
+            r = _req.post(f"{GGLEAP_BASE_URL}/machines/set-screen-lock", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 204 or r.ok:
+            _ggleap_patch_machine_lock(machine_uuid, lock, message)
+            return True, None
+        return False, f"GGLeap {r.status_code}: {(r.text or '')[:150]}"
+    except _req.exceptions.RequestException as e:
+        return False, str(e)
+
+# Cancel Session force-restarts the PC via GGLeap's execute-action endpoint —
+# a restart ends the session and logs the student out.
+GGLEAP_EXECUTE_ACTION_PATH = "/machines/execute-action"
+
+def _ggleap_reboot_machine(machine_uuid):
+    """Restart a single PC via GGLeap (ends the session / logs the user out). Returns (ok, error)."""
+    global ggleap_jwt_token
+    import requests as _req
+    if not machine_uuid:
+        return False, "no machine"
+    if _ggleap_is_paused():
+        return False, "GGLeap paused"
+    if not ggleap_jwt_token:
+        get_ggleap_jwt()
+    if not ggleap_jwt_token:
+        return False, "GGLeap auth failed"
+    body = {"Action": "Restart", "Reason": "SessionEnded", "MachineUuid": machine_uuid, "EndOfSession": True}
+    hdrs = {"Accept": "application/json", "Content-Type": "application/json",
+            "Authorization": f"Bearer {ggleap_jwt_token}"}
+    _ggleap_throttle_write()
+    try:
+        _ggleap_count("reboot")
+        r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 401:
+            get_ggleap_jwt()
+            hdrs["Authorization"] = f"Bearer {ggleap_jwt_token}"
+            _ggleap_throttle_write()
+            _ggleap_count("reboot")
+            r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 204 or r.ok:
+            return True, None
+        return False, f"GGLeap {r.status_code}: {(r.text or '')[:150]}"
+    except _req.exceptions.RequestException as e:
+        return False, str(e)
+
+def _ggleap_shutdown_machine(machine_uuid):
+    """Power off a single PC via GGLeap. Returns (ok, error). Used for stations
+    stuck in Admin Mode, where the only sane remote actions are restart/shutdown."""
+    global ggleap_jwt_token
+    import requests as _req
+    if not machine_uuid:
+        return False, "no machine"
+    if _ggleap_is_paused():
+        return False, "GGLeap paused"
+    if not ggleap_jwt_token:
+        get_ggleap_jwt()
+    if not ggleap_jwt_token:
+        return False, "GGLeap auth failed"
+    body = {"Action": "Shutdown", "Reason": "AdminRequested", "MachineUuid": machine_uuid, "EndOfSession": True}
+    hdrs = {"Accept": "application/json", "Content-Type": "application/json",
+            "Authorization": f"Bearer {ggleap_jwt_token}"}
+    _ggleap_throttle_write()
+    try:
+        _ggleap_count("shutdown")
+        r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 401:
+            get_ggleap_jwt()
+            hdrs["Authorization"] = f"Bearer {ggleap_jwt_token}"
+            _ggleap_throttle_write()
+            _ggleap_count("shutdown")
+            r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 204 or r.ok:
+            return True, None
+        return False, f"GGLeap {r.status_code}: {(r.text or '')[:150]}"
+    except _req.exceptions.RequestException as e:
+        return False, str(e)
+
+# PC-lock reconcile state (per process). While the feature is on, an idle Island
+# PC that is unlocked gets locked with the check-in message. We remember which PCs
+# WE locked; if such a PC later shows up unlocked without having rebooted, a human
+# (a worker via GGLeap, or the kiosk check-in) unlocked it — so we leave it alone
+# until it reboots. A reboot (a down/boot state) resets that memory so the PC
+# re-locks the moment it powers back on.
+_pc_prev_state = {}        # machine_uuid -> last observed GGLeap State
+_pc_we_locked = set()      # uuids we locked this power session
+_pc_human_unlocked = set() # uuids a worker unlocked — don't re-lock until reboot
+_pc_kiosk_unlocked = set() # uuids the kiosk check-in unlocked — re-lock if held slot lapses with no login (no-show)
+_pc_session_ended = {}     # uuid -> ts: session cancelled/restarting — hide from Active Sessions until it reboots
+_PC_SESSION_ENDED_TTL = 300  # safety: stop hiding after 5 min even if GGLeap still reports in-use
+_ARENA_SESSION_STATES = {"UserLoggedIn", "UserLoggingIn"}  # states that mean a real student is actually on the PC
+_arena_system_events = []  # ephemeral live-feed events (e.g. admin unlocks) — shown in Live Feed only, never persisted
+
+def _arena_push_system_event(rec):
+    """Record a transient Live-Feed event (not a real sign-in). Kept in memory,
+    capped, and auto-dropped when it ages out of the current day."""
+    _arena_system_events.append(rec)
+    today = datetime.now().strftime("%Y-%m-%d")
+    _arena_system_events[:] = [e for e in _arena_system_events
+                               if (e.get("signed_in_at", "")[:10] == today)][-60:]
+
+_PC_DOWN_STATES = {"Off", "StartingUp", "Restarting", "ShuttingDown"}
+
+def _reconcile_pc_locks():
+    """Keep idle Island PCs locked behind the kiosk gate while the feature is on:
+    lock any unlocked idle PC, but never re-lock one a worker or the kiosk
+    deliberately unlocked (until it reboots). When the feature is off, clear our
+    admin locks so PCs work normally."""
+    cfg = load_arena_config()
+    enabled = bool(cfg.get("pc_lock_enabled", False))
+    devices, error = _ggleap_get_machines()
+    if error and not devices:
+        return  # transient (e.g. 429) and no cached data yet — try again next cycle
+    for d in devices:
+        if d.get("GgRockVm"):
+            continue
+        name = d.get("Name", "")
+        uuid = d.get("Uuid")
+        if not uuid or not _is_kiosk_pc(name):
+            continue
+        state = d.get("State")
+        is_locked = bool(d.get("IsLocked"))
+        by_admin = bool(d.get("LockedByAdmin"))
+        _pc_prev_state[uuid] = state
+
+        if not enabled:
+            # Feature off — undo any lock we placed so PCs work normally.
+            _pc_we_locked.discard(uuid)
+            _pc_human_unlocked.discard(uuid)
+            _pc_kiosk_unlocked.discard(uuid)
+            if is_locked and by_admin:
+                ok, err = _ggleap_set_screen_lock(uuid, False)
+                if not ok:
+                    logger.warning(f"[PCLOCK] unlock(disable) {name} failed: {err}")
+            continue
+
+        if state in _PC_DOWN_STATES:
+            # Rebooting/off — forget this power session so it re-locks on next boot.
+            # Also release any kiosk hold: a student who reserved this machine and
+            # then it restarted must be free to pick the same or another station
+            # right away (don't make them wait out the 10-minute hold).
+            _pc_we_locked.discard(uuid)
+            _pc_human_unlocked.discard(uuid)
+            _pc_kiosk_unlocked.discard(uuid)
+            _pc_clear_hold(uuid)
+            continue
+
+        if state != "ReadyForUser":
+            continue  # in a session / transitioning — leave it
+
+        # --- idle & available (ReadyForUser) ---
+        if uuid in _pc_human_unlocked:
+            continue  # a worker unlocked it — respect that until it reboots
+
+        if uuid in _pc_kiosk_unlocked:
+            # Unlocked for a kiosk check-in. Keep it open while the hold is live;
+            # once the slot lapses and it's still sitting idle & unlocked, the guest
+            # never logged in (no-show) — re-lock it behind the kiosk gate.
+            if _pc_hold_active(uuid):
+                continue
+            if not is_locked:
+                ok, err = _ggleap_set_screen_lock(uuid, True, _pc_lock_message(name))
+                if ok:
+                    _pc_kiosk_unlocked.discard(uuid)
+                    _pc_we_locked.add(uuid)
+                else:
+                    logger.warning(f"[PCLOCK] no-show re-lock {name} failed: {err}")
+            else:
+                _pc_kiosk_unlocked.discard(uuid)
+                _pc_we_locked.add(uuid)
+            continue
+
+        if is_locked:
+            _pc_we_locked.add(uuid)  # locked already — remember it's ours to manage
+            continue
+
+        if uuid in _pc_we_locked:
+            # We locked it earlier but it's unlocked now with no reboot seen — a
+            # worker unlocked it. Respect that and stop re-locking until it reboots.
+            _pc_we_locked.discard(uuid)
+            _pc_human_unlocked.add(uuid)
+            continue
+
+        # Idle, unlocked, and not unlocked by a human — lock it behind the kiosk gate.
+        ok, err = _ggleap_set_screen_lock(uuid, True, _pc_lock_message(name))
+        if ok:
+            _pc_we_locked.add(uuid)
+        else:
+            logger.warning(f"[PCLOCK] lock {name} failed: {err}")  # retried next cycle
+
+_pc_lock_thread_started = False
+
+def _start_pc_lock_thread():
+    """Start the background PC-lock reconcile loop once per process."""
+    global _pc_lock_thread_started
+    if _pc_lock_thread_started:
+        return
+    _pc_lock_thread_started = True
+
+    def _worker():
+        import time as _t
+        _t.sleep(6)  # let the app settle before the first pass
+        while True:
+            try:
+                _reconcile_pc_locks()
+            except Exception as e:
+                logger.warning(f"[PCLOCK] loop error: {e}")
+            _t.sleep(7)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+@app.route('/api/arena/kiosk/book', methods=['POST'])
+def api_arena_kiosk_book():
+    """Public: a guest picked a PC and signed in. Hold that PC at the kiosk for
+    KIOSK_HOLD_MINUTES so nobody else grabs it while they walk over, and record
+    the arena check-in. Play time is unlimited — the PC frees when they log out."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    machine_uuid = _clean_str(data.get("machineUuid") or data.get("machine_uuid"), 60)
+
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    name = _clean_str(data.get("name"), 120) or (first + " " + last).strip()
+    email = _clean_str(data.get("email"), 120).lower()
+
+    if not machine_uuid:
+        return jsonify({"success": False, "error": "Please select a PC first."}), 400
+    if not name:
+        return jsonify({"success": False, "error": "Please enter your full name."}), 400
+    if cfg.get("require_email", True):
+        domains = [d.lower().lstrip("@") for d in (cfg.get("email_domains") or [])]
+        if not email or (domains and not any(email.endswith("@" + d) for d in domains)):
+            allowed = " or ".join("@" + d for d in domains) if domains else "a valid email"
+            return jsonify({"success": False, "error": f"Please use {allowed}."}), 400
+
+    guard_ok, guard_msg = _signin_guard(cfg, email, name, kid, is_pc=True)
+    if not guard_ok:
+        return jsonify({"success": False, "error": guard_msg, "blocked": True}), 403
+
+    # Confirm the machine is still free and not already held by someone else.
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == machine_uuid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That PC is no longer listed. Please pick another."}), 404
+    if machine.get("status") != "available":
+        return jsonify({"success": False, "error": "That PC was just taken. Please pick another."}), 409
+    if _pc_hold_active(machine_uuid):
+        return jsonify({"success": False, "error": "That PC was just reserved. Please pick another."}), 409
+
+    machine_name = machine.get("name", "your PC")
+    prior = arena_db.find_recent_guest(email) if email else None
+    returning = bool(prior)
+    # Kiosk-only reservation — no GGLeap booking/lock. Just hold it locally so
+    # nobody else can pick it while the guest walks over; the hold auto-expires.
+    _pc_set_hold(machine_uuid, name, email, kid)
+    _arena_set_occupant(machine_uuid, name, email, kid)
+    # Unlock the screen so the guest can log in. The lock loop won't re-lock it
+    # (it only locks on power-on), so this unlock persists for their session.
+    if load_arena_config().get("pc_lock_enabled", False):
+        # Track as a kiosk unlock: the loop keeps it open while the hold is live,
+        # then re-locks it if the guest never logs in (no-show).
+        _pc_we_locked.discard(machine_uuid)
+        _pc_human_unlocked.discard(machine_uuid)
+        _pc_kiosk_unlocked.add(machine_uuid)
+        ok, err = _ggleap_set_screen_lock(machine_uuid, False)
+        if not ok:
+            logger.warning(f"[PCLOCK] checkin unlock {machine_name} failed: {err}")
+    record = {
+        "id": uuid.uuid4().hex,
+        "name": name,
+        "first_name": first,
+        "last_name": last,
+        "email": email,
+        "kiosk_id": kid,
+        "kiosk_label": kcfg.get("label"),
+        "room": _clean_str(data.get("room"), 60) or kcfg.get("room", ""),
+        "accepted_rules": True,
+        "reason": f"PC Session — {machine_name}",
+        "pc_session": True,
+        "machine": machine_name,
+        "machine_uuid": machine_uuid,
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    arena_db.add_signin(record)
+    log_activity("arena_pc_reserve", "arena",
+                 f"{name} reserved {machine_name} via {kcfg.get('label') or kid}")
+    record["returning"] = returning
+    return jsonify({
+        "success": True,
+        "record": record,
+        "returning": returning,
+        "machine_name": machine_name,
+        "hold_minutes": max(1, min(120, int(load_arena_config().get("pc_hold_minutes", KIOSK_HOLD_MINUTES)))),
+    })
+
+
+def _arena_active_sessions():
+    """Build the Active Sessions list for Nova: every kiosk-managed PC that is
+    currently reserved (held, walking over) or in use (logged in), with who's on
+    it and how long. Combines GGLeap live state, kiosk holds, and occupant info."""
+    import time as _t
+    status = _fetch_ggleap_status()
+    usage = _load_arena_usage()
+    active_sessions = usage.get("active_sessions", {}) or {}
+    try:
+        hold_minutes = max(1, min(120, int(load_arena_config().get("pc_hold_minutes", KIOSK_HOLD_MINUTES))))
+    except (ValueError, TypeError):
+        hold_minutes = KIOSK_HOLD_MINUTES
+    out = []
+    for p in status.get("pcs", []):
+        uid = p.get("uuid")
+        name = p.get("name", "")
+        st = p.get("status")          # available | in-use | offline
+        state = p.get("state", "")    # raw GGLeap state
+        hold = _pc_hold_active(uid)
+        occ = _arena_pc_occupants.get(uid)
+
+        # A machine only counts as an ACTIVE session when a real user is on it.
+        # States like AdminMode / Restarting / StartingUp / ShuttingDown report as
+        # "in-use" for booking purposes but are NOT student sessions.
+        is_session = state in _ARENA_SESSION_STATES
+
+        # Session was just cancelled/restarted — hide it until the machine actually
+        # reboots and frees up (GGLeap can still report the user for a moment).
+        ended_at = _pc_session_ended.get(uid)
+        if ended_at is not None:
+            if not is_session or (_t.time() - ended_at) > _PC_SESSION_ENDED_TTL:
+                _pc_session_ended.pop(uid, None)  # reboot done (or timed out) — stop hiding
+            else:
+                if occ:
+                    _arena_clear_occupant(uid)
+                continue
+
+        if is_session:
+            sess_status = "active"    # a real user is logged in and playing
+        elif hold:
+            sess_status = "reserved"  # held for an arriving guest
+        else:
+            if occ:                   # freed up — drop stale occupant record
+                _arena_clear_occupant(uid)
+            continue
+
+        who_name = who_email = ""
+        varsity = False
+        if hold:
+            who_name = hold.get("name", "") or who_name
+            who_email = hold.get("email", "") or who_email
+        if occ:
+            who_name = who_name or occ.get("name", "")
+            who_email = who_email or occ.get("email", "")
+            varsity = bool(occ.get("varsity"))
+
+        started_at = None
+        if sess_status == "active":
+            sess = active_sessions.get(name)
+            if sess and sess.get("start_time"):
+                started_at = sess["start_time"]
+            elif occ and occ.get("reserved_at"):
+                started_at = occ["reserved_at"]
+        else:  # reserved
+            until = hold.get("until", _t.time()) if hold else _t.time()
+            started_at = datetime.fromtimestamp(until - hold_minutes * 60).isoformat(timespec="seconds")
+
+        hold_until = None
+        if hold:
+            hold_until = datetime.fromtimestamp(hold.get("until", _t.time())).isoformat(timespec="seconds")
+
+        out.append({
+            "uuid": uid,
+            "machine": name,
+            "status": sess_status,          # active | reserved
+            "name": who_name,
+            "email": who_email,
+            "varsity": varsity,
+            "started_at": started_at,
+            "hold_until": hold_until,
+        })
+
+    def _skey(s):
+        m = re.match(r"Island (\d+) S(\d+)", s["machine"], re.IGNORECASE)
+        if m:
+            return (0, int(m.group(1)), int(m.group(2)))
+        m = re.match(r"Stage S(\d+)", s["machine"], re.IGNORECASE)
+        if m:
+            return (1, 0, int(m.group(1)))
+        return (2, 999, 999)
+    out.sort(key=_skey)
+    return out
+
+
+@app.route('/api/arena/sessions')
+@api_perm_required('page.arena_sessions')
+def api_arena_sessions():
+    """Active PC sessions + full room map for the Nova Sessions tab."""
+    sessions = _arena_active_sessions()
+    sess_by_uid = {s["uuid"]: s for s in sessions}
+    status = _fetch_ggleap_status()
+    machines = []
+    for p in status.get("pcs", []):
+        uid = p.get("uuid")
+        name = p.get("name", "")
+        s = sess_by_uid.get(uid)
+        m = re.match(r"^(Island\s+\d+|Stage)\s+S(\d+)", name, re.IGNORECASE)
+        area = m.group(1).title() if m else "Other"
+        seat = m.group(2) if m else name
+        if s:
+            seat_status = s["status"]              # active | reserved
+        elif p.get("status") == "available":
+            seat_status = "available"
+        elif p.get("status") == "offline":
+            seat_status = "offline"
+        else:
+            seat_status = "maint"                  # in-use but no real session (AdminMode, restarting…)
+        _is_unlocked = (uid in _pc_kiosk_unlocked or uid in _pc_human_unlocked)
+        entry = {
+            "uuid": uid,
+            "machine": name,
+            "area": area,
+            "seat": seat,
+            "seat_status": seat_status,
+            "locked": (not _is_unlocked) and (bool(p.get("locked")) or uid in _pc_we_locked),
+            "unlocked": _is_unlocked,
+            "unlocked_by": ("kiosk" if uid in _pc_kiosk_unlocked else ("staff" if uid in _pc_human_unlocked else None)),
+            "varsity": bool(s["varsity"]) if s else bool(re.match(r"Stage", name, re.IGNORECASE)),
+            "state": p.get("state"),
+            "admin_mode": p.get("state") == "AdminMode",
+            "last_state_update": p.get("last_state_update"),
+            "has_guest": bool(p.get("has_guest")),
+        }
+        if s:
+            entry.update({
+                "name": s.get("name", ""),
+                "email": s.get("email", ""),
+                "started_at": s.get("started_at"),
+                "hold_until": s.get("hold_until"),
+            })
+        machines.append(entry)
+    return jsonify({
+        "success": True,
+        "sessions": sessions,
+        "machines": machines,
+        "active": sum(1 for s in sessions if s["status"] == "active"),
+        "reserved": sum(1 for s in sessions if s["status"] == "reserved"),
+        "available": sum(1 for m in machines if m["seat_status"] == "available"),
+        "offline": sum(1 for m in machines if m["seat_status"] == "offline"),
+    })
+
+
+@app.route('/api/arena/sessions/<uid>/cancel', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_cancel(uid):
+    """Cancel a PC session. If the student is logged in ? force-restart the machine.
+    If it's only reserved/unlocked (not logged in yet) ? re-lock it. Either way the
+    station frees up so another machine can be selected."""
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name = machine.get("name", "the station")
+    st = machine.get("status")
+
+    if st == "in-use":
+        # Logged in — force a restart to end their session.
+        ok, err = _ggleap_reboot_machine(uid)
+        action = "restarted" if ok else "restart_failed"
+        if not ok:
+            # Best-effort fallback so the station is at least gated again.
+            _ggleap_set_screen_lock(uid, True, _pc_lock_message(name))
+        if ok:
+            # Drop it from Active Sessions right away — it's rebooting, not active.
+            _pc_session_ended[uid] = time.time()
+    else:
+        # Unlocked/reserved but nobody logged in — just re-lock it.
+        ok, err = _ggleap_set_screen_lock(uid, True, _pc_lock_message(name))
+        action = "locked" if ok else "lock_failed"
+        if ok:
+            _pc_we_locked.add(uid)
+
+    _pc_clear_hold(uid)
+    _pc_kiosk_unlocked.discard(uid)
+    _pc_human_unlocked.discard(uid)
+    _arena_clear_occupant(uid)
+    log_activity("arena_session_cancel", "arena",
+                 f"{_arena_staff_name()} cancelled session on {name} ({action})")
+    if not ok:
+        detail = " GGLeap could not restart the machine." if action == "restart_failed" else " GGLeap could not lock the machine."
+        return jsonify({"success": False, "error": (err or "GGLeap error") + detail, "action": action}), 502
+    return jsonify({"success": True, "action": action, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/power', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_power(uid):
+    """Restart or shut down a station stuck in Admin Mode — the only remote
+    actions available there since there's no student session to manage."""
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if action not in ("restart", "shutdown"):
+        return jsonify({"success": False, "error": "Invalid action"}), 400
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name = machine.get("name", "the station")
+    ok, err = _ggleap_reboot_machine(uid) if action == "restart" else _ggleap_shutdown_machine(uid)
+    if ok:
+        _pc_session_ended[uid] = time.time()
+        _pc_clear_hold(uid)
+        _pc_we_locked.discard(uid)
+        _pc_kiosk_unlocked.discard(uid)
+        _pc_human_unlocked.discard(uid)
+    log_activity("arena_session_power", "arena", f"{_arena_staff_name()} {action}ed {name} (Admin Mode)")
+    if not ok:
+        return jsonify({"success": False, "error": (err or "GGLeap error") + f" Could not {action} the machine."}), 502
+    return jsonify({"success": True, "action": action, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/unlock', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_unlock(uid):
+    """Remotely unlock a single station from the Sessions map (no check-in)."""
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name = machine.get("name", "the station")
+    _pc_we_locked.discard(uid)
+    _pc_human_unlocked.add(uid)   # a staff member unlocked — don't auto re-lock until it reboots
+    _pc_kiosk_unlocked.add(uid)
+    _pc_session_ended.pop(uid, None)
+    ok, err = _ggleap_set_screen_lock(uid, False)
+    if not ok:
+        return jsonify({"success": False, "error": (err or "GGLeap error") + " Could not unlock the machine."}), 502
+    log_activity("arena_session_unlock", "arena", f"{_arena_staff_name()} unlocked {name}")
+    return jsonify({"success": True, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/lock', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_lock(uid):
+    """Re-lock a single station from the Sessions map (e.g. after an admin unlock)."""
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name = machine.get("name", "the station")
+    _pc_kiosk_unlocked.discard(uid)
+    _pc_human_unlocked.discard(uid)
+    _pc_clear_hold(uid)
+    _arena_clear_occupant(uid)
+    ok, err = _ggleap_set_screen_lock(uid, True, _pc_lock_message(name))
+    if not ok:
+        return jsonify({"success": False, "error": (err or "GGLeap error") + " Could not lock the machine."}), 502
+    _pc_we_locked.add(uid)
+    log_activity("arena_session_lock", "arena", f"{_arena_staff_name()} locked {name}")
+    return jsonify({"success": True, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/checkin', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_checkin(uid):
+    """Staff check-in on a specific station from the Sessions map. Bypasses the
+    varsity roster check (trusted staff action), unlocks the machine, records a
+    sign-in (appears in the live feed), and marks the station occupied."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name_m = machine.get("name", "the station")
+
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    name = _clean_str(data.get("name"), 120) or (first + " " + last).strip()
+    if not name:
+        return jsonify({"success": False, "error": "Please enter the student's full name."}), 400
+    email = _clean_str(data.get("email"), 120).lower()
+
+    # Attribute to the PC kiosk if there is one, else the first kiosk.
+    kid = next((k for k, kc in cfg.get("kiosks", {}).items() if kc.get("type") == "pc"), None) \
+        or next(iter(cfg.get("kiosks", {})), "kiosk-1")
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    staff_name = _arena_staff_name()
+
+    # Unlock + reserve the station for this person.
+    _pc_set_hold(uid, name, email, kid)
+    _arena_set_occupant(uid, name, email, kid, varsity=False)
+    _pc_we_locked.discard(uid)
+    _pc_human_unlocked.discard(uid)
+    _pc_kiosk_unlocked.add(uid)
+    _pc_session_ended.pop(uid, None)
+    ok, uerr = _ggleap_set_screen_lock(uid, False)
+    if not ok:
+        logger.warning(f"[SESSION CHECKIN] unlock {name_m} failed: {uerr}")
+
+    prior = arena_db.find_recent_guest(email) if email else None
+    returning = bool(prior)
+    record = {
+        "id": uuid.uuid4().hex, "name": name,
+        "first_name": first, "last_name": last, "email": email,
+        "kiosk_id": kid, "kiosk_label": kcfg.get("label"),
+        "room": name_m,
+        "accepted_rules": True, "manual": True, "kind": "staff",
+        "reason": "Staff Check-In — " + name_m,
+        "machine": name_m, "machine_uuid": uid,
+        "checked_in_by": staff_name,
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    arena_db.add_signin(record)
+    log_activity("arena_session_checkin", "arena", f"{staff_name} checked in {name} on {name_m}")
+    record["returning"] = returning
+    return jsonify({"success": True, "record": record, "returning": returning,
+                    "machine_name": name_m, "unlocked": ok})
+
+
+# -- Varsity after-hours check-in ------------------------------------------
+_VARSITY_DM = (
+    "?? **Your Machine is Ready — {machine}**\n\n"
+    "Your after-hours Arena session is now **active under privilege of policy**.\n\n"
+    "After-hours play is a privilege reserved for approved varsity members. Any misuse "
+    "of after-hours access may result in this privilege being revoked by any means "
+    "necessary. Please use after-hours play respectfully and represent PNW Esports with integrity.\n\n"
+    "— PNW Esports Arena"
+)
+
+
+def _arena_norm_name(s):
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _arena_find_varsity(first, last, email):
+    """Match a kiosk varsity login against the roster. Returns (player, error_code).
+    A player qualifies if their Purdue email matches, they're a varsity-type player,
+    active, and the first/last name they entered appears in their roster full name."""
+    email = (email or "").strip().lower()
+    first = _arena_norm_name(first)
+    last = _arena_norm_name(last)
+    if not email:
+        return None, "email_required"
+    try:
+        players = load_rosters().get("players", [])
+    except Exception:
+        players = []
+    match = None
+    for p in players:
+        pe = (p.get("purdue_email") or "").strip().lower()
+        if pe and pe == email:
+            match = p
+            break
+    if not match:
+        return None, "not_found"
+    ptype = (match.get("player_type") or "").lower()
+    if "varsity" not in ptype:
+        return None, "not_varsity"
+    if (match.get("status") or "active").lower() != "active":
+        return None, "inactive"
+    tokens = set(_arena_norm_name(match.get("full_name")).split())
+    if (first and first not in tokens) or (last and last not in tokens):
+        return None, "name_mismatch"
+    return match, None
+
+
+def _arena_varsity_by_email(email):
+    """Return the active varsity roster player for an email, or None."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    try:
+        players = load_rosters().get("players", [])
+    except Exception:
+        players = []
+    for p in players:
+        pe = (p.get("purdue_email") or "").strip().lower()
+        if pe and pe == email and "varsity" in (p.get("player_type") or "").lower() \
+                and (p.get("status") or "active").lower() == "active":
+            return p
+    return None
+
+
+@app.route('/api/arena/puid-scan', methods=['POST'])
+@api_auth_required
+def api_arena_puid_scan():
+    """Demo kiosk: identify a scanned PUID. The PUID is never echoed back."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-demo", 40)
+    raw = data.get("puid", "")
+    if not puid_db.is_valid_puid(raw):
+        return jsonify({"success": False, "error": "That card didn't scan correctly — please try again."}), 400
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    arena_open = _arena_is_open_now(cfg, kcfg)
+    profile = puid_db.lookup(raw)
+    known = bool(profile)
+    varsity = bool(_arena_varsity_by_email(profile.get("email"))) if known else False
+
+    if arena_open:
+        if known:
+            puid_db.touch(raw)
+            return jsonify({"success": True, "known": True, "arena_open": True, "allowed": True,
+                            "reason": "ok", "varsity": varsity, "name": profile.get("name"),
+                            "first_name": profile.get("first_name"), "email": profile.get("email")})
+        return jsonify({"success": True, "known": False, "arena_open": True, "allowed": True,
+                        "reason": "register", "varsity": False})
+
+    # Arena is closed — only approved varsity members get in.
+    if known and varsity:
+        puid_db.touch(raw)
+        return jsonify({"success": True, "known": True, "arena_open": False, "allowed": True,
+                        "reason": "varsity_after_hours", "varsity": True, "name": profile.get("name"),
+                        "first_name": profile.get("first_name"), "email": profile.get("email")})
+    return jsonify({"success": True, "known": known, "arena_open": False, "allowed": False,
+                    "reason": "closed_students", "varsity": False,
+                    "name": profile.get("name") if known else "",
+                    "first_name": profile.get("first_name") if known else ""})
+
+
+@app.route('/api/arena/puid-register', methods=['POST'])
+@api_auth_required
+def api_arena_puid_register():
+    """Demo kiosk: first-time student registration, linked to a PUID (encrypted)."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    raw = data.get("puid", "")
+    if not puid_db.is_valid_puid(raw):
+        return jsonify({"success": False, "error": "That card didn't scan correctly — please try again."}), 400
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    name = _clean_str(data.get("name"), 120) or (first + " " + last).strip()
+    if not first or not last:
+        return jsonify({"success": False, "error": "Please enter your first and last name."}), 400
+    email = _clean_str(data.get("email"), 120).lower()
+    if cfg.get("require_email", True):
+        domains = [d.lower().lstrip("@") for d in (cfg.get("email_domains") or [])]
+        if not email or (domains and not any(email.endswith("@" + d) for d in domains)):
+            allowed = " or ".join("@" + d for d in domains) if domains else "a valid email"
+            return jsonify({"success": False, "error": f"Please use {allowed}."}), 400
+    puid_db.register(raw, first_name=first, last_name=last, name=name, email=email)
+    varsity = bool(_arena_varsity_by_email(email))
+    return jsonify({"success": True, "name": name, "first_name": first, "email": email, "varsity": varsity})
+
+
+@app.route('/api/arena/varsity-checkin', methods=['POST'])
+def api_arena_varsity_checkin():
+    """Public: an approved varsity member checks in for after-hours play. Works
+    regardless of open hours. On a PC kiosk they also pick a station to unlock."""
+    cfg = load_arena_config()
+    if not cfg.get("varsity_checkin", False):
+        return jsonify({"success": False, "error": "Varsity Check-In is not available right now."}), 403
+    data = request.get_json(silent=True) or {}
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    email = _clean_str(data.get("email"), 120).lower()
+    machine_uuid = _clean_str(data.get("machineUuid") or data.get("machine_uuid"), 60)
+
+    if not first or not last:
+        return jsonify({"success": False, "error": "Please enter your first and last name."}), 400
+    if not email:
+        return jsonify({"success": False, "error": "Please enter your Purdue email."}), 400
+
+    player, err = _arena_find_varsity(first, last, email)
+    if not player:
+        msg = ("We couldn't match your details to an approved varsity roster entry. "
+               "Double-check your first name, last name, and Purdue email exactly as they "
+               "appear on your roster — if it still doesn't work, contact your coach to fix your roster info.")
+        return jsonify({"success": False, "error": msg, "mismatch": True, "reason": err}), 403
+
+    name = player.get("full_name") or (first + " " + last).strip()
+
+    # Validate-only: PC kiosk checks the roster match before showing the station
+    # picker. No sign-in is recorded and no DM is sent until the final check-in.
+    if data.get("validate"):
+        return jsonify({"success": True, "validated": True, "name": name, "first_name": first})
+
+    machine_name = None
+    if machine_uuid:
+        status = _fetch_ggleap_status()
+        machine = next((p for p in status.get("pcs", []) if p.get("uuid") == machine_uuid), None)
+        if not machine:
+            return jsonify({"success": False, "error": "That station is no longer listed. Please pick another."}), 404
+        if machine.get("status") != "available" or _pc_hold_active(machine_uuid):
+            return jsonify({"success": False, "error": "That station was just taken. Please pick another."}), 409
+        machine_name = machine.get("name", "your station")
+        _pc_set_hold(machine_uuid, name, email, kid)
+        _arena_set_occupant(machine_uuid, name, email, kid, varsity=True)
+        _pc_we_locked.discard(machine_uuid)
+        _pc_human_unlocked.discard(machine_uuid)
+        _pc_kiosk_unlocked.add(machine_uuid)
+        ok, uerr = _ggleap_set_screen_lock(machine_uuid, False)
+        if not ok:
+            logger.warning(f"[VARSITY] unlock {machine_name} failed: {uerr}")
+
+    prior = arena_db.find_recent_guest(email)
+    returning = bool(prior)
+    record = {
+        "id": uuid.uuid4().hex, "name": name,
+        "first_name": first, "last_name": last, "email": email,
+        "kiosk_id": kid, "kiosk_label": kcfg.get("label"),
+        "room": machine_name or kcfg.get("room", ""),
+        "accepted_rules": True, "kind": "varsity",
+        "reason": ("Varsity After-Hours — " + machine_name) if machine_name else "Varsity After-Hours",
+        "machine": machine_name, "machine_uuid": machine_uuid or None,
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    arena_db.add_signin(record)
+    log_activity("arena_varsity_checkin", "arena",
+                 f"Varsity check-in: {name}" + (f" on {machine_name}" if machine_name else ""))
+
+    dmed = False
+    discord_id = str(player.get("discord_id") or "").strip()
+    if discord_id:
+        try:
+            queue_discord_notification({
+                "type": "send_dm",
+                "user_id": discord_id,
+                "message": _VARSITY_DM.format(machine=machine_name or "a station"),
+                "silent": True,  # varsity check-ins are frequent — don't spam staff with "DM Delivered"
+            })
+            dmed = True
+        except Exception as e:
+            logger.warning(f"[VARSITY] DM queue failed: {e}")
+
+    record["returning"] = returning
+    return jsonify({
+        "success": True,
+        "record": record,
+        "returning": returning,
+        "name": name,
+        "first_name": first,
+        "machine_name": machine_name,
+        "dmed": dmed,
+        "hold_minutes": max(1, min(120, int(cfg.get("pc_hold_minutes", KIOSK_HOLD_MINUTES)))),
+    })
 
 @app.route('/api/ggleap/games')
 @api_auth_required
@@ -4693,7 +6459,10 @@ def api_ggleap_games():
     """Get available games and apps from GGLeap"""
     global ggleap_games_jwt_token
     import requests
-    
+
+    if _ggleap_is_paused():
+        return jsonify({"error": "GGLeap paused", "games": [], "apps": []})
+
     # Always try to get fresh JWT
     if not ggleap_games_jwt_token:
         get_ggleap_games_jwt()
@@ -4714,6 +6483,7 @@ def api_ggleap_games():
             },
             timeout=15
         )
+        _ggleap_count("games")
         
         # Handle 401 - refresh token and retry
         if r.status_code == 401:
@@ -4727,6 +6497,7 @@ def api_ggleap_games():
                     },
                     timeout=15
                 )
+                _ggleap_count("games")
         
         r.raise_for_status()
         data = r.json()
@@ -4771,8 +6542,6 @@ def api_ggleap_games():
             "games": [],
             "apps": []
         })
-
-# ============ Arena PC Activity Report ============
 
 @app.route('/api/arena/pc/<path:pc_name>')
 @api_auth_required
@@ -4866,553 +6635,6 @@ def api_arena_pc_detail(pc_name):
         "events": sorted(events, key=lambda e: e["timestamp"], reverse=True)[:200],
     })
 
-@app.route('/arena-report')
-@login_required
-@page_permission_required('page.ggleap')
-def arena_report():
-    return render_template('arena_report.html')
-
-@app.route('/api/arena/usage')
-@api_auth_required
-def api_arena_usage():
-    """Return aggregated arena usage data for charts."""
-    period = request.args.get('period', 'today')  # today, week, month
-    now = datetime.now(timezone.utc)
-
-    if period == 'today':
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'week':
-        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'month':
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    else:
-        start = now - timedelta(days=30)
-
-    usage = _load_arena_usage()
-    start_iso = start.isoformat()
-    sessions = [s for s in usage.get("sessions", []) if s["end_time"] >= start_iso]
-    active = usage.get("active_sessions", {})
-
-    total_sessions = len(sessions)
-    total_minutes = sum(s["duration_minutes"] for s in sessions)
-    avg_duration = round(total_minutes / total_sessions, 1) if total_sessions > 0 else 0
-
-    # Per-PC breakdown
-    pc_stats = {}
-    for s in sessions:
-        pc = s["pc_name"]
-        if pc not in pc_stats:
-            pc_stats[pc] = {"sessions": 0, "total_minutes": 0}
-        pc_stats[pc]["sessions"] += 1
-        pc_stats[pc]["total_minutes"] += s["duration_minutes"]
-
-    per_pc = [{"pc_name": k, "sessions": v["sessions"], "total_hours": round(v["total_minutes"] / 60, 1)}
-              for k, v in sorted(pc_stats.items())]
-
-    busiest_pc = max(per_pc, key=lambda x: x["total_hours"])["pc_name"] if per_pc else "N/A"
-
-    # Hourly utilization (sessions active per hour of day)
-    hourly = [0] * 24
-    for s in sessions:
-        try:
-            st = datetime.fromisoformat(s["start_time"])
-            et = datetime.fromisoformat(s["end_time"])
-            h = st.hour
-            while h != et.hour or st.date() != et.date():
-                hourly[h % 24] += 1
-                h += 1
-                if h >= 24:
-                    h = 0
-                    break  # cap at one day loop
-            hourly[et.hour % 24] += 1
-        except Exception:
-            pass
-
-    peak_hour = hourly.index(max(hourly)) if any(hourly) else 0
-
-    # Daily breakdown (sessions per day)
-    daily = {}
-    for s in sessions:
-        try:
-            day = s["start_time"][:10]
-            if day not in daily:
-                daily[day] = {"sessions": 0, "total_minutes": 0}
-            daily[day]["sessions"] += 1
-            daily[day]["total_minutes"] += s["duration_minutes"]
-        except Exception:
-            pass
-
-    daily_list = [{"date": k, "sessions": v["sessions"], "total_hours": round(v["total_minutes"] / 60, 1)}
-                  for k, v in sorted(daily.items())]
-
-    busiest_day = max(daily_list, key=lambda x: x["sessions"])["date"] if daily_list else "N/A"
-
-    # Weekly heatmap (day_of_week x hour)
-    heatmap = [[0] * 24 for _ in range(7)]
-    for s in sessions:
-        try:
-            st = datetime.fromisoformat(s["start_time"])
-            heatmap[st.weekday()][st.hour] += 1
-        except Exception:
-            pass
-
-    return jsonify({
-        "period": period,
-        "total_sessions": total_sessions,
-        "total_hours": round(total_minutes / 60, 1),
-        "avg_duration_minutes": avg_duration,
-        "busiest_pc": busiest_pc,
-        "busiest_day": busiest_day,
-        "peak_hour": peak_hour,
-        "active_now": len(active),
-        "per_pc": per_pc,
-        "hourly": hourly,
-        "daily": daily_list,
-        "heatmap": heatmap,
-        "sessions_raw": sessions[-200:]  # Latest 200 for the table
-    })
-
-@app.route('/api/arena/export')
-@api_auth_required
-def api_arena_export():
-    """Export arena usage data to a professionally styled Excel spreadsheet."""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
-    from openpyxl.utils import get_column_letter
-
-    period = request.args.get('period', 'month')
-    now = datetime.now(timezone.utc)
-
-    if period == 'today':
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        label = now.strftime('%Y-%m-%d')
-        period_label = f"Today — {now.strftime('%B %d, %Y')}"
-    elif period == 'week':
-        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        label = f"Week_{start.strftime('%Y-%m-%d')}"
-        period_label = f"Week of {start.strftime('%B %d, %Y')}"
-    else:
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        label = now.strftime('%Y-%m')
-        period_label = now.strftime('%B %Y')
-
-    usage = _load_arena_usage()
-    start_iso = start.isoformat()
-    sessions = [s for s in usage.get("sessions", []) if s["end_time"] >= start_iso]
-    events = [e for e in usage.get("event_log", []) if e.get("timestamp", "") >= start_iso]
-
-    wb = Workbook()
-
-    # ── Professional color palette ──
-    PURPLE = '7C3AED'
-    PURPLE_DARK = '5B21B6'
-    PURPLE_LIGHT = 'EDE9FE'
-    PURPLE_MED = 'DDD6FE'
-    PURPLE_SOFT = 'F5F3FF'
-    GREEN = '059669'
-    GREEN_LIGHT = 'D1FAE5'
-    BLUE = '2563EB'
-    AMBER = 'D97706'
-    RED = 'DC2626'
-    DARK_BG = '1E1B4B'
-    WHITE = 'FFFFFF'
-    GRAY_50 = 'F9FAFB'
-    GRAY_200 = 'E5E7EB'
-    GRAY_400 = '9CA3AF'
-    GRAY_700 = '374151'
-
-    # ── Fonts ──
-    title_font = Font(name='Calibri', bold=True, size=20, color=WHITE)
-    subtitle_font = Font(name='Calibri', size=12, color=PURPLE_MED)
-    header_font = Font(name='Calibri', bold=True, color=WHITE, size=11)
-    subheader_font = Font(name='Calibri', bold=True, size=11, color=PURPLE_DARK)
-    data_font = Font(name='Calibri', size=11)
-    bold_font = Font(name='Calibri', bold=True, size=11)
-    small_font = Font(name='Calibri', size=10, color=GRAY_400)
-    metric_val_font = Font(name='Calibri', bold=True, size=16, color=PURPLE)
-    metric_lbl_font = Font(name='Calibri', size=10, color=GRAY_700)
-    total_font = Font(name='Calibri', bold=True, size=11, color=WHITE)
-
-    # ── Fills ──
-    cover_fill = PatternFill(start_color=DARK_BG, end_color=DARK_BG, fill_type='solid')
-    header_fill = PatternFill(start_color=PURPLE, end_color=PURPLE, fill_type='solid')
-    alt_fill = PatternFill(start_color=PURPLE_SOFT, end_color=PURPLE_SOFT, fill_type='solid')
-    total_fill = PatternFill(start_color=PURPLE_DARK, end_color=PURPLE_DARK, fill_type='solid')
-    metric_fill = PatternFill(start_color=PURPLE_LIGHT, end_color=PURPLE_LIGHT, fill_type='solid')
-    green_fill = PatternFill(start_color=GREEN_LIGHT, end_color=GREEN_LIGHT, fill_type='solid')
-
-    # ── Alignment & borders ──
-    center = Alignment(horizontal='center', vertical='center', wrap_text=False)
-    left_a = Alignment(horizontal='left', vertical='center')
-    right_a = Alignment(horizontal='right', vertical='center')
-    thin_border = Border(
-        left=Side(style='thin', color=GRAY_200),
-        right=Side(style='thin', color=GRAY_200),
-        top=Side(style='thin', color=GRAY_200),
-        bottom=Side(style='thin', color=GRAY_200),
-    )
-    thick_bottom = Border(bottom=Side(style='medium', color=PURPLE))
-
-    def style_header_row(ws, row, cols):
-        for c in range(1, cols + 1):
-            cell = ws.cell(row=row, column=c)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = center
-            cell.border = thin_border
-
-    def style_data_row(ws, row, cols, alt=False):
-        for c in range(1, cols + 1):
-            cell = ws.cell(row=row, column=c)
-            cell.font = data_font
-            cell.alignment = center
-            cell.border = thin_border
-            if alt:
-                cell.fill = alt_fill
-
-    def style_total_row(ws, row, cols):
-        for c in range(1, cols + 1):
-            cell = ws.cell(row=row, column=c)
-            cell.font = total_font
-            cell.fill = total_fill
-            cell.alignment = center
-            cell.border = thin_border
-
-    def auto_width(ws, min_w=10, max_w=35):
-        for col_cells in ws.columns:
-            max_len = 0
-            col_letter = get_column_letter(col_cells[0].column)
-            for cell in col_cells:
-                if cell.value:
-                    max_len = max(max_len, len(str(cell.value)))
-            ws.column_dimensions[col_letter].width = max(min(max_len + 4, max_w), min_w)
-
-    def freeze_below_header(ws, row=2):
-        ws.freeze_panes = ws.cell(row=row, column=1)
-
-    # ── Compute stats ──
-    total_mins = sum(s["duration_minutes"] for s in sessions)
-    total_sessions = len(sessions)
-    avg_dur = round(total_mins / total_sessions, 1) if total_sessions else 0
-
-    pc_map = {}
-    for s in sessions:
-        pc = s["pc_name"]
-        if pc not in pc_map:
-            pc_map[pc] = {"sessions": 0, "minutes": 0, "longest": 0, "shortest": float('inf')}
-        pc_map[pc]["sessions"] += 1
-        pc_map[pc]["minutes"] += s["duration_minutes"]
-        pc_map[pc]["longest"] = max(pc_map[pc]["longest"], s["duration_minutes"])
-        pc_map[pc]["shortest"] = min(pc_map[pc]["shortest"], s["duration_minutes"])
-
-    busiest_pc = max(pc_map.items(), key=lambda x: x[1]["minutes"])[0] if pc_map else "N/A"
-    day_map = {}
-    for s in sessions:
-        d = s["start_time"][:10]
-        day_map[d] = day_map.get(d, 0) + 1
-    busiest_day = max(day_map.items(), key=lambda x: x[1])[0] if day_map else "N/A"
-
-    hourly_counts = [0] * 24
-    for s in sessions:
-        try:
-            hourly_counts[datetime.fromisoformat(s["start_time"]).hour] += 1
-        except Exception:
-            pass
-    peak_hour = hourly_counts.index(max(hourly_counts)) if any(hourly_counts) else 0
-
-    # ══════════ Sheet 1: Cover Page ══════════
-    ws = wb.active
-    ws.title = "Overview"
-    ws.sheet_properties.tabColor = PURPLE
-
-    # Dark cover background (columns A-F, rows 1-20)
-    for r in range(1, 21):
-        for c in range(1, 7):
-            cell = ws.cell(row=r, column=c)
-            cell.fill = cover_fill
-
-    ws.merge_cells('A3:F3')
-    ws.cell(row=3, column=1, value="PNW ESPORTS ARENA").font = title_font
-    ws.cell(row=3, column=1).alignment = Alignment(horizontal='center', vertical='center')
-    ws.cell(row=3, column=1).fill = cover_fill
-
-    ws.merge_cells('A4:F4')
-    ws.cell(row=4, column=1, value="PC Activity Report").font = Font(name='Calibri', size=14, color=PURPLE_MED)
-    ws.cell(row=4, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=4, column=1).fill = cover_fill
-
-    ws.merge_cells('A6:F6')
-    ws.cell(row=6, column=1, value=period_label).font = Font(name='Calibri', size=12, color=WHITE, bold=True)
-    ws.cell(row=6, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=6, column=1).fill = cover_fill
-
-    ws.merge_cells('A7:F7')
-    ws.cell(row=7, column=1, value=f"Generated {now.strftime('%B %d, %Y at %I:%M %p UTC')}").font = small_font
-    ws.cell(row=7, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=7, column=1).fill = cover_fill
-
-    # KPI boxes on cover page (row 10-12)
-    kpis = [
-        ("Total Sessions", str(total_sessions)),
-        ("Total Hours", str(round(total_mins / 60, 1))),
-        ("Avg Session", f"{avg_dur} min"),
-        ("Busiest PC", busiest_pc),
-        ("Peak Hour", f"{peak_hour:02d}:00"),
-        ("PCs Tracked", str(len(pc_map))),
-    ]
-    for ci, (lbl, val) in enumerate(kpis):
-        col = ci + 1
-        cell_v = ws.cell(row=10, column=col, value=val)
-        cell_v.font = metric_val_font
-        cell_v.fill = metric_fill
-        cell_v.alignment = center
-        cell_v.border = thin_border
-        cell_l = ws.cell(row=11, column=col, value=lbl)
-        cell_l.font = metric_lbl_font
-        cell_l.fill = metric_fill
-        cell_l.alignment = center
-        cell_l.border = thin_border
-
-    # Additional info
-    ws.merge_cells('A14:F14')
-    ws.cell(row=14, column=1, value=f"Busiest Day: {busiest_day}   |   Days in Period: {len(day_map)}   |   Total Events Logged: {len(events)}").font = Font(name='Calibri', size=10, color=GRAY_400)
-    ws.cell(row=14, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=14, column=1).fill = cover_fill
-
-    for c in range(1, 7):
-        ws.column_dimensions[get_column_letter(c)].width = 22
-    ws.sheet_view.showGridLines = False
-
-    # ══════════ Sheet 2: Daily Breakdown ══════════
-    ws2 = wb.create_sheet("Daily Breakdown")
-    ws2.sheet_properties.tabColor = BLUE
-    headers2 = ["Date", "Day of Week", "Sessions", "Total Hours", "Avg Session (min)", "Longest Session (min)"]
-    ws2.append(headers2)
-    style_header_row(ws2, 1, len(headers2))
-
-    daily_sorted = {}
-    for s in sessions:
-        d = s["start_time"][:10]
-        if d not in daily_sorted:
-            daily_sorted[d] = {"sessions": 0, "minutes": 0, "longest": 0}
-        daily_sorted[d]["sessions"] += 1
-        daily_sorted[d]["minutes"] += s["duration_minutes"]
-        daily_sorted[d]["longest"] = max(daily_sorted[d]["longest"], s["duration_minutes"])
-
-    for i, (day, v) in enumerate(sorted(daily_sorted.items()), 2):
-        try:
-            dow = datetime.fromisoformat(day + "T00:00:00").strftime('%A')
-        except Exception:
-            dow = ""
-        ws2.append([day, dow, v["sessions"], round(v["minutes"] / 60, 1),
-                     round(v["minutes"] / v["sessions"], 1) if v["sessions"] else 0,
-                     round(v["longest"], 1)])
-        style_data_row(ws2, i, len(headers2), alt=(i % 2 == 0))
-
-    r = ws2.max_row + 1
-    ws2.cell(row=r, column=1, value="TOTAL")
-    ws2.cell(row=r, column=2, value="")
-    ws2.cell(row=r, column=3, value=total_sessions)
-    ws2.cell(row=r, column=4, value=round(total_mins / 60, 1))
-    ws2.cell(row=r, column=5, value=avg_dur)
-    ws2.cell(row=r, column=6, value="")
-    style_total_row(ws2, r, len(headers2))
-    auto_width(ws2)
-    freeze_below_header(ws2)
-
-    # ══════════ Sheet 3: Per-PC Breakdown ══════════
-    ws3 = wb.create_sheet("Per-PC Breakdown")
-    ws3.sheet_properties.tabColor = GREEN
-    headers3 = ["PC Name", "Sessions", "Total Hours", "Avg Session (min)", "Longest (min)", "Shortest (min)", "% of Usage"]
-    ws3.append(headers3)
-    style_header_row(ws3, 1, len(headers3))
-
-    sorted_pcs = sorted(pc_map.items(), key=lambda x: x[1]["minutes"], reverse=True)
-    for i, (pc, v) in enumerate(sorted_pcs, 2):
-        pct = round((v["minutes"] / total_mins) * 100, 1) if total_mins else 0
-        shortest = round(v["shortest"], 1) if v["shortest"] != float('inf') else 0
-        ws3.append([pc, v["sessions"], round(v["minutes"] / 60, 1),
-                     round(v["minutes"] / v["sessions"], 1) if v["sessions"] else 0,
-                     round(v["longest"], 1), shortest, f"{pct}%"])
-        style_data_row(ws3, i, len(headers3), alt=(i % 2 == 0))
-        # Highlight top 3 PCs
-        if i <= 4:
-            for c in range(1, len(headers3) + 1):
-                ws3.cell(row=i, column=c).fill = green_fill
-
-    r = ws3.max_row + 1
-    ws3.cell(row=r, column=1, value="TOTAL")
-    ws3.cell(row=r, column=2, value=total_sessions)
-    ws3.cell(row=r, column=3, value=round(total_mins / 60, 1))
-    ws3.cell(row=r, column=4, value=avg_dur)
-    ws3.cell(row=r, column=5, value="")
-    ws3.cell(row=r, column=6, value="")
-    ws3.cell(row=r, column=7, value="100%")
-    style_total_row(ws3, r, len(headers3))
-    auto_width(ws3)
-    freeze_below_header(ws3)
-
-    # ══════════ Sheet 4: Peak Hours Heatmap ══════════
-    ws4 = wb.create_sheet("Peak Hours")
-    ws4.sheet_properties.tabColor = AMBER
-    heatmap = [[0] * 24 for _ in range(7)]
-    day_labels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    for s in sessions:
-        try:
-            st = datetime.fromisoformat(s["start_time"])
-            heatmap[st.weekday()][st.hour] += 1
-        except Exception:
-            pass
-
-    hour_headers = ["Day"] + [f"{h:02d}:00" for h in range(24)]
-    ws4.append(hour_headers)
-    style_header_row(ws4, 1, len(hour_headers))
-
-    max_val = max(max(row) for row in heatmap) if any(any(r) for r in heatmap) else 1
-    hm_fills = [
-        PatternFill(start_color=PURPLE_SOFT, end_color=PURPLE_SOFT, fill_type='solid'),
-        PatternFill(start_color=PURPLE_MED, end_color=PURPLE_MED, fill_type='solid'),
-        PatternFill(start_color='A78BFA', end_color='A78BFA', fill_type='solid'),
-        PatternFill(start_color=PURPLE, end_color=PURPLE, fill_type='solid'),
-    ]
-
-    for i, (day_name, row_data) in enumerate(zip(day_labels, heatmap), 2):
-        ws4.cell(row=i, column=1, value=day_name).font = bold_font
-        ws4.cell(row=i, column=1).border = thin_border
-        ws4.cell(row=i, column=1).alignment = left_a
-        for h, val in enumerate(row_data):
-            cell = ws4.cell(row=i, column=h + 2, value=val if val else "")
-            cell.alignment = center
-            cell.border = thin_border
-            cell.font = data_font
-            ratio = val / max_val if max_val > 0 else 0
-            if ratio > 0.75:
-                cell.fill = hm_fills[3]
-                cell.font = Font(name='Calibri', size=11, color=WHITE, bold=True)
-            elif ratio > 0.5:
-                cell.fill = hm_fills[2]
-                cell.font = Font(name='Calibri', size=11, color=WHITE)
-            elif ratio > 0.25:
-                cell.fill = hm_fills[1]
-            elif val > 0:
-                cell.fill = hm_fills[0]
-
-    # Row totals
-    ws4.cell(row=1, column=26, value="Total").font = header_font
-    ws4.cell(row=1, column=26).fill = header_fill
-    ws4.cell(row=1, column=26).alignment = center
-    ws4.cell(row=1, column=26).border = thin_border
-    for i, row_data in enumerate(heatmap, 2):
-        cell = ws4.cell(row=i, column=26, value=sum(row_data))
-        cell.font = bold_font
-        cell.alignment = center
-        cell.border = thin_border
-
-    ws4.column_dimensions['A'].width = 14
-    for c in range(2, 27):
-        ws4.column_dimensions[get_column_letter(c)].width = 7
-    freeze_below_header(ws4)
-
-    # ══════════ Sheet 5: All Sessions ══════════
-    ws5 = wb.create_sheet("All Sessions")
-    ws5.sheet_properties.tabColor = PURPLE
-    headers5 = ["PC Name", "Start Time", "End Time", "Duration (min)", "End Reason"]
-    ws5.append(headers5)
-    style_header_row(ws5, 1, len(headers5))
-
-    for i, s in enumerate(sorted(sessions, key=lambda x: x["start_time"], reverse=True), 2):
-        try:
-            st = datetime.fromisoformat(s["start_time"]).strftime('%Y-%m-%d %H:%M')
-        except Exception:
-            st = s["start_time"]
-        try:
-            et = datetime.fromisoformat(s["end_time"]).strftime('%Y-%m-%d %H:%M')
-        except Exception:
-            et = s["end_time"]
-        ws5.append([s["pc_name"], st, et, s["duration_minutes"], s.get("end_reason", "")])
-        style_data_row(ws5, i, len(headers5), alt=(i % 2 == 0))
-    auto_width(ws5)
-    freeze_below_header(ws5)
-
-    # ══════════ Sheet 6: Event Log ══════════
-    ws6 = wb.create_sheet("Event Log")
-    ws6.sheet_properties.tabColor = RED
-    headers6 = ["Timestamp", "PC Name", "Event", "From Status", "To Status", "From State", "To State"]
-    ws6.append(headers6)
-    style_header_row(ws6, 1, len(headers6))
-
-    event_fills = {
-        "shutdown": PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid'),
-        "shutting_down": PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid'),
-        "boot": PatternFill(start_color='D1FAE5', end_color='D1FAE5', fill_type='solid'),
-        "user_login": PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid'),
-        "user_logging_in": PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid'),
-        "user_logout": PatternFill(start_color='DBEAFE', end_color='DBEAFE', fill_type='solid'),
-    }
-    sorted_events = sorted(events, key=lambda x: x.get("timestamp", ""), reverse=True)[:2000]
-
-    for i, ev in enumerate(sorted_events, 2):
-        try:
-            ts = datetime.fromisoformat(ev.get("timestamp", "")).strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
-            ts = ev.get("timestamp", "")
-        ws6.append([
-            ts, ev.get("pc_name", ""), ev.get("event", ""),
-            ev.get("from_status", ""), ev.get("to_status", ""),
-            ev.get("from_state", ""), ev.get("to_state", "")
-        ])
-        style_data_row(ws6, i, len(headers6), alt=(i % 2 == 0))
-        # Color-code event type column
-        evt = ev.get("event", "")
-        if evt in event_fills:
-            ws6.cell(row=i, column=3).fill = event_fills[evt]
-
-    auto_width(ws6)
-    freeze_below_header(ws6)
-
-    # ══════════ Sheet 7: Hourly Summary ══════════
-    ws7 = wb.create_sheet("Hourly Summary")
-    ws7.sheet_properties.tabColor = '6366F1'
-    headers7 = ["Hour", "Sessions", "Visual"]
-    ws7.append(headers7)
-    style_header_row(ws7, 1, len(headers7))
-
-    max_hourly = max(hourly_counts) if any(hourly_counts) else 1
-    for i, (h, cnt) in enumerate(enumerate(hourly_counts), 2):
-        hr_label = f"{h:02d}:00"
-        bar = "█" * round(cnt / max_hourly * 20) if max_hourly else ""
-        ws7.append([hr_label, cnt, bar])
-        style_data_row(ws7, i, 2, alt=(i % 2 == 0))
-        bar_cell = ws7.cell(row=i, column=3)
-        bar_cell.font = Font(name='Calibri', size=11, color=PURPLE)
-        bar_cell.alignment = left_a
-        bar_cell.border = thin_border
-        if cnt == max_hourly and cnt > 0:
-            for c in range(1, 4):
-                ws7.cell(row=i, column=c).fill = green_fill
-
-    auto_width(ws7, min_w=8, max_w=30)
-    ws7.column_dimensions['C'].width = 28
-    freeze_below_header(ws7)
-
-    # ── Print setup for all sheets ──
-    for ws_item in wb.worksheets:
-        ws_item.page_setup.orientation = 'landscape'
-        ws_item.page_setup.fitToWidth = 1
-        ws_item.page_setup.fitToHeight = 0
-
-    # Write to memory buffer
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f"Arena_Report_{label}.xlsx"
-    return Response(
-        output.getvalue(),
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
-
 @app.route('/api/reaction-roles')
 @api_auth_required
 def api_reaction_roles():
@@ -5433,11 +6655,78 @@ def api_save_reaction_roles():
 ROSTERS_FILE = os.path.join(DATA_DIR, "rosters.json")
 TEAMS_FILE = os.path.join(DATA_DIR, "teams.json")
 
+# PII fields that must be encrypted at rest in rosters.json
+PLAYER_PII_FIELDS = [
+    'purdue_email', 'personal_email', 'puid', 'phone', 'hometown',
+    'year_in_school', 'gpa', 'major', 'jersey_details', 'additional_notes',
+    'schedule_images'
+]
+
+ROSTER_ENCRYPT_KEY_FILE = os.path.join(DATA_DIR, ".roster_encrypt_key")
+_roster_fernet = None
+
+def get_roster_fernet():
+    """Load or generate the Fernet encryption key for roster PII."""
+    global _roster_fernet
+    if _roster_fernet is not None:
+        return _roster_fernet
+    if not os.path.exists(ROSTER_ENCRYPT_KEY_FILE):
+        key = Fernet.generate_key()
+        os.makedirs(os.path.dirname(ROSTER_ENCRYPT_KEY_FILE), exist_ok=True)
+        with open(ROSTER_ENCRYPT_KEY_FILE, 'wb') as f:
+            f.write(key)
+    else:
+        with open(ROSTER_ENCRYPT_KEY_FILE, 'rb') as f:
+            key = f.read().strip()
+    _roster_fernet = Fernet(key)
+    return _roster_fernet
+
+def encrypt_player_pii(pii_dict):
+    """Encrypt a dict of PII fields to a Fernet token string."""
+    f = get_roster_fernet()
+    return f.encrypt(json.dumps(pii_dict, ensure_ascii=False).encode()).decode()
+
+def decrypt_player_pii(token):
+    """Decrypt a Fernet token string back to a PII fields dict."""
+    try:
+        f = get_roster_fernet()
+        return json.loads(f.decrypt(token.encode()))
+    except Exception:
+        return {}
+
 def load_rosters():
-    return load_json_file(ROSTERS_FILE, {"players": []})
+    data = load_json_file(ROSTERS_FILE, {"players": []})
+    for player in data.get("players", []):
+        if "encrypted_pii" in player:
+            pii = decrypt_player_pii(player.pop("encrypted_pii"))
+            player.update(pii)
+    return data
 
 def save_rosters(data):
-    save_json_file(ROSTERS_FILE, data)
+    export = copy.deepcopy(data)
+    for player in export.get("players", []):
+        pii = {}
+        for field in PLAYER_PII_FIELDS:
+            if field in player:
+                pii[field] = player.pop(field)
+        if pii:
+            player["encrypted_pii"] = encrypt_player_pii(pii)
+    save_json_file(ROSTERS_FILE, export)
+
+def migrate_rosters_pii():
+    """One-time migration: encrypt any existing plaintext PII in rosters.json."""
+    try:
+        raw = load_json_file(ROSTERS_FILE, {"players": []})
+        needs_migration = any(
+            any(f in p for f in PLAYER_PII_FIELDS)
+            for p in raw.get("players", [])
+        )
+        if needs_migration:
+            # load_rosters() decrypts existing encrypted_pii, save_rosters() re-encrypts everything
+            save_rosters(load_rosters())
+            print("[Roster] PII migration complete — plaintext fields encrypted.")
+    except Exception as e:
+        print(f"[Roster] PII migration error: {e}")
 
 def load_teams():
     return load_json_file(TEAMS_FILE, {"teams": []})
@@ -5472,6 +6761,7 @@ def add_audit_log(action_type, target_id, details, user_name=None):
 
 @app.route('/api/rosters')
 @api_auth_required
+@api_perm_required('page.rosters')
 def api_rosters():
     """Get all roster data including players, teams, and pending registrations"""
     rosters = load_rosters()
@@ -5485,9 +6775,7 @@ def api_rosters():
                 discord_id = fname.split("_")[0]
                 filepath = os.path.join(VARSITY_REG_DIR, fname)
                 try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        records = json.load(f)
-                    # Get the latest pending registration
+                    records = load_json_file(filepath, [])
                     for record in reversed(records):
                         if record.get("status", "").lower() == "pending":
                             record["discord_id"] = discord_id
@@ -5521,9 +6809,12 @@ def api_rosters():
             reg["discord_username"] = member.get("username") or member.get("name")
             reg["avatar"] = member.get("avatar")
     
+    players_out = rosters.get("players", [])
+    teams_out = teams.get("teams", [])
+    
     return jsonify({
-        "players": rosters.get("players", []),
-        "teams": teams.get("teams", []),
+        "players": players_out,
+        "teams": teams_out,
         "pending": pending
     })
 
@@ -5556,9 +6847,14 @@ def api_add_player():
             "tracker": data.get("tracker", existing.get("tracker")),
             "is_captain": data.get("is_captain", existing.get("is_captain", False)),
             "team_id": data.get("team_id", existing.get("team_id")),
+            "purdue_email": data.get("purdue_email", existing.get("purdue_email")),
+            "personal_email": data.get("personal_email", existing.get("personal_email")),
             "status": data.get("status", existing.get("status", "active")),
             "role": data.get("role", existing.get("role")),
             "secondary_role": data.get("secondary_role", existing.get("secondary_role")),
+            "coach_title": data.get("coach_title", existing.get("coach_title")),
+            "phone": data.get("phone", existing.get("phone")),
+            "notes": data.get("notes", existing.get("notes")),
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
     else:
@@ -5578,6 +6874,9 @@ def api_add_player():
             "status": data.get("status", "active"),
             "role": data.get("role"),
             "secondary_role": data.get("secondary_role"),
+            "coach_title": data.get("coach_title"),
+            "phone": data.get("phone"),
+            "notes": data.get("notes"),
             "stats": {
                 "matches_played": 0,
                 "wins": 0,
@@ -5850,8 +7149,7 @@ def api_approve_registration():
         return jsonify({"error": "Registration not found"}), 404
     
     try:
-        with open(record_path, 'r', encoding='utf-8') as f:
-            records = json.load(f)
+        records = load_json_file(record_path, [])
         
         # Find and update the pending registration
         player_data = None
@@ -5884,6 +7182,7 @@ def api_approve_registration():
                     "tracker": player_data.get("Tracker Link"),
                     "purdue_email": player_data.get("Purdue Email"),
                     "personal_email": player_data.get("Personal Email"),
+                    "coach_title": player_data.get("Coach Title") or ("Head Coach" if player_data.get("player_type") == "coach" else None),
                     "is_captain": False,
                     "team_id": None,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -5935,8 +7234,7 @@ def api_deny_registration():
         return jsonify({"error": "Registration not found"}), 404
     
     try:
-        with open(record_path, 'r', encoding='utf-8') as f:
-            records = json.load(f)
+        records = load_json_file(record_path, [])
         
         for record in reversed(records):
             if record.get("status", "").lower() == "pending":
@@ -6030,7 +7328,12 @@ def api_assign_team():
             
             # Keep team_id for backward compatibility (use first team)
             player["team_id"] = player["team_ids"][0] if player["team_ids"] else None
-            player["player_type"] = team_type if team else player_type
+            # Coaches keep their own type — they don't inherit the team's varsity/jv tier
+            is_coach = player.get("player_type") == "coach" or player_type == "coach"
+            if is_coach:
+                player["player_type"] = "coach"
+            else:
+                player["player_type"] = team_type if team else player_type
             # Update game from team so role sync works correctly
             if team_game:
                 player["game"] = team_game
@@ -6044,7 +7347,7 @@ def api_assign_team():
             "discord_id": str(discord_id),
             "team_ids": [team_id] if team_id else [],
             "team_id": team_id,  # backward compatibility
-            "player_type": team_type if team else player_type,
+            "player_type": "coach" if player_type == "coach" else (team_type if team else player_type),
             "is_captain": False,
             "added_at": datetime.now(timezone.utc).isoformat()
         }
@@ -6066,7 +7369,7 @@ def api_assign_team():
             "type": "sync_team_roles",
             "discord_id": discord_id,
             "team_id": team_id,
-            "player_type": team_type,
+            "player_type": "coach" if player_type == "coach" else team_type,
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
@@ -6080,6 +7383,62 @@ def api_assign_team():
         )
     
     return jsonify({"success": True, "message": f"Player {action_text} {team_name}. Roles will be synced shortly."})
+
+# ============ Captains Management API Endpoints (admin-only) ============
+
+@app.route('/api/rosters/coaches', methods=['GET'])
+@api_auth_required
+@api_perm_required('rosters.manage')
+def api_get_coaches():
+    """Get all coach roster entries. Coaches are admin-managed only — marking a
+    player as Coach just tags their roster record so Discord role sync applies
+    the Coach role; there is no separate website login for them."""
+    rosters = load_rosters()
+    teams = load_teams()
+    team_names = {t.get("id"): t.get("name") for t in teams.get("teams", [])}
+    
+    coach_players = [p for p in rosters.get("players", []) if (p.get("player_type") or "").lower() == "coach"]
+    
+    result = []
+    for player in coach_players:
+        discord_id = str(player.get("discord_id"))
+        team_ids = player.get("team_ids") or ([player["team_id"]] if player.get("team_id") else [])
+        result.append({
+            "discord_id": discord_id,
+            "full_name": player.get("full_name"),
+            "coach_title": player.get("coach_title"),
+            "player_team_ids": team_ids,
+            "player_team_names": [team_names.get(tid, tid) for tid in team_ids],
+        })
+    
+    return jsonify({"coaches": result})
+
+@app.route('/api/rosters/captains', methods=['GET'])
+@api_auth_required
+@api_perm_required('rosters.manage')
+def api_get_captains():
+    """Get all players marked as captain. Captains are admin-managed only —
+    marking a player as Captain just tags their roster record so Discord role
+    sync applies the Captain role; there is no separate website login for them."""
+    rosters = load_rosters()
+    teams = load_teams()
+    team_names = {t.get("id"): t.get("name") for t in teams.get("teams", [])}
+    
+    captain_players = [p for p in rosters.get("players", []) if p.get("is_captain")]
+    
+    result = []
+    for player in captain_players:
+        discord_id = str(player.get("discord_id"))
+        team_ids = player.get("team_ids") or ([player["team_id"]] if player.get("team_id") else [])
+        result.append({
+            "discord_id": discord_id,
+            "full_name": player.get("full_name"),
+            "game": player.get("game"),
+            "player_team_ids": team_ids,
+            "player_team_names": [team_names.get(tid, tid) for tid in team_ids],
+        })
+    
+    return jsonify({"captains": result})
 
 # ============ Audit Log API Endpoints ============
 
@@ -6599,12 +7958,14 @@ def api_sync_roles_preview():
     
     role_settings = load_json_file(TEAM_ROLE_SETTINGS_FILE, {
         "mapping": {},
-        "varsity_role_id": None
+        "varsity_role_id": None,
+        "coach_role_id": None
     })
     
     players = rosters.get("players", [])
     role_mapping = role_settings.get("mapping", {})
     general_varsity_role = role_settings.get("varsity_role_id")  # This is now the general roster role for ALL players
+    coach_role_id = role_settings.get("coach_role_id")
     
     to_add = []
     to_remove = []
@@ -6617,71 +7978,90 @@ def api_sync_roles_preview():
         if not user_id:
             continue
         
-        # Get game from the player's assigned TEAM
-        team_id = player.get("team_id")
-        team = teams_by_id.get(team_id) if team_id else None
+        is_coach = (player.get("player_type") or "").lower() == "coach"
         
-        # Skip players not assigned to any team
-        if not team_id or not team:
+        # A player can be on multiple teams — sync roles for every team they're on,
+        # not just the first (team_id is kept only for backward compatibility).
+        player_team_ids = player.get("team_ids") or ([player["team_id"]] if player.get("team_id") else [])
+        if not player_team_ids:
             continue
         
-        # Use team's game and type
-        game = team.get("game", "")
-        player_type = team.get("type", player.get("player_type", "")).lower()
-        username = player.get("discord_name", player.get("name", user_id))
-        team_name = team.get("name", "Unknown Team")
-        
-        # Apply filters based on team's game and type
-        if game_filter != 'all' and game.lower() != game_filter.lower():
-            continue
-        if type_filter != 'all' and player_type != type_filter.lower():
-            continue
-        
-        if user_id not in expected_roles:
-            expected_roles[user_id] = {"roles": set(), "username": username}
-        
-        # Case-insensitive lookup for game roles
-        game_roles = {}
-        for mapping_game, roles in role_mapping.items():
-            if mapping_game.lower() == game.lower():
-                game_roles = roles
-                break
-        
-        if player_type == "varsity" and game_roles.get("varsity"):
-            expected_roles[user_id]["roles"].add(game_roles["varsity"])
-            to_add.append({
-                "user_id": user_id,
-                "username": username,
-                "role_id": game_roles["varsity"],
-                "role_name": f"{game} Varsity",
-                "game": game,
-                "team_name": team_name,
-                "type": "Varsity"
-            })
-        elif player_type == "jv" and game_roles.get("jv"):
-            expected_roles[user_id]["roles"].add(game_roles["jv"])
-            to_add.append({
-                "user_id": user_id,
-                "username": username,
-                "role_id": game_roles["jv"],
-                "role_name": f"{game} JV",
-                "game": game,
-                "team_name": team_name,
-                "type": "JV"
-            })
-        
-        # ALL roster players get the general roster role (regardless of varsity/jv)
-        if general_varsity_role:
-            expected_roles[user_id]["roles"].add(general_varsity_role)
-            to_add.append({
-                "user_id": user_id,
-                "username": username,
-                "role_id": general_varsity_role,
-                "role_name": "Esports Team",
-                "game": game,
-                "team_name": team_name,
-                "type": "Roster (General)"
-            })
+        for team_id in player_team_ids:
+            team = teams_by_id.get(team_id)
+            if not team:
+                continue
+            
+            # Use team's game and type (coaches keep their own type — they don't
+            # inherit the team's varsity/jv competitive tier)
+            game = team.get("game", "")
+            player_type = "coach" if is_coach else team.get("type", player.get("player_type", "")).lower()
+            username = player.get("discord_name", player.get("name", user_id))
+            team_name = team.get("name", "Unknown Team")
+            
+            # Apply filters based on team's game and type
+            if game_filter != 'all' and game.lower() != game_filter.lower():
+                continue
+            if type_filter != 'all' and player_type != type_filter.lower():
+                continue
+            
+            if user_id not in expected_roles:
+                expected_roles[user_id] = {"roles": set(), "username": username}
+            
+            if is_coach:
+                if coach_role_id:
+                    expected_roles[user_id]["roles"].add(coach_role_id)
+                    to_add.append({
+                        "user_id": user_id,
+                        "username": username,
+                        "role_id": coach_role_id,
+                        "role_name": f"{game} Coach" if game else "Coach",
+                        "game": game,
+                        "team_name": team_name,
+                        "type": "Coach"
+                    })
+            else:
+                # Case-insensitive lookup for game roles
+                game_roles = {}
+                for mapping_game, roles in role_mapping.items():
+                    if mapping_game.lower() == game.lower():
+                        game_roles = roles
+                        break
+                
+                if player_type == "varsity" and game_roles.get("varsity"):
+                    expected_roles[user_id]["roles"].add(game_roles["varsity"])
+                    to_add.append({
+                        "user_id": user_id,
+                        "username": username,
+                        "role_id": game_roles["varsity"],
+                        "role_name": f"{game} Varsity",
+                        "game": game,
+                        "team_name": team_name,
+                        "type": "Varsity"
+                    })
+                elif player_type == "jv" and game_roles.get("jv"):
+                    expected_roles[user_id]["roles"].add(game_roles["jv"])
+                    to_add.append({
+                        "user_id": user_id,
+                        "username": username,
+                        "role_id": game_roles["jv"],
+                        "role_name": f"{game} JV",
+                        "game": game,
+                        "team_name": team_name,
+                        "type": "JV"
+                    })
+            
+            # ALL roster players (including coaches) get the general roster role
+            if general_varsity_role:
+                expected_roles[user_id]["roles"].add(general_varsity_role)
+                to_add.append({
+                    "user_id": user_id,
+                    "username": username,
+                    "role_id": general_varsity_role,
+                    "role_name": "Esports Team",
+                    "game": game,
+                    "team_name": team_name,
+                    "type": "Roster (General)"
+                })
     
     # Note: The actual check for which users have roles and which don't 
     # would require Discord API access. For now, we show what WOULD be synced.
@@ -6720,13 +8100,15 @@ def api_sync_roles_execute():
     role_settings = load_json_file(TEAM_ROLE_SETTINGS_FILE, {
         "mapping": {},
         "varsity_role_id": None,
-        "captain_role_id": None
+        "captain_role_id": None,
+        "coach_role_id": None
     })
     
     players = rosters.get("players", [])
     role_mapping = role_settings.get("mapping", {})
     general_varsity_role = role_settings.get("varsity_role_id")  # This is now the general roster role for ALL players
     captain_role_id = role_settings.get("captain_role_id")  # Role for team captains
+    coach_role_id = role_settings.get("coach_role_id")  # Role for coaches
     
     # Build sync data with job_id for progress tracking
     sync_data = {
@@ -6740,6 +8122,7 @@ def api_sync_roles_execute():
         "role_mapping": role_mapping,
         "general_varsity_role": general_varsity_role,  # This is now the general roster role for ALL players
         "captain_role_id": captain_role_id,  # Role for team captains
+        "coach_role_id": coach_role_id,  # Role for coaches
         "allow_removal": allow_removal  # Only remove roles if explicitly confirmed by user
     }
     
@@ -6748,67 +8131,79 @@ def api_sync_roles_execute():
         if not user_id:
             continue
         
-        # Get game from the player's assigned TEAM, not from player record
-        team_id = player.get("team_id")
-        team = teams_by_id.get(team_id) if team_id else None
+        is_coach = (player.get("player_type") or "").lower() == "coach"
         
-        # Use team's game if available, fall back to player's game field
-        game = team.get("game", "") if team else player.get("game", "")
-        
-        # Use team's type if available, fall back to player's type
-        player_type = (team.get("type", "") if team else player.get("player_type", "")).lower()
-        if not player_type:
-            player_type = player.get("player_type", "").lower()
-        
-        # Skip players not assigned to any team
-        if not team_id:
+        # A player can be on multiple teams — collect roles for every team they're
+        # on, not just the first (team_id is kept only for backward compatibility).
+        player_team_ids = player.get("team_ids") or ([player["team_id"]] if player.get("team_id") else [])
+        if not player_team_ids:
             print(f"[SYNC] Skipping player {user_id} - not assigned to any team")
             continue
         
-        # Apply filters based on team's game and type
-        if game_filter != 'all' and game.lower() != game_filter.lower():
-            continue
-        if type_filter != 'all' and player_type != type_filter.lower():
-            continue
+        player_roles = set()
+        matched_games = []
+        matched_team_names = []
+        matched_type = "coach" if is_coach else None
         
-        player_roles = []
+        for team_id in player_team_ids:
+            team = teams_by_id.get(team_id)
+            if not team:
+                continue
+            
+            game = team.get("game", "") if team else player.get("game", "")
+            player_type = "coach" if is_coach else (team.get("type", "") or player.get("player_type", "")).lower()
+            
+            # Apply filters based on team's game and type
+            if game_filter != 'all' and game.lower() != game_filter.lower():
+                continue
+            if type_filter != 'all' and player_type != type_filter.lower():
+                continue
+            
+            matched_games.append(game)
+            matched_team_names.append(team.get("name", "Unknown"))
+            if not is_coach:
+                matched_type = player_type
+            
+            if is_coach:
+                if coach_role_id:
+                    player_roles.add(coach_role_id)
+            else:
+                # Case-insensitive lookup for game roles
+                game_roles = {}
+                for mapping_game, roles in role_mapping.items():
+                    if mapping_game.lower() == game.lower():
+                        game_roles = roles
+                        break
+                
+                if player_type == "varsity" and game_roles.get("varsity"):
+                    player_roles.add(game_roles["varsity"])
+                elif player_type == "jv" and game_roles.get("jv"):
+                    player_roles.add(game_roles["jv"])
+            
+            # ALL roster players (including coaches) get the general roster role
+            if general_varsity_role:
+                player_roles.add(general_varsity_role)
         
-        # Case-insensitive lookup for game roles
-        game_roles = {}
-        for mapping_game, roles in role_mapping.items():
-            if mapping_game.lower() == game.lower():
-                game_roles = roles
-                break
-        
-        # Add game-specific role based on player type
-        if player_type == "varsity":
-            if game_roles.get("varsity"):
-                player_roles.append(game_roles["varsity"])
-        elif player_type == "jv":
-            if game_roles.get("jv"):
-                player_roles.append(game_roles["jv"])
-        
-        # ALL roster players get the general roster role (regardless of varsity/jv)
-        if general_varsity_role:
-            player_roles.append(general_varsity_role)
+        if not matched_team_names:
+            continue  # no team matched the game/type filters
         
         # Captains get the captain role
         is_captain = player.get("is_captain", False)
         if is_captain and captain_role_id:
-            player_roles.append(captain_role_id)
+            player_roles.add(captain_role_id)
         
         if player_roles:
             sync_data["players"].append({
                 "user_id": user_id,
-                "username": player.get("discord_name", player.get("name")),
-                "game": game,
-                "team_name": team.get("name", "Unknown") if team else "Unknown",
-                "player_type": player_type,
+                "username": player.get("full_name") or player.get("discord_username") or "Unknown",
+                "game": matched_games[0] if matched_games else "",
+                "team_name": ", ".join(matched_team_names),
+                "player_type": matched_type or (player.get("player_type") or "").lower(),
                 "is_captain": is_captain,
-                "expected_roles": player_roles
+                "expected_roles": list(player_roles)
             })
         else:
-            print(f"[SYNC] Warning: Player {user_id} on team {team.get('name') if team else 'Unknown'} (game: {game}, type: {player_type}) has no matching role mapping")
+            print(f"[SYNC] Warning: Player {user_id} on team(s) {', '.join(matched_team_names)} has no matching role mapping")
     
     # Queue for bot to process (thread-safe)
     queue_file = os.path.join(DATA_DIR, "discord_notification_queue.json")
@@ -6906,7 +8301,7 @@ def api_create_announcement():
         return jsonify({"error": "Title is required"}), 400
     if not data.get("message"):
         return jsonify({"error": "Message is required"}), 400
-    
+
     announcements = load_announcements()
     items = announcements.get("announcements", [])
     
@@ -7109,8 +8504,7 @@ def api_export_rosters_csv():
                 if fname.endswith("_varsity.json"):
                     uid = fname.replace("_varsity.json", "")
                     try:
-                        with open(os.path.join(VARSITY_REG_DIR, fname), 'r', encoding='utf-8') as f:
-                            records = json.load(f)
+                        records = load_json_file(os.path.join(VARSITY_REG_DIR, fname), [])
                         if isinstance(records, list):
                             # Use latest approved registration, fallback to latest overall
                             approved = [r for r in records if r.get("status", "").lower() == "approved"]
@@ -7151,9 +8545,9 @@ def api_export_rosters_csv():
                 player.get("purdue_email", ""),
                 player.get("personal_email", ""),
                 player.get("tracker", ""),
-                acad.get("hometown", ""),
-                acad.get("major", ""),
-                acad.get("year_in_school", ""),
+                acad.get("hometown", "") or player.get("hometown", ""),
+                acad.get("major", "") or player.get("major", ""),
+                acad.get("year_in_school", "") or player.get("year_in_school", ""),
                 player.get("availability", ""),
                 player.get("status_notes", ""),
                 player.get("created_at", ""),
@@ -7886,23 +9280,15 @@ def api_add_to_watchlist():
     watchlist.setdefault('watched_users', []).append(watch_entry)
     save_watchlist(watchlist)
     
-    # Add to user's record file so it shows up when searching
-    record_file = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    records = load_json_file(record_file, [])
-    
-    records.append({
-        "user_id": str(user_id),
-        "type": "Watch",
-        "reason": reason,
-        "notes": notes,
-        "alert_level": alert_level,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "moderator": get_moderator_name(),
-        "moderator_id": get_moderator_id(),
-        "source": "website"
-    })
-    
-    save_json_file(record_file, records)
+    # Add to user's record so it shows up when searching
+    user_db.add_record(
+        user_id=str(user_id),
+        type_="Watch",
+        reason=reason,
+        moderator=get_moderator_name(),
+        moderator_id=get_moderator_id(),
+        source="website"
+    )
     
     # Log activity
     log_activity(
@@ -7973,22 +9359,8 @@ def api_remove_from_watchlist(user_id):
     if len(watchlist['watched_users']) < original_count:
         save_watchlist(watchlist)
         
-        # Handle user's record file
-        record_file = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-        if os.path.exists(record_file):
-            records = load_json_file(record_file, [])
-            # Filter out Watch records
-            records = [r for r in records if r.get('type') != 'Watch']
-            
-            if records:
-                # User has other records, keep them
-                save_json_file(record_file, records)
-            else:
-                # No other records, delete the file entirely
-                try:
-                    os.remove(record_file)
-                except:
-                    pass
+        # Remove Watch records from the DB
+        user_db.remove_watch_records(user_id)
         
         # Log activity
         log_activity(
@@ -8054,6 +9426,7 @@ def api_log_watchlist_activity(user_id):
 
 @app.route('/api/members')
 @api_auth_required
+@api_perm_required('page.members')
 def api_members():
     """Get all members from the members cache file"""
     members = load_json_file(MEMBERS_CACHE_FILE, [])
@@ -8061,6 +9434,7 @@ def api_members():
 
 @app.route('/api/members/<user_id>')
 @api_auth_required
+@api_perm_required('page.members')
 def api_member_detail(user_id):
     """Get detailed info for a specific member"""
     members = load_json_file(MEMBERS_CACHE_FILE, [])
@@ -8070,14 +9444,14 @@ def api_member_detail(user_id):
         return jsonify({"error": "Member not found"}), 404
     
     # Get user's moderation records
-    records = load_json_file(os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json"), [])
+    records = user_db.get_records(user_id)
     
     # Get guest time if applicable
     guest_time = load_json_file(os.path.join(GUEST_TIMES_DIR, f"{user_id}_guest_time.json"), None)
     
     # Get varsity registration if applicable
     varsity_reg = load_json_file(os.path.join(VARSITY_REG_DIR, f"{user_id}_varsity.json"), None)
-    
+
     # Get watchlist status
     watchlist_entry = get_watched_user(user_id)
     
@@ -8120,27 +9494,21 @@ def api_member_action(user_id):
     
     # Handle warnings differently - they don't need bot processing
     if action == 'warn':
-        # Add warning directly to user's record
-        record_file = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-        records = load_json_file(record_file, [])
-        
-        records.append({
-            "user_id": str(user_id),
-            "type": "Warning",
-            "reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "moderator": moderator_name,
-            "moderator_id": moderator_id,
-            "source": "website"
-        })
-        
-        save_json_file(record_file, records)
+        # Add violation directly to DB
+        user_db.add_record(
+            user_id=str(user_id),
+            type_="Violation",
+            reason=reason,
+            moderator=moderator_name,
+            moderator_id=moderator_id,
+            source="website"
+        )
         
         # Log the activity
         log_activity(
             action="warn",
             category="moderation",
-            details=f"Warned user: {reason}",
+            details=f"Issued violation: {reason}",
             target_id=user_id,
             target_name=target_name,
             success=True
@@ -8149,7 +9517,7 @@ def api_member_action(user_id):
         # Add live notification
         add_live_notification(
             'warning',
-            'Member Warned',
+            'Member Violation Issued',
             f"{target_name} - {reason[:50]}{'...' if len(reason) > 50 else ''}",
             link='/moderation',
             target_id=user_id
@@ -8165,7 +9533,7 @@ def api_member_action(user_id):
         
         return jsonify({
             "success": True, 
-            "message": f"Warning issued to {target_name} and added to their record."
+            "message": f"Violation issued to {target_name} and added to their record."
         })
     
     # For other actions, queue for bot processing (thread-safe)
@@ -8268,6 +9636,7 @@ def api_member_send_varsity_registration(user_id):
 
 @app.route('/api/varsity-registrations')
 @api_auth_required
+@api_perm_required('page.varsity')
 def api_varsity_registrations():
     """Get all varsity registrations"""
     registrations = []
@@ -8278,30 +9647,29 @@ def api_varsity_registrations():
                 user_id = fname.replace("_varsity.json", "")
                 filepath = os.path.join(VARSITY_REG_DIR, fname)
                 try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        # Handle both list and dict formats
-                        if isinstance(data, list):
-                            for idx, reg in enumerate(data):
-                                # Transform attachments to proper URLs
-                                if reg.get('data'):
-                                    reg['data']['attachments'] = transform_attachments_to_urls(reg.get('data', {}))
-                                registrations.append({
-                                    "user_id": user_id,
-                                    "file": fname,
-                                    "index": idx,
-                                    **reg
-                                })
-                        else:
+                    data = load_json_file(filepath, [])
+                    # Handle both list and dict formats
+                    if isinstance(data, list):
+                        for idx, reg in enumerate(data):
                             # Transform attachments to proper URLs
-                            if data.get('data'):
-                                data['data']['attachments'] = transform_attachments_to_urls(data.get('data', {}))
+                            if reg.get('data'):
+                                reg['data']['attachments'] = transform_attachments_to_urls(reg.get('data', {}))
                             registrations.append({
                                 "user_id": user_id,
                                 "file": fname,
-                                "index": 0,
-                                **data
+                                "index": idx,
+                                **reg
                             })
+                    else:
+                        # Transform attachments to proper URLs
+                        if data.get('data'):
+                            data['data']['attachments'] = transform_attachments_to_urls(data.get('data', {}))
+                        registrations.append({
+                            "user_id": user_id,
+                            "file": fname,
+                            "index": 0,
+                            **data
+                        })
                 except Exception as e:
                     print(f"Error reading {fname}: {e}")
     
@@ -8311,6 +9679,7 @@ def api_varsity_registrations():
 
 @app.route('/api/varsity-registrations/<user_id>')
 @api_auth_required
+@api_perm_required('page.varsity')
 def api_varsity_registration_detail(user_id):
     """Get detailed varsity registration for a user"""
     filepath = os.path.join(VARSITY_REG_DIR, f"{user_id}_varsity.json")
@@ -8333,8 +9702,7 @@ def api_delete_varsity_registration(user_id):
     if os.path.exists(filepath):
         # First, delete any associated schedule images
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = load_json_file(filepath, [])
             if isinstance(data, list):
                 for entry in data:
                     attachments = entry.get('data', {}).get('attachments', [])
@@ -8355,8 +9723,7 @@ def api_delete_varsity_entry(user_id, index):
     filepath = os.path.join(VARSITY_REG_DIR, f"{user_id}_varsity.json")
     if os.path.exists(filepath):
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = load_json_file(filepath, [])
             
             if isinstance(data, list) and 0 <= index < len(data):
                 # Delete associated schedule images before removing entry
@@ -8379,6 +9746,37 @@ def api_delete_varsity_entry(user_id, index):
             return jsonify({"success": False, "message": str(e)})
     return jsonify({"success": False, "message": "Registration not found"})
 
+@app.route('/api/varsity-registrations/all', methods=['DELETE'])
+@api_auth_required
+@api_perm_required('varsity.delete')
+def api_delete_all_varsity_registrations():
+    """Delete ALL varsity registrations (semester reset)"""
+    if not os.path.exists(VARSITY_REG_DIR):
+        return jsonify({"success": True, "deleted": 0, "message": "No registrations directory found"})
+
+    deleted = 0
+    errors = []
+    for fname in os.listdir(VARSITY_REG_DIR):
+        if not fname.endswith("_varsity.json"):
+            continue
+        filepath = os.path.join(VARSITY_REG_DIR, fname)
+        try:
+            data = load_json_file(filepath, [])
+            # Clean up associated schedule images
+            entries = data if isinstance(data, list) else [data]
+            for entry in entries:
+                attachments = entry.get('data', {}).get('attachments', [])
+                delete_schedule_images(attachments)
+            os.remove(filepath)
+            deleted += 1
+        except Exception as e:
+            errors.append(f"{fname}: {e}")
+
+    msg = f"Deleted {deleted} registration file(s)"
+    if errors:
+        msg += f" with {len(errors)} error(s)"
+    return jsonify({"success": True, "deleted": deleted, "errors": errors, "message": msg})
+
 @app.route('/api/varsity-registrations/<user_id>/entry/<int:index>/status', methods=['POST'])
 @api_auth_required
 @api_perm_required('varsity.approve')
@@ -8391,8 +9789,7 @@ def api_update_varsity_status(user_id, index):
             new_status = data.get('status')
             note = data.get('note', '')
             
-            with open(filepath, 'r', encoding='utf-8') as f:
-                registrations = json.load(f)
+            registrations = load_json_file(filepath, [])
             
             if isinstance(registrations, list) and 0 <= index < len(registrations):
                 registrations[index]['status'] = new_status
@@ -8419,8 +9816,7 @@ def api_approve_varsity(user_id, index):
         return jsonify({"success": False, "message": "Registration not found"})
     
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            registrations = json.load(f)
+        registrations = load_json_file(filepath, [])
         
         if not isinstance(registrations, list) or index < 0 or index >= len(registrations):
             return jsonify({"success": False, "message": "Invalid index"})
@@ -8466,15 +9862,51 @@ def api_approve_varsity(user_id, index):
                     "ign": player_data.get("IGN"),
                     "rank": player_data.get("Current Rank in Game"),
                     "role": player_data.get("Primary Role"),
+                    "secondary_role": None,
                     "tracker": player_data.get("Tracker Link"),
+                    # PII — encrypted at rest by save_rosters()
                     "purdue_email": player_data.get("Purdue Email"),
                     "personal_email": player_data.get("Personal Email"),
+                    "puid": player_data.get("PUID"),
+                    "phone": player_data.get("Phone Number"),
+                    "hometown": player_data.get("Home Town/City (State)"),
+                    "year_in_school": player_data.get("Year in School"),
+                    "gpa": player_data.get("GPA"),
+                    "major": player_data.get("Major"),
+                    "jersey_details": player_data.get("Jersey Details"),
+                    "additional_notes": player_data.get("Anything Else"),
+                    "schedule_images": player_data.get("attachments_cdn", player_data.get("attachments", [])),
                     "is_captain": False,
                     "team_id": None,
+                    "status": "active",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 })
                 rosters["players"] = players
+                save_rosters(rosters)
+            else:
+                # Update existing player's data in case they re-registered with new info
+                existing.update({
+                    "full_name": player_data.get("Full Name", existing.get("full_name")),
+                    "game": player_data.get("Primary Game Title", existing.get("game")),
+                    "ign": player_data.get("IGN", existing.get("ign")),
+                    "rank": player_data.get("Current Rank in Game", existing.get("rank")),
+                    "role": player_data.get("Primary Role", existing.get("role")),
+                    "tracker": player_data.get("Tracker Link", existing.get("tracker")),
+                    "player_type": player_data.get("player_type", existing.get("player_type", "varsity")),
+                    "purdue_email": player_data.get("Purdue Email", existing.get("purdue_email")),
+                    "personal_email": player_data.get("Personal Email", existing.get("personal_email")),
+                    "puid": player_data.get("PUID", existing.get("puid")),
+                    "phone": player_data.get("Phone Number", existing.get("phone")),
+                    "hometown": player_data.get("Home Town/City (State)", existing.get("hometown")),
+                    "year_in_school": player_data.get("Year in School", existing.get("year_in_school")),
+                    "gpa": player_data.get("GPA", existing.get("gpa")),
+                    "major": player_data.get("Major", existing.get("major")),
+                    "jersey_details": player_data.get("Jersey Details", existing.get("jersey_details")),
+                    "additional_notes": player_data.get("Anything Else", existing.get("additional_notes")),
+                    "schedule_images": player_data.get("attachments_cdn", player_data.get("attachments", existing.get("schedule_images", []))),
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
                 save_rosters(rosters)
         
         # Queue Discord notification (thread-safe)
@@ -8505,8 +9937,7 @@ def api_deny_varsity(user_id, index):
         req_data = request.json or {}
         reason = req_data.get('reason', 'Declined by admin')
         
-        with open(filepath, 'r', encoding='utf-8') as f:
-            registrations = json.load(f)
+        registrations = load_json_file(filepath, [])
         
         if not isinstance(registrations, list) or index < 0 or index >= len(registrations):
             return jsonify({"success": False, "message": "Invalid index"})
@@ -8553,8 +9984,7 @@ def api_get_discord_channels():
         channels_cache_file = os.path.join(DATA_DIR, "channels_cache.json")
         
         if os.path.exists(channels_cache_file):
-            with open(channels_cache_file, 'r', encoding='utf-8') as f:
-                channels = json.load(f)
+            channels = load_json_file(channels_cache_file, [])
             return jsonify({"channels": channels})
         
         # Fallback - return empty or suggest manual setup
@@ -8576,8 +10006,8 @@ init_equipment_db()
 
 
 def _get_username():
-    user = session.get('discord_user') or session.get('dashboard_user') or {}
-    return user.get('global_name') or user.get('display_name') or user.get('username') or 'Unknown'
+    user = session.get('dashboard_user') or {}
+    return user.get('display_name') or user.get('username') or 'Unknown'
 
 
 @app.route('/api/equipment')
@@ -9009,6 +10439,2314 @@ def handle_exception(e):
         return jsonify({"error": "Internal server error", "message": str(e)}), 500
     return render_template('404.html'), 500
 
+# ============ Arena Staff — iPad Kiosk Sign-in System ============
+
+ARENA_SIGNINS_FILE = os.path.join(DATA_DIR, "arena_signins.json")
+ARENA_CONFIG_FILE = os.path.join(DATA_DIR, "arena_kiosk_config.json")
+ARENA_STATE_FILE = os.path.join(DATA_DIR, "arena_kiosk_state.json")
+
+# Per-kiosk defaults. closed_days uses JS weekday convention (0=Sun … 6=Sat).
+# "type": "pc" = GGLeap PC-picker flow (arena_kiosk1.html); "console" = simple visiting/play flow (arena_kiosk2.html).
+DEFAULT_ARENA_KIOSKS = {
+    "kiosk-1": {"label": "Kiosk 1", "room": "Main Room (PCs)", "enabled": True, "bypass": False, "type": "pc"},
+    "kiosk-2": {"label": "Kiosk 2", "room": "Console Room", "enabled": True, "bypass": False, "type": "console"},
+    "kiosk-demo": {"label": "Demo Kiosk", "room": "Testing (PCs)", "enabled": True, "bypass": False,
+                    "type": "pc", "scan": True, "admin_only": True, "demo": True},
+}
+
+DEFAULT_ARENA_CONFIG = {
+    "open": True,
+    "arena_name": "PNW Esports Arena",
+    "welcome_title": "Welcome to the Esports Arena",
+    "welcome_sub": "Sign in below before entering.",
+    "rules_text": "I agree to follow all Arena Rules and Regulations.",
+    "email_domains": ["purdue.edu", "pnw.edu"],
+    "require_email": True,
+    "staff_passcode": "1234",
+    "max_attempts": 5,
+    "open_hour": 9,
+    "close_hour": 17,
+    "closed_days": [6],
+    "closing_soon_minutes": 15,
+    "pc_lock_enabled": False,
+    "pc_hold_minutes": 10,
+    "ggleap_paused": False,
+    "varsity_checkin": False,
+    "signin_guard": {
+        "enabled": True,
+        "cooldown_minutes": 0,
+        "max_per_day": 0,
+        "max_active_pc": 1,
+        "ban_message": "Please see the front desk to check in.",
+    },
+    "day_hours": [
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Sun (0)
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Mon (1)
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Tue (2)
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Wed (3)
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Thu (4)
+        {"open": True,  "start": "09:00", "end": "17:00"},   # Fri (5)
+        {"open": False, "start": "09:00", "end": "17:00"},   # Sat (6)
+    ],
+    "announcement": {"enabled": False, "text": "", "color": "#CFB991", "scroll": True},
+    "kiosks": DEFAULT_ARENA_KIOSKS,
+}
+
+
+def load_arena_config():
+    """Load kiosk config deep-merged over defaults so new keys always exist."""
+    cfg = load_json_file(ARENA_CONFIG_FILE, {}) or {}
+    merged = copy.deepcopy(DEFAULT_ARENA_CONFIG)
+    for k, v in cfg.items():
+        if k == "kiosks" and isinstance(v, dict):
+            for kid, kv in v.items():
+                base = dict(merged["kiosks"].get(kid, {"label": kid, "room": "", "enabled": True, "bypass": False}))
+                base.update(kv or {})
+                merged["kiosks"][kid] = base
+        else:
+            merged[k] = v
+    merged["day_hours"] = _arena_build_day_hours(merged, had_day_hours=("day_hours" in cfg))
+    return merged
+
+
+def save_arena_config(cfg):
+    # Watch/ban list lives in the encrypted DB, never in this JSON.
+    cfg.pop("watchlist", None)
+    save_json_file(ARENA_CONFIG_FILE, cfg)
+
+
+def load_arena_signins():
+    # Backed by the encrypted SQLite store (arena_db); returns decrypted records.
+    return arena_db.get_all()
+
+
+def save_arena_signins(records):
+    # Used by the retention prune path; per-sign-in writes use arena_db.add_signin().
+    arena_db.replace_all(records)
+
+
+def load_arena_state():
+    """Kiosk runtime state (heartbeat last-seen), separate from settings."""
+    return load_json_file(ARENA_STATE_FILE, {}) or {}
+
+
+def save_arena_state(state):
+    save_json_file(ARENA_STATE_FILE, state)
+
+
+def _arena_kiosk_online(state, kid):
+    """A kiosk counts as online if it polled within the last 40 seconds."""
+    ls = (state.get(kid) or {}).get("last_seen")
+    if not ls:
+        return False, None
+    try:
+        t = datetime.fromisoformat(ls)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() < 40, ls
+    except Exception:
+        return False, ls
+
+
+def _arena_kiosk_cfg(cfg, kid):
+    """Return a per-kiosk config dict (merged with defaults for that kiosk)."""
+    kiosks = cfg.get("kiosks") or {}
+    merged = dict(DEFAULT_ARENA_KIOSKS.get(kid, {"label": kid, "room": "", "enabled": True, "bypass": False, "type": "console"}))
+    merged.update(kiosks.get(kid) or {})
+    return merged
+
+
+def _arena_kiosk_list(cfg):
+    """All kiosks with their merged config, in order — for management UIs."""
+    return [{"id": kid, **_arena_kiosk_cfg(cfg, kid)} for kid in (cfg.get("kiosks") or {})]
+
+
+ARENA_DAY_COUNT = 7
+
+
+def _norm_hhmm(value, default="09:00"):
+    """Coerce any value to a clean 'HH:MM' 24-hour string."""
+    try:
+        parts = str(value).split(":")
+        h = max(0, min(23, int(parts[0])))
+        m = max(0, min(59, int(parts[1]) if len(parts) > 1 else 0))
+        return f"{h:02d}:{m:02d}"
+    except (ValueError, TypeError, IndexError):
+        return default
+
+
+def _parse_hhmm(value, default=0.0):
+    """'HH:MM' -> float hours (e.g. '09:30' -> 9.5)."""
+    try:
+        parts = str(value).split(":")
+        return max(0.0, min(24.0, int(parts[0]) + (int(parts[1]) if len(parts) > 1 else 0) / 60.0))
+    except (ValueError, TypeError, IndexError):
+        return default
+
+
+def _fmt_hhmm(value):
+    """'HH:MM' (or a numeric hour) -> a friendly '9:30 AM'."""
+    if isinstance(value, (int, float)):
+        h = int(value)
+        m = int(round((value - h) * 60))
+    else:
+        try:
+            parts = str(value).split(":")
+            h = int(parts[0])
+            m = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, TypeError, IndexError):
+            h, m = 9, 0
+    ap = "AM" if (h % 24) < 12 else "PM"
+    return f"{(h % 12) or 12}:{m:02d} {ap}"
+
+
+def _arena_build_day_hours(cfg, had_day_hours):
+    """Return a normalized 7-entry day_hours list (JS weekday 0=Sun..6=Sat).
+    Migrates from legacy open_hour/close_hour/closed_days when no per-day data."""
+    src = cfg.get("day_hours") if had_day_hours else None
+    closed = set(cfg.get("closed_days") or [])
+    oh, ch = cfg.get("open_hour", 9), cfg.get("close_hour", 17)
+    out = []
+    for i in range(ARENA_DAY_COUNT):
+        if isinstance(src, list) and i < len(src) and isinstance(src[i], dict):
+            e = src[i]
+            out.append({
+                "open": bool(e.get("open", True)),
+                "start": _norm_hhmm(e.get("start"), "09:00"),
+                "end": _norm_hhmm(e.get("end"), "17:00"),
+            })
+        else:
+            out.append({
+                "open": i not in closed,
+                "start": _norm_hhmm(f"{int(oh):02d}:00", "09:00"),
+                "end": _norm_hhmm(f"{int(ch):02d}:00", "17:00"),
+            })
+    return out
+
+
+def _arena_today_entry(cfg, now=None):
+    """Return (today's day_hours entry, js_weekday)."""
+    now = now or datetime.now()
+    js_day = (now.weekday() + 1) % 7  # Python Mon=0..Sun=6 -> JS Sun=0..Sat=6
+    hours = cfg.get("day_hours")
+    if not (isinstance(hours, list) and len(hours) == ARENA_DAY_COUNT):
+        hours = _arena_build_day_hours(cfg, had_day_hours=False)
+    return hours[js_day], js_day
+
+
+def _arena_is_open_now(cfg, kcfg=None):
+    """Server-authoritative open state. A kiosk with bypass ON is forced open
+    regardless of the master switch or the per-day schedule."""
+    if kcfg and kcfg.get("bypass"):
+        return True
+    if not cfg.get("open", True):
+        return False
+    now = datetime.now()
+    entry, _ = _arena_today_entry(cfg, now)
+    if not entry.get("open", True):
+        return False
+    h = now.hour + now.minute / 60.0
+    return _parse_hhmm(entry.get("start"), 0.0) <= h < _parse_hhmm(entry.get("end"), 24.0)
+
+
+def _arena_closing_soon(cfg, kcfg=None, now=None):
+    """True if the arena is open but within `closing_soon_minutes` of today's close.
+    Used to restrict the kiosk to 'visiting' sign-ins as closing approaches."""
+    if not _arena_is_open_now(cfg, kcfg):
+        return False
+    try:
+        mins = int(cfg.get("closing_soon_minutes", 15) or 0)
+    except (ValueError, TypeError):
+        mins = 15
+    if mins <= 0:
+        return False
+    now = now or datetime.now()
+    entry, _ = _arena_today_entry(cfg, now)
+    if not entry.get("open", True):
+        return False
+    end_h = _parse_hhmm(entry.get("end"), 24.0)
+    now_h = now.hour + now.minute / 60.0
+    return (end_h - now_h) <= (mins / 60.0)
+
+
+def _arena_fmt_hour(h):
+    h = int(h) % 24
+    ap = "AM" if h < 12 else "PM"
+    d = h % 12 or 12
+    return f"{d}:00 {ap}"
+
+
+def _arena_hours_label(cfg):
+    entry, _ = _arena_today_entry(cfg)
+    if not entry.get("open", True):
+        return "Closed today"
+    return f"{_fmt_hhmm(entry.get('start'))} – {_fmt_hhmm(entry.get('end'))}"
+
+
+def _arena_closed_message(cfg):
+    now = datetime.now()
+    entry, _ = _arena_today_entry(cfg, now)
+    if not entry.get("open", True):
+        return "The arena is closed today."
+    h = now.hour + now.minute / 60.0
+    if h < _parse_hhmm(entry.get("start"), 0.0):
+        return f"The arena opens at {_fmt_hhmm(entry.get('start'))}."
+    return f"Today's hours: {_fmt_hhmm(entry.get('start'))} – {_fmt_hhmm(entry.get('end'))}."
+
+
+def _arena_hours_summary(cfg):
+    """Compact weekly schedule, grouping consecutive days with identical hours,
+    e.g. 'Mon–Fri 9:00 AM – 5:00 PM · Sat–Sun Closed'."""
+    days = cfg.get("day_hours")
+    if not (isinstance(days, list) and len(days) == ARENA_DAY_COUNT):
+        days = _arena_build_day_hours(cfg, had_day_hours=False)
+    names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    def label(e):
+        if not e.get("open", True):
+            return "Closed"
+        return f"{_fmt_hhmm(e.get('start'))} – {_fmt_hhmm(e.get('end'))}"
+
+    groups = []
+    for i, e in enumerate(days):
+        lbl = label(e)
+        if groups and groups[-1][2] == lbl:
+            groups[-1][1] = i
+        else:
+            groups.append([i, i, lbl])
+    parts = []
+    for a, b, lbl in groups:
+        d = names[a] if a == b else f"{names[a]}\u2013{names[b]}"
+        parts.append(f"{d} {lbl}")
+    return " \u00b7 ".join(parts)
+
+
+def _arena_schedule(cfg):
+    """Full weekly schedule for the kiosk closed screen: one entry per day,
+    today flagged, hours formatted or 'Closed'."""
+    days = cfg.get("day_hours")
+    if not (isinstance(days, list) and len(days) == ARENA_DAY_COUNT):
+        days = _arena_build_day_hours(cfg, had_day_hours=False)
+    names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    today = (datetime.now().weekday() + 1) % 7
+    out = []
+    for i, e in enumerate(days):
+        is_open = bool(e.get("open", True))
+        hours = f"{_fmt_hhmm(e.get('start'))} \u2013 {_fmt_hhmm(e.get('end'))}" if is_open else "Closed"
+        out.append({"day": names[i], "hours": hours, "open": is_open, "today": i == today})
+    return out
+
+
+def _valid_hex_color(c):
+    return isinstance(c, str) and len(c) == 7 and c[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in c[1:])
+
+
+def _arena_announcement(cfg):
+    """Normalized announcement banner config exposed to kiosks."""
+    a = cfg.get("announcement") or {}
+    color = a.get("color", "#CFB991")
+    if not _valid_hex_color(color):
+        color = "#CFB991"
+    color2 = a.get("color2", "#4C6EDC")
+    if not _valid_hex_color(color2):
+        color2 = "#4C6EDC"
+    mode = a.get("mode", "solid")
+    if mode not in ("solid", "gradient", "cycle"):
+        mode = "solid"
+    size = a.get("size", "normal")
+    if size not in ("normal", "large"):
+        size = "normal"
+    try:
+        speed = int(a.get("speed", 5))
+    except (TypeError, ValueError):
+        speed = 5
+    speed = max(1, min(10, speed))
+    return {
+        "enabled": bool(a.get("enabled")),
+        "text": _clean_str(a.get("text", ""), 200),
+        "color": color,
+        "color2": color2,
+        "mode": mode,
+        "scroll": a.get("scroll", True) is not False,
+        "speed": speed,
+        "size": size,
+        "pulse": bool(a.get("pulse")),
+        "uppercase": a.get("uppercase", True) is not False,
+    }
+
+
+def _arena_kiosk_public(cfg, kid):
+    """Public config a kiosk needs to render — never includes the passcode."""
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    return {
+        "kiosk_id": kid,
+        "label": kcfg.get("label"),
+        "room": kcfg.get("room"),
+        "type": kcfg.get("type", "console"),
+        "enabled": kcfg.get("enabled", True),
+        "bypass": kcfg.get("bypass", False),
+        "arena_name": cfg.get("arena_name"),
+        "welcome_title": cfg.get("welcome_title"),
+        "welcome_sub": cfg.get("welcome_sub"),
+        "rules_text": cfg.get("rules_text"),
+        "email_domains": cfg.get("email_domains", []),
+        "require_email": cfg.get("require_email", True),
+        "max_attempts": cfg.get("max_attempts", 5),
+        "open": _arena_is_open_now(cfg, kcfg),
+        "closing_soon": _arena_closing_soon(cfg, kcfg),
+        "closing_soon_minutes": int(cfg.get("closing_soon_minutes", 15) or 0),
+        "closed_message": _arena_closed_message(cfg),
+        "hours_label": _arena_hours_label(cfg),
+        "hours_summary": _arena_hours_summary(cfg),
+        "schedule": _arena_schedule(cfg),
+        "announcement": _arena_announcement(cfg),
+        "reload_token": kcfg.get("reload_token", 0),
+        "unlock_token": kcfg.get("unlock_token", 0),
+        "boot_id": SERVER_BOOT_ID,
+        "varsity_checkin": bool(cfg.get("varsity_checkin", False)),
+        "scan": bool(kcfg.get("scan", False)),
+        "demo": bool(kcfg.get("demo", False)),
+        "admin_only": bool(kcfg.get("admin_only", False)),
+    }
+
+
+def _clean_str(value, max_len=120):
+    """Trim and length-limit a user-provided string."""
+    if not isinstance(value, str):
+        value = "" if value is None else str(value)
+    return value.strip()[:max_len]
+
+
+def _arena_check_passcode(cfg, entered):
+    real = str(cfg.get("staff_passcode", "") or "")
+    entered = _clean_str(entered, 12)
+    return bool(real) and secrets.compare_digest(entered, real)
+
+
+# Arena entry logs are retained this many days, then auto-pruned for storage.
+ARENA_LOG_RETENTION_DAYS = 30
+
+
+def _arena_parse_dt(s):
+    """Parse an entry timestamp to a local-naive datetime (handles old UTC records)."""
+    if not s:
+        return None
+    try:
+        t = datetime.fromisoformat(s)
+        if t.tzinfo is not None:
+            t = t.astimezone().replace(tzinfo=None)
+        return t
+    except Exception:
+        return None
+
+
+def _arena_prune_signins(records):
+    """Drop entry records older than the retention window. Returns (kept, changed)."""
+    cutoff = datetime.now() - timedelta(days=ARENA_LOG_RETENTION_DAYS)
+    kept = []
+    changed = False
+    for r in records:
+        t = _arena_parse_dt(r.get("signed_in_at", ""))
+        if t is not None and t < cutoff:
+            changed = True
+            continue
+        kept.append(r)
+    return kept, changed
+
+
+def _arena_today_records(records):
+    """Entries whose local date is today (drives the live feed; resets at midnight)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    out = []
+    for r in records:
+        t = _arena_parse_dt(r.get("signed_in_at", ""))
+        if t is not None and t.strftime("%Y-%m-%d") == today:
+            out.append(r)
+    return out
+
+
+def _arena_live_cutoff(cfg):
+    """Datetime after which sign-ins appear on the live feed.
+    The later of today's local midnight and the last manual 'clear live feed' time."""
+    now = datetime.now()
+    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    cleared = _arena_parse_dt(cfg.get("live_cleared_at", "") or "")
+    if cleared and cleared > cutoff:
+        cutoff = cleared
+    return cutoff
+
+
+def _arena_live_records(records, cfg):
+    """Today's entries that are newer than the last live-feed clear (the current session)."""
+    cutoff = _arena_live_cutoff(cfg)
+    out = []
+    for r in records:
+        t = _arena_parse_dt(r.get("signed_in_at", ""))
+        if t is not None and t >= cutoff:
+            out.append(r)
+    return out
+
+
+def _arena_mark_returning(subset, all_records):
+    """Flag each record in `subset` as returning if that email appears in the full
+    history on an earlier day (i.e. they've visited before, not just today)."""
+    earliest = {}
+    for r in all_records:
+        em = (r.get("email") or "").strip().lower()
+        if not em:
+            continue
+        day = (r.get("signed_in_at") or "")[:10]
+        if not day:
+            continue
+        if em not in earliest or day < earliest[em]:
+            earliest[em] = day
+    for r in subset:
+        em = (r.get("email") or "").strip().lower()
+        if not em:
+            continue
+        rday = (r.get("signed_in_at") or "")[:10]
+        r["returning"] = bool(earliest.get(em) and earliest[em] < rday)
+
+
+# -- Arena staff pages -----------------------------------------------------
+
+@app.route('/arena')
+@app.route('/arena/')
+@app.route('/arena/live')
+@login_required
+@page_permission_required(['page.arena_live', 'page.arena_logs', 'page.arena_controls'])
+def arena_live():
+    return render_template('arena.html', active_tab='live')
+
+
+@app.route('/arena/logs')
+@login_required
+@page_permission_required('page.arena_logs')
+def arena_logs():
+    return render_template('arena.html', active_tab='logs')
+
+
+@app.route('/arena/sessions')
+@login_required
+@page_permission_required('page.arena_sessions')
+def arena_sessions():
+    return render_template('arena.html', active_tab='sessions')
+
+
+@app.route('/arena/controls')
+@login_required
+@page_permission_required('page.arena_controls')
+def arena_controls():
+    return render_template('arena.html', active_tab='controls')
+
+
+@app.route('/arena/activity')
+@login_required
+@page_permission_required('page.arena_logs')
+def arena_activity():
+    return render_template('arena.html', active_tab='activity')
+
+
+@app.route('/arena/students')
+@login_required
+@page_permission_required('page.arena_students')
+def arena_students():
+    return render_template('arena.html', active_tab='students')
+
+
+@app.route('/arena/reports')
+@login_required
+@page_permission_required('page.arena_reports')
+def arena_reports():
+    return render_template('arena.html', active_tab='reports')
+
+
+@app.route('/arena/kiosk')
+def arena_kiosk():
+    """Public kiosk picker — choose which kiosk this device is. Admin-only kiosks
+    (e.g. the Demo Kiosk) are hidden from non-admins."""
+    cfg = load_arena_config()
+    is_admin = _is_full_access_user()
+    kiosks = []
+    for i, kid in enumerate(cfg.get("kiosks", {}).keys()):
+        kc = _arena_kiosk_cfg(cfg, kid)
+        if kc.get("admin_only") and not is_admin:
+            continue
+        kiosks.append({"id": kid, **kc, "num": i + 1})
+    return render_template('arena_kiosk.html', kiosks=kiosks, arena_name=cfg.get("arena_name"))
+
+
+def _arena_normalize_kid(kid):
+    """Accept '1'/'2' (legacy), 'demo', or a full 'kiosk-3' id ? canonical 'kiosk-N'."""
+    kid = str(kid or "").strip().lower()
+    if kid.isdigit():
+        return "kiosk-" + kid
+    if kid and not kid.startswith("kiosk-"):
+        return "kiosk-" + kid
+    return kid
+
+
+@app.route('/arena/kiosk/<kid>')
+def arena_kiosk_device(kid):
+    """Public fullscreen sign-in kiosk for any room. The template is chosen by the
+    kiosk's type: 'pc' ? GGLeap station picker, anything else ? simple visiting flow."""
+    cfg = load_arena_config()
+    kid = _arena_normalize_kid(kid)
+    if kid not in cfg.get("kiosks", {}):
+        return ("Kiosk not found", 404)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    # Admin-only kiosks (e.g. the Demo/Test kiosk) require a Nova admin session.
+    if kcfg.get("admin_only") and not _is_full_access_user():
+        return redirect(url_for('login', next=request.path))
+    template = 'arena_kiosk1.html' if kcfg.get("type") == "pc" else 'arena_kiosk2.html'
+    return render_template(template, kiosk=_arena_kiosk_public(cfg, kid))
+
+
+# -- Arena API — staff endpoints -------------------------------------------
+
+@app.route('/api/arena/stats')
+@api_auth_required
+def api_arena_stats():
+    cfg = load_arena_config()
+    records = load_arena_signins()
+    records, pruned = _arena_prune_signins(records)
+    if pruned:
+        save_arena_signins(records)
+    today_recs = _arena_live_records(records, cfg)
+    # Current calendar week to date (weeks start Sunday), not a rolling 7 days.
+    _now = datetime.now()
+    _week_start = (_now - timedelta(days=(_now.weekday() + 1) % 7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_count = sum(1 for r in records
+                     if (_arena_parse_dt(r.get("signed_in_at", "")) or datetime.min) >= _week_start)
+    by_kiosk = {}
+    last_signin = {}
+    for r in today_recs:
+        by_kiosk[r.get("kiosk_id", "?")] = by_kiosk.get(r.get("kiosk_id", "?"), 0) + 1
+    for r in records:
+        kid = r.get("kiosk_id", "?")
+        si = r.get("signed_in_at", "")
+        if si > last_signin.get(kid, ""):
+            last_signin[kid] = si
+    state = load_arena_state()
+    kiosks = []
+    for kid in cfg.get("kiosks", {}):
+        kcfg = _arena_kiosk_cfg(cfg, kid)
+        online, last_seen = _arena_kiosk_online(state, kid)
+        kiosks.append({
+            "id": kid, "label": kcfg.get("label"), "room": kcfg.get("room"),
+            "enabled": kcfg.get("enabled", True), "bypass": kcfg.get("bypass", False),
+            "open": _arena_is_open_now(cfg, kcfg), "today": by_kiosk.get(kid, 0),
+            "online": online, "last_seen": last_seen, "last_signin": last_signin.get(kid),
+            "locked": bool((state.get(kid) or {}).get("locked")),
+        })
+    return jsonify({
+        "success": True,
+        "today_count": len(today_recs),
+        "week_count": week_count,
+        "total_count": len(records),
+        "arena_open": _arena_is_open_now(cfg),
+        "hours_label": _arena_hours_label(cfg),
+        "kiosks": kiosks,
+    })
+
+
+@app.route('/api/arena/active')
+@api_auth_required
+def api_arena_active():
+    """Today's arena entries (live feed) — resets automatically at local midnight."""
+    cfg = load_arena_config()
+    records = load_arena_signins()
+    records, pruned = _arena_prune_signins(records)
+    if pruned:
+        save_arena_signins(records)
+    today = _arena_live_records(records, cfg)
+    today.sort(key=lambda r: r.get("signed_in_at", ""), reverse=True)
+    _arena_mark_returning(today, records)
+    # Merge transient system events (admin unlocks) newer than the last live clear.
+    cutoff = _arena_live_cutoff(cfg)
+    sys_events = [e for e in _arena_system_events
+                  if (_arena_parse_dt(e.get("signed_in_at", "")) or datetime.min) >= cutoff]
+    if sys_events:
+        merged = today + sys_events
+        merged.sort(key=lambda r: r.get("signed_in_at", ""), reverse=True)
+        today = merged
+    return jsonify({"success": True, "active": today})
+
+
+@app.route('/api/arena/active/clear', methods=['POST'])
+@api_perm_required('page.arena_live')
+def api_arena_active_clear():
+    """Clear the live feed (resets the visible board for a fresh session).
+    Non-destructive: entries remain in the Sign-in Logs / history."""
+    cfg = load_arena_config()
+    cfg["live_cleared_at"] = datetime.now().isoformat(timespec="seconds")
+    save_arena_config(cfg)
+    return jsonify({"success": True, "cleared_at": cfg["live_cleared_at"]})
+
+
+def _arena_filter_logs(records, args):
+    """Filter entry records by search text, kiosk, and date range."""
+    query = _clean_str(args.get('q', ''), 80).lower()
+    kiosk = _clean_str(args.get('kiosk', ''), 40)
+    dfrom = _clean_str(args.get('from', ''), 10)      # YYYY-MM-DD
+    dto = _clean_str(args.get('to', ''), 10)
+    out = []
+    for r in records:
+        if query and query not in (r.get("name", "") + " " + r.get("email", "") + " "
+                                   + r.get("kiosk_label", "") + " " + r.get("room", "")).lower():
+            continue
+        if kiosk and r.get("kiosk_id") != kiosk:
+            continue
+        day = (r.get("signed_in_at", "") or "")[:10]
+        if dfrom and day and day < dfrom:
+            continue
+        if dto and day and day > dto:
+            continue
+        out.append(r)
+    return out
+
+
+@app.route('/api/arena/logs')
+@api_auth_required
+def api_arena_logs():
+    """Filtered arena entry history with a summary, newest first."""
+    records = load_arena_signins()
+    records, pruned = _arena_prune_signins(records)
+    if pruned:
+        save_arena_signins(records)
+    filtered = _arena_filter_logs(records, request.args)
+    unique = len({(r.get('email') or r.get('name', '')).lower() for r in filtered})
+    logs = list(reversed(filtered))[:2000]
+    _arena_mark_returning(logs, records)
+    return jsonify({
+        "success": True,
+        "logs": logs,
+        "summary": {"total": len(filtered), "unique": unique, "all_time": len(records),
+                    "retention_days": ARENA_LOG_RETENTION_DAYS},
+    })
+
+
+@app.route('/api/arena/logs/export')
+@api_auth_required
+def api_arena_logs_export():
+    """Download filtered arena entry history as CSV."""
+    records = load_arena_signins()
+    filtered = list(reversed(_arena_filter_logs(records, request.args)))
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Name", "First", "Last", "Email", "Kiosk", "Room", "Entered", "Reason", "Checked In By", "Accepted Rules"])
+    for r in filtered:
+        writer.writerow([
+            r.get("name", ""), r.get("first_name", ""), r.get("last_name", ""), r.get("email", ""),
+            r.get("kiosk_label", ""), r.get("room", ""), r.get("signed_in_at", ""),
+            r.get("reason", ""), r.get("checked_in_by", ""),
+            "yes" if r.get("accepted_rules") else "no",
+        ])
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=arena_entries_{stamp}.csv"})
+
+
+def _entry_kind(r):
+    """Classify a sign-in as guest / varsity / staff for reporting."""
+    k = (r.get("kind") or "").lower()
+    if k in ("guest", "varsity", "staff"):
+        return k
+    reason = (r.get("reason") or "").lower()
+    if "varsity" in reason:
+        return "varsity"
+    if r.get("manual") or r.get("checked_in_by"):
+        return "staff"
+    return "guest"
+
+
+def _rec_machine(r):
+    """The station a sign-in used. Prefers the explicit machine field, else falls
+    back to the room when it looks like a station name (older records stored the
+    station in `room`)."""
+    m = (r.get("machine") or "").strip()
+    if m:
+        return m
+    room = (r.get("room") or "").strip()
+    if re.match(r"(Island\s+\d+\s+S\d+|Stage\s+S\d+)$", room, re.IGNORECASE):
+        return room
+    return ""
+
+
+def _arena_build_analytics(records):
+    """Aggregate entry records into chart-ready buckets plus headline stats."""
+    from collections import Counter
+    day_counts, hour_counts, weekday_counts, kiosk_counts = Counter(), Counter(), Counter(), Counter()
+    type_counts = Counter()
+    heat = [[0] * 24 for _ in range(7)]
+    visitors = {}
+    machines = {}
+    emails = set()
+    accepted = 0
+    for r in records:
+        dt = _arena_parse_dt(r.get("signed_in_at", ""))
+        if not dt:
+            continue
+        si = r.get("signed_in_at", "")
+        kind = _entry_kind(r)
+        type_counts[kind] += 1
+        day_counts[dt.strftime("%Y-%m-%d")] += 1
+        hour_counts[dt.hour] += 1
+        wd = (dt.weekday() + 1) % 7                       # -> JS weekday (0=Sun)
+        weekday_counts[wd] += 1
+        heat[wd][dt.hour] += 1
+        kiosk_counts[r.get("kiosk_label") or r.get("kiosk_id") or "Unknown"] += 1
+        key = (r.get("email") or r.get("name", "")).strip().lower()
+        emails.add(key)
+        v = visitors.setdefault(key, {"name": r.get("name", ""), "email": r.get("email", ""),
+                                      "count": 0, "first": "", "last": "",
+                                      "guest": 0, "varsity": 0, "staff": 0, "machines": Counter()})
+        v["count"] += 1
+        v[kind] += 1
+        if not v["name"] and r.get("name"):
+            v["name"] = r.get("name")
+        if si > v["last"]:
+            v["last"] = si
+        if si and (not v["first"] or si < v["first"]):
+            v["first"] = si
+        mn = _rec_machine(r)
+        if mn:
+            v["machines"][mn] += 1
+            mc = machines.setdefault(mn, {"machine": mn, "count": 0, "users": set(),
+                                          "guest": 0, "varsity": 0, "staff": 0, "last": ""})
+            mc["count"] += 1
+            mc[kind] += 1
+            if key:
+                mc["users"].add(key)
+            if si > mc["last"]:
+                mc["last"] = si
+        if r.get("accepted_rules"):
+            accepted += 1
+
+    by_day = []
+    if day_counts:
+        d0 = datetime.strptime(min(day_counts), "%Y-%m-%d").date()
+        d1 = datetime.strptime(max(day_counts), "%Y-%m-%d").date()
+        cur = d0
+        while cur <= d1:
+            k = cur.strftime("%Y-%m-%d")
+            by_day.append({"date": k, "count": day_counts.get(k, 0)})
+            cur += timedelta(days=1)
+
+    by_hour = [{"hour": h, "count": hour_counts.get(h, 0)} for h in range(24)]
+    wk = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    by_weekday = [{"day": wk[i], "count": weekday_counts.get(i, 0)} for i in range(7)]
+    by_kiosk = [{"label": k, "count": v} for k, v in sorted(kiosk_counts.items(), key=lambda x: -x[1])]
+
+    def _mkey(name):
+        m = re.match(r"Island (\d+) S(\d+)", name, re.IGNORECASE)
+        if m:
+            return (0, int(m.group(1)), int(m.group(2)))
+        m = re.match(r"Stage S(\d+)", name, re.IGNORECASE)
+        if m:
+            return (1, 0, int(m.group(1)))
+        return (2, 999, 999)
+    by_machine = [{"machine": mc["machine"], "count": mc["count"], "unique": len(mc["users"]),
+                   "guest": mc["guest"], "varsity": mc["varsity"], "staff": mc["staff"], "last": mc["last"]}
+                  for mc in sorted(machines.values(), key=lambda x: _mkey(x["machine"]))]
+    by_type = {"guest": type_counts.get("guest", 0), "varsity": type_counts.get("varsity", 0),
+               "staff": type_counts.get("staff", 0)}
+
+    total = sum(day_counts.values())
+    busiest_day = max(by_day, key=lambda x: x["count"]) if by_day else {"date": None, "count": 0}
+    peak_hour = max(by_hour, key=lambda x: x["count"]) if total else {"hour": None, "count": 0}
+    active_days = sum(1 for d in by_day if d["count"] > 0)
+
+    peak_slot = {"day": None, "hour": None, "count": 0}
+    hmax = 0
+    for d in range(7):
+        for h in range(24):
+            c = heat[d][h]
+            if c > peak_slot["count"]:
+                peak_slot = {"day": wk[d], "hour": h, "count": c}
+            if c > hmax:
+                hmax = c
+    bwd = max(range(7), key=lambda i: weekday_counts.get(i, 0)) if weekday_counts else None
+    busiest_weekday = {"day": wk[bwd], "count": weekday_counts.get(bwd, 0)} if bwd is not None else {"day": None, "count": 0}
+
+    def _vis_out(v, n=60):
+        top = sorted(visitors.values(), key=lambda x: -x["count"])[:n]
+        out = []
+        for x in top:
+            fav = x["machines"].most_common(1)[0][0] if x["machines"] else ""
+            out.append({"name": x["name"], "email": x["email"], "count": x["count"],
+                        "first": x["first"], "last": x["last"], "guest": x["guest"],
+                        "varsity": x["varsity"], "staff": x["staff"], "favorite": fav})
+        return out
+    students = _vis_out(visitors, 60)
+    top_visitors = students[:8]
+
+    return {
+        "totals": {
+            "total": total,
+            "unique": len(emails),
+            "active_days": active_days,
+            "avg_per_day": round(total / active_days, 1) if active_days else 0,
+            "busiest_day": busiest_day,
+            "peak_hour": peak_hour,
+            "peak_slot": peak_slot,
+            "busiest_weekday": busiest_weekday,
+            "accept_rate": round(accepted / total * 100) if total else 0,
+        },
+        "by_day": by_day,
+        "by_hour": by_hour,
+        "by_weekday": by_weekday,
+        "by_kiosk": by_kiosk,
+        "by_machine": by_machine,
+        "by_type": by_type,
+        "students": students,
+        "heatmap": heat,
+        "heatmap_max": hmax,
+        "top_visitors": top_visitors,
+    }
+
+
+@app.route('/api/arena/analytics')
+@api_auth_required
+def api_arena_analytics():
+    """Aggregated sign-in analytics for the Activity tab (respects log filters)."""
+    records = load_arena_signins()
+    records, pruned = _arena_prune_signins(records)
+    if pruned:
+        save_arena_signins(records)
+    filtered = _arena_filter_logs(records, request.args)
+    cfg = load_arena_config()
+    kiosks = [{"id": kid, "label": _arena_kiosk_cfg(cfg, kid).get("label") or kid}
+              for kid in cfg.get("kiosks", {})]
+    data = _arena_build_analytics(filtered)
+
+    dfrom = _clean_str(request.args.get('from', ''), 10)
+    dto = _clean_str(request.args.get('to', ''), 10)
+    kiosk = _clean_str(request.args.get('kiosk', ''), 40)
+
+    # Trend vs the immediately-preceding period of equal length.
+    trend = None
+    if dfrom and dto:
+        try:
+            f = datetime.strptime(dfrom, "%Y-%m-%d").date()
+            t = datetime.strptime(dto, "%Y-%m-%d").date()
+            length = (t - f).days + 1
+            pf, pt = f - timedelta(days=length), f - timedelta(days=1)
+            prev = _arena_filter_logs(records, {"from": pf.isoformat(), "to": pt.isoformat(), "kiosk": kiosk})
+            pv, cur = len(prev), data["totals"]["total"]
+            pct = round((cur - pv) / pv * 100) if pv else (100 if cur else 0)
+            trend = {"prev_total": pv, "pct": pct, "up": cur >= pv}
+        except ValueError:
+            trend = None
+    data["trend"] = trend
+
+    # New vs returning visitors (needs history before the window).
+    cur_keys = {(r.get("email") or r.get("name", "")).strip().lower() for r in filtered}
+    new_c = ret_c = 0
+    if dfrom:
+        seen_before = set()
+        for r in records:
+            if kiosk and r.get("kiosk_id") != kiosk:
+                continue
+            day = (r.get("signed_in_at", "") or "")[:10]
+            if day and day < dfrom:
+                seen_before.add((r.get("email") or r.get("name", "")).strip().lower())
+        for k in cur_keys:
+            if k in seen_before:
+                ret_c += 1
+            else:
+                new_c += 1
+    else:
+        new_c = len(cur_keys)
+    data["new_returning"] = {"new": new_c, "returning": ret_c}
+
+    return jsonify({"success": True, "kiosks": kiosks, **data})
+
+
+@app.route('/api/arena/analytics/replay')
+@api_auth_required
+def api_arena_analytics_replay():
+    """Minute-resolution timeline for a single day so the Activity tab can
+    'replay' how busy the arena got. Returns 5-minute buckets (count + running
+    total), an hourly summary, and the ordered list of that day's sign-ins."""
+    day = _clean_str(request.args.get('date', ''), 10)
+    kiosk = _clean_str(request.args.get('kiosk', ''), 40)
+    if not day:
+        day = datetime.now().strftime("%Y-%m-%d")
+    records = load_arena_signins()
+    todays = []
+    for r in records:
+        si = r.get("signed_in_at", "") or ""
+        if si[:10] != day:
+            continue
+        if kiosk and r.get("kiosk_id") != kiosk:
+            continue
+        todays.append(r)
+    todays.sort(key=lambda r: r.get("signed_in_at", ""))
+
+    STEP = 5                                   # minutes per bucket
+    nb = (24 * 60) // STEP                      # 288 buckets
+    buckets = [0] * nb
+    hourly = [0] * 24
+    events = []
+    for r in todays:
+        dt = _arena_parse_dt(r.get("signed_in_at", ""))
+        if not dt:
+            continue
+        idx = (dt.hour * 60 + dt.minute) // STEP
+        if 0 <= idx < nb:
+            buckets[idx] += 1
+        hourly[dt.hour] += 1
+        events.append({
+            "t": dt.strftime("%H:%M"),
+            "hm": dt.hour * 60 + dt.minute,
+            "name": r.get("name", "") or "Guest",
+            "email": r.get("email", ""),
+            "machine": _rec_machine(r),
+            "kind": _entry_kind(r),
+        })
+    cumulative = []
+    run = 0
+    for i, c in enumerate(buckets):
+        run += c
+        cumulative.append({"m": i * STEP, "t": f"{(i * STEP) // 60:02d}:{(i * STEP) % 60:02d}",
+                           "count": c, "total": run})
+    peak_bucket = max(range(nb), key=lambda i: buckets[i]) if todays else 0
+    return jsonify({
+        "success": True,
+        "date": day,
+        "step": STEP,
+        "total": len(todays),
+        "buckets": cumulative,
+        "hourly": [{"hour": h, "count": hourly[h]} for h in range(24)],
+        "events": events,
+        "peak": {"m": peak_bucket * STEP, "count": buckets[peak_bucket] if todays else 0},
+    })
+
+
+@app.route('/api/arena/machine-history')
+@api_auth_required
+def api_arena_machine_history():
+    """Full sign-in history for one station within the current filter range."""
+    machine = _clean_str(request.args.get('machine', ''), 60)
+    records = load_arena_signins()
+    filtered = _arena_filter_logs(records, request.args)   # respects from/to/kiosk
+    want = machine.strip().lower()
+    rows = [r for r in filtered if _rec_machine(r).lower() == want]
+    rows.sort(key=lambda r: r.get("signed_in_at", ""), reverse=True)
+    users = {(r.get("email") or r.get("name", "")).strip().lower() for r in rows}
+    history = [{
+        "name": r.get("name", "") or "Guest",
+        "email": r.get("email", ""),
+        "kind": _entry_kind(r),
+        "signed_in_at": r.get("signed_in_at", ""),
+        "kiosk_label": r.get("kiosk_label", ""),
+        "reason": r.get("reason", ""),
+    } for r in rows[:500]]
+    return jsonify({"success": True, "machine": machine, "count": len(rows),
+                    "unique": len(users), "history": history})
+
+
+@app.route('/api/arena/analytics/export')
+@api_auth_required
+def api_arena_analytics_export():
+    """Download a professional, filterable Excel activity report."""
+    records = load_arena_signins()
+    filtered = _arena_filter_logs(records, request.args)
+    rows = sorted(filtered, key=lambda r: r.get("signed_in_at", ""))
+    stats = _arena_build_analytics(filtered)
+    dfrom = _clean_str(request.args.get('from', ''), 10)
+    dto = _clean_str(request.args.get('to', ''), 10)
+    kiosk_id = _clean_str(request.args.get('kiosk', ''), 40)
+    cfg = load_arena_config()
+    kiosk_label = (_arena_kiosk_cfg(cfg, kiosk_id).get("label") or kiosk_id) if kiosk_id else "All kiosks"
+    arena_name = cfg.get("arena_name", "PNW Esports Arena")
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+        from openpyxl.chart.label import DataLabelList
+    except ImportError:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Name", "Email", "Kiosk", "Room", "Entered", "Accepted Rules"])
+        for r in rows:
+            writer.writerow([r.get("name", ""), r.get("email", ""), r.get("kiosk_label", ""),
+                             r.get("room", ""), r.get("signed_in_at", ""),
+                             "yes" if r.get("accepted_rules") else "no"])
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        return Response(output.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=arena_activity_{stamp}.csv"})
+
+    TEAL, TEAL_DARK, INK, MUTE = "06B6D4", "0E7490", "0F172A", "64748B"
+    NAVY, NAVY2 = "0B1B2B", "12293D"          # dark header band
+    GOLD, GOLD_DK = "CFB991", "9A7B2E"         # Purdue-gold accent
+    STRIPE, LIGHT, GREEN = "F3F6F9", "E2E8F0", "10B981"
+    WHITE = "FFFFFF"
+    title_font = Font(bold=True, color=WHITE, size=20, name="Segoe UI Semibold")
+    brand_font = Font(bold=True, color=GOLD, size=11, name="Segoe UI Semibold")
+    sub_font = Font(color="C7D2DA", size=10, name="Segoe UI")
+    meta_font = Font(color=MUTE, size=10, italic=True, name="Segoe UI")
+    kpi_val_font = Font(bold=True, color=TEAL_DARK, size=26, name="Segoe UI")
+    kpi_lbl_font = Font(bold=True, color=MUTE, size=9, name="Segoe UI")
+    sec_font = Font(bold=True, color=INK, size=13, name="Segoe UI Semibold")
+    hdr_font = Font(bold=True, color="FFFFFF", size=11, name="Segoe UI")
+    cell_font = Font(color=INK, size=11, name="Segoe UI")
+    hdr_fill = PatternFill("solid", fgColor=TEAL)
+    title_fill = PatternFill("solid", fgColor=NAVY)
+    band_fill2 = PatternFill("solid", fgColor=NAVY2)
+    gold_fill = PatternFill("solid", fgColor=GOLD)
+    stripe_fill = PatternFill("solid", fgColor=STRIPE)
+    kpi_fill = PatternFill("solid", fgColor="ECFEFF")
+    kpi_fill2 = PatternFill("solid", fgColor="F7F3E9")
+    center = Alignment(horizontal="center", vertical="center")
+    left = Alignment(horizontal="left", vertical="center")
+    thin = Side(style="thin", color=LIGHT)
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def section(ws, cell, text):
+        ws[cell] = text
+        ws[cell].font = sec_font
+
+    def table(ws, top, left_col, headers, data, widths=None):
+        """Write a styled table; returns (header_row, last_row)."""
+        from openpyxl.utils import get_column_letter
+        for j, h in enumerate(headers):
+            c = ws.cell(row=top, column=left_col + j, value=h)
+            c.font = hdr_font
+            c.fill = hdr_fill
+            c.alignment = center if j else left
+            c.border = border
+            if widths:
+                ws.column_dimensions[get_column_letter(left_col + j)].width = widths[j]
+        r = top
+        for i, rowvals in enumerate(data):
+            r = top + 1 + i
+            for j, v in enumerate(rowvals):
+                c = ws.cell(row=r, column=left_col + j, value=v)
+                c.font = cell_font
+                c.alignment = center if j else left
+                c.border = border
+                if i % 2:
+                    c.fill = stripe_fill
+        return top, r
+
+    wb = Workbook()
+
+    # -- Dashboard sheet --
+    ov = wb.active
+    ov.title = "Dashboard"
+    ov.sheet_view.showGridLines = False
+
+    # Navy header band (rows 1-4) with brand logo + title.
+    for rr in range(1, 5):
+        for cc in range(1, 9):
+            ov.cell(row=rr, column=cc).fill = title_fill
+    ov.row_dimensions[1].height = 10
+    ov.row_dimensions[2].height = 30
+    ov.row_dimensions[3].height = 20
+    ov.row_dimensions[4].height = 12
+
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        logo_path = os.path.join(app.root_path, "static", "images", "LionByteGGLogo.png")
+        if os.path.exists(logo_path):
+            _img = XLImage(logo_path)
+            _ratio = 58 / float(_img.height or 58)
+            _img.height = 58
+            _img.width = int((_img.width or 58) * _ratio)
+            ov.add_image(_img, "A1")
+    except Exception as _e:
+        logger.warning(f"[ARENA EXPORT] logo embed failed: {_e}")
+
+    ov.merge_cells("C2:H2")
+    ov["C2"] = f"{arena_name} · Activity Report"
+    ov["C2"].font = title_font
+    ov["C2"].alignment = Alignment(horizontal="left", vertical="center")
+    ov.merge_cells("C3:H3")
+    ov["C3"] = "LIONBYTEGG  ·  ARENA ANALYTICS"
+    ov["C3"].font = brand_font
+    ov["C3"].alignment = Alignment(horizontal="left", vertical="center")
+
+    # Gold accent underline (row 5).
+    for cc in range(1, 9):
+        ov.cell(row=5, column=cc).fill = gold_fill
+    ov.row_dimensions[5].height = 4
+
+    rng = f"{dfrom or 'earliest'} ? {dto or 'today'}"
+    ov.merge_cells("A6:H6")
+    ov["A6"] = f"Range: {rng}    ·    Kiosk: {kiosk_label}    ·    Generated {datetime.now().strftime('%b %d, %Y %I:%M %p')}"
+    ov["A6"].font = meta_font
+    ov["A6"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ov.row_dimensions[6].height = 20
+
+    _ps = stats["totals"].get("peak_slot", {})
+    _bw = stats["totals"].get("busiest_weekday", {})
+    ps_txt = f"{_ps['day']} {_fmt_hhmm(str(_ps['hour']) + ':00')}" if _ps.get("day") and _ps.get("hour") is not None else "—"
+    ov.merge_cells("A7:H7")
+    ov["A7"] = f"Key insights    ·    Peak slot: {ps_txt}    ·    Busiest weekday: {_bw.get('day') or '—'}    ·    Rules accepted: {stats['totals'].get('accept_rate', 0)}%"
+    ov["A7"].font = Font(bold=True, color=TEAL_DARK, size=10, name="Segoe UI")
+    ov["A7"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ov.row_dimensions[7].height = 18
+
+    t = stats["totals"]
+    bd = t["busiest_day"]
+    ph = t["peak_hour"]
+    bd_txt = (datetime.strptime(bd["date"], "%Y-%m-%d").strftime("%b %d") + f"  ({bd['count']})") if bd.get("date") else "—"
+    ph_txt = (_fmt_hhmm(f"{ph['hour']}:00") + f"  ({ph['count']})") if ph.get("hour") is not None else "—"
+    from collections import Counter as _Counter
+    kind_counts = _Counter(_entry_kind(r) for r in rows)
+    kpis = [
+        ("TOTAL SIGN-INS", t["total"]),
+        ("UNIQUE VISITORS", t["unique"]),
+        ("AVG / ACTIVE DAY", t["avg_per_day"]),
+        ("GUEST", kind_counts.get("guest", 0)),
+        ("VARSITY", kind_counts.get("varsity", 0)),
+        ("STAFF", kind_counts.get("staff", 0)),
+        ("BUSIEST DAY", bd_txt),
+        ("PEAK HOUR", ph_txt),
+    ]
+    from openpyxl.utils import get_column_letter
+    for i, (lbl, val) in enumerate(kpis):
+        col = 1 + i
+        fill = kpi_fill if i % 2 == 0 else kpi_fill2
+        vcolor = TEAL_DARK if i % 2 == 0 else GOLD_DK
+        L = ov.cell(row=9, column=col, value=lbl)
+        L.font = kpi_lbl_font
+        L.fill = fill
+        L.alignment = center
+        L.border = border
+        V = ov.cell(row=10, column=col, value=val)
+        V.font = kpi_val_font if isinstance(val, (int, float)) else Font(bold=True, color=vcolor, size=13, name="Segoe UI")
+        if isinstance(val, (int, float)):
+            V.font = Font(bold=True, color=vcolor, size=26, name="Segoe UI")
+        V.fill = fill
+        V.alignment = center
+        V.border = border
+        ov.column_dimensions[get_column_letter(col)].width = 18
+    ov.row_dimensions[9].height = 18
+    ov.row_dimensions[10].height = 38
+
+    section(ov, "A12", "Sign-ins by Day of Week")
+    wk_top, wk_bot = table(ov, 13, 1, ["Day", "Sign-ins"],
+                           [[d["day"], d["count"]] for d in stats["by_weekday"]], widths=[14, 12])
+    chart = BarChart()
+    chart.type = "col"
+    chart.title = "Traffic by Day of Week"
+    chart.style = 10
+    chart.height, chart.width = 8, 14
+    chart.legend = None
+    data = Reference(ov, min_col=2, min_row=wk_top, max_row=wk_bot)
+    cats = Reference(ov, min_col=1, min_row=wk_top + 1, max_row=wk_bot)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    ov.add_chart(chart, "D12")
+
+    section(ov, "A23", "Sign-ins by Kiosk")
+    k_top, k_bot = table(ov, 24, 1, ["Kiosk", "Sign-ins"],
+                         [[k["label"], k["count"]] for k in stats["by_kiosk"]] or [["—", 0]], widths=[24, 12])
+    if stats["by_kiosk"]:
+        pie = PieChart()
+        pie.title = "Share by Kiosk"
+        pie.height, pie.width = 8, 12
+        pdata = Reference(ov, min_col=2, min_row=k_top, max_row=k_bot)
+        pcats = Reference(ov, min_col=1, min_row=k_top + 1, max_row=k_bot)
+        pie.add_data(pdata, titles_from_data=True)
+        pie.set_categories(pcats)
+        pie.dataLabels = DataLabelList()
+        pie.dataLabels.showPercent = True
+        ov.add_chart(pie, "D23")
+
+    # -- Daily sheet --
+    dsh = wb.create_sheet("Daily")
+    dsh.sheet_view.showGridLines = False
+    section(dsh, "A1", "Daily Sign-ins")
+    d_top, d_bot = table(dsh, 2, 1, ["Date", "Sign-ins"],
+                         [[d["date"], d["count"]] for d in stats["by_day"]] or [["—", 0]], widths=[16, 12])
+    dsh.auto_filter.ref = f"A2:B{d_bot}"
+    dsh.freeze_panes = "A3"
+    if stats["by_day"]:
+        lc = LineChart()
+        lc.title = "Sign-ins per Day"
+        lc.style = 12
+        lc.height, lc.width = 9, 22
+        lc.legend = None
+        data = Reference(dsh, min_col=2, min_row=d_top, max_row=d_bot)
+        cats = Reference(dsh, min_col=1, min_row=d_top + 1, max_row=d_bot)
+        lc.add_data(data, titles_from_data=True)
+        lc.set_categories(cats)
+        dsh.add_chart(lc, "D2")
+
+    # -- Hourly sheet --
+    hsh = wb.create_sheet("Hourly")
+    hsh.sheet_view.showGridLines = False
+    section(hsh, "A1", "Sign-ins by Hour of Day")
+    h_top, h_bot = table(hsh, 2, 1, ["Hour", "Sign-ins"],
+                         [[_fmt_hhmm(f"{d['hour']}:00"), d["count"]] for d in stats["by_hour"]], widths=[14, 12])
+    bc = BarChart()
+    bc.type = "col"
+    bc.title = "Busiest Hours"
+    bc.style = 11
+    bc.height, bc.width = 9, 22
+    bc.legend = None
+    data = Reference(hsh, min_col=2, min_row=h_top, max_row=h_bot)
+    cats = Reference(hsh, min_col=1, min_row=h_top + 1, max_row=h_bot)
+    bc.add_data(data, titles_from_data=True)
+    bc.set_categories(cats)
+    hsh.add_chart(bc, "D2")
+
+    # -- Check-Ins sheet (every sign-in, all fields, filterable) --
+    esh = wb.create_sheet("Check-Ins")
+    esh.sheet_view.showGridLines = False
+    headers = ["#", "Date", "Time", "Weekday", "Name", "Email", "Type", "Machine", "Kiosk", "Room", "Reason", "Checked In By", "Rules"]
+    widths = [5, 12, 10, 11, 22, 28, 10, 16, 16, 16, 26, 18, 8]
+    detail = []
+    for idx, r in enumerate(rows, 1):
+        dt = _arena_parse_dt(r.get("signed_in_at", ""))
+        detail.append([
+            idx,
+            dt.strftime("%Y-%m-%d") if dt else "",
+            dt.strftime("%I:%M %p").lstrip("0") if dt else "",
+            dt.strftime("%A") if dt else "",
+            r.get("name", ""), r.get("email", ""),
+            _entry_kind(r).title(),
+            _rec_machine(r) or "—",
+            r.get("kiosk_label", ""), r.get("room", ""),
+            r.get("reason", ""), r.get("checked_in_by", ""),
+            "Yes" if r.get("accepted_rules") else "No",
+        ])
+    e_top, e_bot = table(esh, 1, 1, headers, detail or [["", "", "", "", "No check-ins", "", "", "", "", "", "", "", ""]], widths=widths)
+    esh.auto_filter.ref = f"A1:M{e_bot}"
+    esh.freeze_panes = "B2"
+
+    # -- Machines sheet (per-station activity) --
+    mach = {}
+    for r in rows:
+        mname = _rec_machine(r)
+        if not mname:
+            continue
+        m = mach.setdefault(mname, {"count": 0, "users": set(), "guest": 0, "varsity": 0, "staff": 0, "first": "", "last": ""})
+        m["count"] += 1
+        ukey = (r.get("email") or r.get("name", "")).strip().lower()
+        if ukey:
+            m["users"].add(ukey)
+        m[_entry_kind(r)] += 1
+        si = r.get("signed_in_at", "")
+        if si:
+            if not m["first"] or si < m["first"]:
+                m["first"] = si
+            if si > m["last"]:
+                m["last"] = si
+
+    def _mach_key(kv):
+        name = kv[0]
+        mm = re.match(r"Island (\d+) S(\d+)", name, re.IGNORECASE)
+        if mm:
+            return (0, int(mm.group(1)), int(mm.group(2)))
+        mm = re.match(r"Stage S(\d+)", name, re.IGNORECASE)
+        if mm:
+            return (1, 0, int(mm.group(1)))
+        return (2, 999, 999)
+    mach_sorted = sorted(mach.items(), key=_mach_key)
+
+    msh = wb.create_sheet("Machines")
+    msh.sheet_view.showGridLines = False
+    section(msh, "A1", "Station Activity")
+    mheaders = ["Machine", "Sign-ins", "Unique Users", "Guest", "Varsity", "Staff", "First Used", "Last Used"]
+    mdata = []
+    for name, m in mach_sorted:
+        fdt = _arena_parse_dt(m["first"])
+        ldt = _arena_parse_dt(m["last"])
+        mdata.append([name, m["count"], len(m["users"]), m["guest"], m["varsity"], m["staff"],
+                      fdt.strftime("%Y-%m-%d") if fdt else "",
+                      ldt.strftime("%Y-%m-%d %I:%M %p") if ldt else ""])
+    m_top, m_bot = table(msh, 2, 1, mheaders, mdata or [["No station activity", 0, 0, 0, 0, 0, "", ""]],
+                         widths=[16, 11, 13, 9, 9, 9, 14, 20])
+    msh.auto_filter.ref = f"A2:H{m_bot}"
+    msh.freeze_panes = "A3"
+    if mach_sorted:
+        # Busiest-station chart (sorted by count for the visual).
+        busy = sorted(mach_sorted, key=lambda kv: -kv[1]["count"])[:15]
+        cr = m_bot + 3
+        msh.cell(row=cr, column=1, value="Chart data (busiest stations)").font = Font(italic=True, color=MUTE, size=9, name="Segoe UI")
+        cdata_top = cr + 1
+        for j, h in enumerate(["Machine", "Sign-ins"]):
+            cc = msh.cell(row=cdata_top, column=1 + j, value=h)
+            cc.font = hdr_font
+            cc.fill = hdr_fill
+            cc.alignment = center
+        for i, (name, m) in enumerate(busy):
+            msh.cell(row=cdata_top + 1 + i, column=1, value=name)
+            msh.cell(row=cdata_top + 1 + i, column=2, value=m["count"])
+        cbot = cdata_top + len(busy)
+        mbar = BarChart()
+        mbar.type = "bar"
+        mbar.title = "Busiest Stations"
+        mbar.style = 11
+        mbar.height, mbar.width = 10, 20
+        mbar.legend = None
+        bdata = Reference(msh, min_col=2, min_row=cdata_top, max_row=cbot)
+        bcats = Reference(msh, min_col=1, min_row=cdata_top + 1, max_row=cbot)
+        mbar.add_data(bdata, titles_from_data=True)
+        mbar.set_categories(bcats)
+        msh.add_chart(mbar, "J2")
+
+    # -- Students sheet (per-person activity leaderboard) --
+    stud = {}
+    for r in rows:
+        key = (r.get("email") or r.get("name", "")).strip().lower()
+        if not key:
+            continue
+        s = stud.setdefault(key, {"name": r.get("name", ""), "email": r.get("email", ""), "count": 0,
+                                  "first": "", "last": "", "guest": 0, "varsity": 0, "staff": 0,
+                                  "machines": _Counter(), "accepted": 0})
+        s["count"] += 1
+        if not s["name"] and r.get("name"):
+            s["name"] = r.get("name")
+        s[_entry_kind(r)] += 1
+        _rm = _rec_machine(r)
+        if _rm:
+            s["machines"][_rm] += 1
+        if r.get("accepted_rules"):
+            s["accepted"] += 1
+        si = r.get("signed_in_at", "")
+        if si:
+            if not s["first"] or si < s["first"]:
+                s["first"] = si
+            if si > s["last"]:
+                s["last"] = si
+    stud_sorted = sorted(stud.values(), key=lambda x: -x["count"])
+
+    ssh = wb.create_sheet("Students")
+    ssh.sheet_view.showGridLines = False
+    section(ssh, "A1", "Student Activity")
+    sheaders = ["Rank", "Name", "Email", "Visits", "Guest", "Varsity", "Staff", "Favorite Station", "First Seen", "Last Seen"]
+    sdata = []
+    for i, s in enumerate(stud_sorted, 1):
+        fdt = _arena_parse_dt(s["first"])
+        ldt = _arena_parse_dt(s["last"])
+        fav = s["machines"].most_common(1)[0][0] if s["machines"] else "—"
+        sdata.append([i, s["name"] or s["email"] or "Guest", s["email"], s["count"],
+                      s["guest"], s["varsity"], s["staff"], fav,
+                      fdt.strftime("%Y-%m-%d") if fdt else "",
+                      ldt.strftime("%Y-%m-%d %I:%M %p") if ldt else ""])
+    _st, s_bot = table(ssh, 2, 1, sheaders,
+                       sdata or [["", "No students", "", 0, 0, 0, 0, "—", "", ""]],
+                       widths=[7, 24, 28, 9, 9, 9, 9, 16, 14, 20])
+    ssh.auto_filter.ref = f"A2:J{s_bot}"
+    ssh.freeze_panes = "A3"
+
+    # -- Heatmap sheet (day × hour, colour-scaled) --
+    from openpyxl.formatting.rule import ColorScaleRule
+    from openpyxl.utils import get_column_letter as _gcl
+    hm = wb.create_sheet("Heatmap")
+    hm.sheet_view.showGridLines = False
+    section(hm, "A1", "Traffic Heatmap · Day × Hour")
+    wknames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    hm_top = 2
+    for j, htext in enumerate(["Day"] + [_fmt_hhmm(f"{h}:00") for h in range(24)]):
+        c = hm.cell(row=hm_top, column=1 + j, value=htext)
+        c.font = hdr_font
+        c.fill = hdr_fill
+        c.alignment = center
+        c.border = border
+    heat = stats.get("heatmap", [[0] * 24 for _ in range(7)])
+    for i in range(7):
+        rr = hm_top + 1 + i
+        dc = hm.cell(row=rr, column=1, value=wknames[i])
+        dc.font = cell_font
+        dc.alignment = left
+        dc.border = border
+        for h in range(24):
+            cc = hm.cell(row=rr, column=2 + h, value=heat[i][h])
+            cc.font = cell_font
+            cc.alignment = center
+            cc.border = border
+    hm.conditional_formatting.add(
+        f"B{hm_top + 1}:Y{hm_top + 7}",
+        ColorScaleRule(start_type='num', start_value=0, start_color='FFFFFF',
+                       mid_type='percentile', mid_value=55, mid_color='7DD3E8',
+                       end_type='max', end_color='06B6D4'))
+    hm.column_dimensions['A'].width = 12
+    for h in range(24):
+        hm.column_dimensions[_gcl(2 + h)].width = 5
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return Response(
+        bio.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=arena_activity_{stamp}.xlsx"},
+    )
+
+
+@app.route('/api/arena/config')
+@api_auth_required
+def api_arena_get_config():
+    cfg = load_arena_config()
+    cfg["watchlist"] = arena_db.watchlist_all()  # served from the encrypted DB, not the JSON
+    return jsonify({"success": True, "config": cfg})
+
+
+@app.route('/api/arena/config', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_save_config():
+    data = request.get_json(silent=True) or {}
+    cfg = load_arena_config()
+    if "open" in data:
+        cfg["open"] = bool(data["open"])
+    if "arena_name" in data:
+        cfg["arena_name"] = _clean_str(data["arena_name"], 60) or DEFAULT_ARENA_CONFIG["arena_name"]
+    if "welcome_title" in data:
+        cfg["welcome_title"] = _clean_str(data["welcome_title"], 80) or DEFAULT_ARENA_CONFIG["welcome_title"]
+    if "welcome_sub" in data:
+        cfg["welcome_sub"] = _clean_str(data["welcome_sub"], 160)
+    if "rules_text" in data:
+        cfg["rules_text"] = _clean_str(data["rules_text"], 200) or DEFAULT_ARENA_CONFIG["rules_text"]
+    if "require_email" in data:
+        cfg["require_email"] = bool(data["require_email"])
+    if "staff_passcode" in data:
+        pin = _clean_str(data["staff_passcode"], 12)
+        if pin.isdigit() and 4 <= len(pin) <= 12:
+            cfg["staff_passcode"] = pin
+    if "max_attempts" in data:
+        try:
+            cfg["max_attempts"] = max(1, min(20, int(data["max_attempts"])))
+        except (ValueError, TypeError):
+            pass
+    if "open_hour" in data:
+        try:
+            cfg["open_hour"] = max(0, min(23, int(data["open_hour"])))
+        except (ValueError, TypeError):
+            pass
+    if "close_hour" in data:
+        try:
+            cfg["close_hour"] = max(1, min(24, int(data["close_hour"])))
+        except (ValueError, TypeError):
+            pass
+    if "closing_soon_minutes" in data:
+        try:
+            cfg["closing_soon_minutes"] = max(0, min(120, int(data["closing_soon_minutes"])))
+        except (ValueError, TypeError):
+            pass
+    if "pc_lock_enabled" in data:
+        cfg["pc_lock_enabled"] = bool(data["pc_lock_enabled"])
+    if "varsity_checkin" in data:
+        cfg["varsity_checkin"] = bool(data["varsity_checkin"])
+    if "pc_hold_minutes" in data:
+        try:
+            cfg["pc_hold_minutes"] = max(1, min(120, int(data["pc_hold_minutes"])))
+        except (ValueError, TypeError):
+            pass
+    if "signin_guard" in data and isinstance(data["signin_guard"], dict):
+        sg = dict(cfg.get("signin_guard") or {})
+        d = data["signin_guard"]
+        if "enabled" in d:
+            sg["enabled"] = bool(d["enabled"])
+        if "cooldown_minutes" in d:
+            sg["cooldown_minutes"] = max(0, min(1440, _as_int(d["cooldown_minutes"], 0)))
+        if "max_per_day" in d:
+            sg["max_per_day"] = max(0, min(100, _as_int(d["max_per_day"], 0)))
+        if "max_active_pc" in d:
+            sg["max_active_pc"] = max(0, min(20, _as_int(d["max_active_pc"], 0)))
+        if "ban_message" in d:
+            sg["ban_message"] = _clean_str(d["ban_message"], 160)
+        cfg["signin_guard"] = sg
+    if "closed_days" in data and isinstance(data["closed_days"], list):
+        cfg["closed_days"] = sorted({d for d in data["closed_days"] if isinstance(d, int) and 0 <= d <= 6})
+    if "day_hours" in data and isinstance(data["day_hours"], list):
+        cfg["day_hours"] = _arena_build_day_hours({"day_hours": data["day_hours"]}, had_day_hours=True)
+    if "announcement" in data and isinstance(data["announcement"], dict):
+        a = data["announcement"]
+        cur = cfg.get("announcement") or {}
+        color = _clean_str(a.get("color", cur.get("color", "#CFB991")), 7)
+        if not _valid_hex_color(color):
+            color = "#CFB991"
+        color2 = _clean_str(a.get("color2", cur.get("color2", "#4C6EDC")), 7)
+        if not _valid_hex_color(color2):
+            color2 = "#4C6EDC"
+        mode = a.get("mode", cur.get("mode", "solid"))
+        if mode not in ("solid", "gradient", "cycle"):
+            mode = "solid"
+        size = a.get("size", cur.get("size", "normal"))
+        if size not in ("normal", "large"):
+            size = "normal"
+        try:
+            speed = int(a.get("speed", cur.get("speed", 5)))
+        except (TypeError, ValueError):
+            speed = 5
+        speed = max(1, min(10, speed))
+        cfg["announcement"] = {
+            "enabled": bool(a.get("enabled")),
+            "text": _clean_str(a.get("text", ""), 200),
+            "color": color,
+            "color2": color2,
+            "mode": mode,
+            "scroll": a.get("scroll", True) is not False,
+            "speed": speed,
+            "size": size,
+            "pulse": bool(a.get("pulse")),
+            "uppercase": a.get("uppercase", True) is not False,
+        }
+    if "email_domains" in data and isinstance(data["email_domains"], list):
+        domains = [_clean_str(d, 40).lower().lstrip("@") for d in data["email_domains"] if _clean_str(d, 40)]
+        cfg["email_domains"] = domains[:10]
+    if "kiosks" in data and isinstance(data["kiosks"], dict):
+        for kid, kv in data["kiosks"].items():
+            if kid not in cfg.get("kiosks", {}):
+                continue
+            if not isinstance(kv, dict):
+                continue
+            k = cfg["kiosks"][kid]
+            if "label" in kv:
+                k["label"] = _clean_str(kv["label"], 40) or k.get("label", kid)
+            if "room" in kv:
+                k["room"] = _clean_str(kv["room"], 60)
+            if "enabled" in kv:
+                k["enabled"] = bool(kv["enabled"])
+            if "bypass" in kv:
+                k["bypass"] = bool(kv["bypass"])
+    save_arena_config(cfg)
+    log_activity("arena_settings", "settings", "Updated arena kiosk settings")
+    return jsonify({"success": True, "config": cfg})
+
+
+@app.route('/api/arena/kiosks', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_kiosk_add():
+    """Add a new kiosk (unique id) for a room. type 'pc' = station picker, else simple."""
+    data = request.get_json(silent=True) or {}
+    label = _clean_str(data.get("label"), 40)
+    room = _clean_str(data.get("room"), 60)
+    ktype = "pc" if data.get("type") == "pc" else "console"
+    if not room:
+        return jsonify({"success": False, "error": "A room name is required."}), 400
+    cfg = load_arena_config()
+    kiosks = cfg.setdefault("kiosks", {})
+    nums = [int(k.split("-")[1]) for k in kiosks
+            if k.startswith("kiosk-") and k.split("-")[1].isdigit()]
+    new_num = (max(nums) + 1) if nums else 1
+    kid = f"kiosk-{new_num}"
+    kiosks[kid] = {
+        "label": label or f"Kiosk {new_num}",
+        "room": room, "type": ktype, "enabled": True, "bypass": False,
+    }
+    save_arena_config(cfg)
+    log_activity("arena_kiosk", "settings", f"Added kiosk {kid} ({room})")
+    return jsonify({"success": True, "id": kid, "kiosks": _arena_kiosk_list(cfg)})
+
+
+@app.route('/api/arena/kiosks/<kid>', methods=['DELETE'])
+@api_perm_required('arena.manage')
+def api_arena_kiosk_remove(kid):
+    """Remove a kiosk (never the last one)."""
+    kid = _arena_normalize_kid(kid)
+    cfg = load_arena_config()
+    kiosks = cfg.get("kiosks") or {}
+    if kid not in kiosks:
+        return jsonify({"success": False, "error": "Kiosk not found."}), 404
+    if len(kiosks) <= 1:
+        return jsonify({"success": False, "error": "At least one kiosk is required."}), 400
+    kiosks.pop(kid, None)
+    save_arena_config(cfg)
+    log_activity("arena_kiosk", "settings", f"Removed kiosk {kid}")
+    return jsonify({"success": True, "kiosks": _arena_kiosk_list(cfg)})
+
+
+@app.route('/api/arena/watchlist/add', methods=['POST'])
+@api_perm_required('arena.ban')
+def api_arena_watchlist_add():
+    """Add (or update) an email on the ban/watch list."""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    mode = "ban" if data.get("mode") == "ban" else "watch"
+    reason = _clean_str(data.get("reason"), 120)
+    _u = session.get('dashboard_user') or {}
+    staff = _u.get('display_name') or _u.get('username') or 'Staff'
+    arena_db.watchlist_set(email, mode, reason, staff)
+    log_activity("arena_watchlist", "settings", f"{staff} {mode}-listed {email}")
+    return jsonify({"success": True, "watchlist": arena_db.watchlist_all()})
+
+
+@app.route('/api/arena/watchlist/remove', methods=['POST'])
+@api_perm_required('arena.ban')
+def api_arena_watchlist_remove():
+    """Remove an email from the ban/watch list."""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    arena_db.watchlist_remove(email)
+    log_activity("arena_watchlist", "settings", f"Removed {email} from watch/ban list")
+    return jsonify({"success": True, "watchlist": arena_db.watchlist_all()})
+
+
+@app.route('/api/arena/signin-flags')
+@api_perm_required('arena.manage')
+def api_arena_signin_flags():
+    """Recent sign-in flags (bans, watches, blocked attempts) for the Nova feed."""
+    return jsonify({"success": True, "flags": _arena_recent_flags(60)})
+
+
+@app.route('/api/arena/signin-flags/clear', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_signin_flags_clear():
+    """Clear the sign-in flags feed."""
+    arena_db.clear_flags()
+    log_activity("arena_signin_flag", "arena", "Cleared sign-in flags feed")
+    return jsonify({"success": True})
+
+
+# -- Arena students (profiles + notes) -------------------------------------
+
+def _arena_staff_name():
+    _u = session.get('dashboard_user') or {}
+    return _u.get('display_name') or _u.get('username') or 'Staff'
+
+
+@app.route('/api/arena/students')
+@api_perm_required('page.arena_students')
+def api_arena_students():
+    """Every distinct student from the sign-in history + note counts + flag status."""
+    query = request.args.get("q", "")
+    students = arena_db.list_students(query)
+    watch = {(_norm_email(w.get("email"))): w.get("mode") for w in arena_db.watchlist_all()}
+    for s in students:
+        s["status"] = watch.get(_norm_email(s.get("email")), "")  # '', 'watch', or 'ban'
+    return jsonify({"success": True, "students": students})
+
+
+@app.route('/api/arena/student')
+@api_perm_required('page.arena_students')
+def api_arena_student():
+    """Full profile for one student: visits, notes, incidents, watch/ban status, flags."""
+    email = _norm_email(request.args.get("email"))
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    visits = arena_db.get_visits(email, limit=100)
+    notes = arena_db.get_notes(email)
+    incidents = arena_db.get_incidents_for(email)
+    if not has_perm('arena.reports_all'):
+        me = _arena_staff_name()
+        incidents = [i for i in incidents if (i.get("author") or "") == me]
+    w = _arena_watch_entry(None, email)
+    flags = [f for f in _arena_recent_flags(200) if _norm_email(f.get("email")) == email]
+    name = ""
+    for v in visits:
+        if v.get("name"):
+            name = v["name"]
+            break
+    return jsonify({
+        "success": True,
+        "profile": {
+            "email": email,
+            "name": name,
+            "visit_count": len(visits),
+            "first_at": visits[-1]["signed_in_at"] if visits else None,
+            "last_at": visits[0]["signed_in_at"] if visits else None,
+            "status": (w.get("mode") if w else ""),
+            "status_reason": (w.get("reason") if w else ""),
+            "visits": visits,
+            "notes": notes,
+            "incidents": incidents,
+            "flags": flags,
+        },
+    })
+
+
+@app.route('/api/arena/student/note', methods=['POST'])
+@api_perm_required('arena.notes')
+def api_arena_student_note_add():
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    note = _clean_str(data.get("note"), 1000)
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    if not note:
+        return jsonify({"success": False, "error": "Note text is required."}), 400
+    name = _clean_str(data.get("name"), 120)
+    ntype = _clean_str(data.get("type"), 30) or "general"
+    nid = arena_db.add_note(email, name, note, ntype, _arena_staff_name())
+    log_activity("arena_student_note", "arena", f"{_arena_staff_name()} noted {email}: {note[:60]}")
+    return jsonify({"success": True, "id": nid, "notes": arena_db.get_notes(email)})
+
+
+@app.route('/api/arena/student/note/<nid>', methods=['DELETE'])
+@api_perm_required('arena.notes')
+def api_arena_student_note_delete(nid):
+    arena_db.delete_note(nid)
+    return jsonify({"success": True})
+
+
+@app.route('/api/arena/student', methods=['DELETE'])
+@api_perm_required('arena.students_manage')
+def api_arena_student_delete():
+    """Delete a student's entire record (all sign-ins + notes)."""
+    email = _norm_email(request.args.get("email"))
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    visits, notes = arena_db.delete_student(email)
+    log_activity("arena_student_delete", "arena", f"{_arena_staff_name()} deleted {email} ({visits} visits, {notes} notes)")
+    return jsonify({"success": True, "deleted_visits": visits, "deleted_notes": notes})
+
+
+@app.route('/api/arena/student/edit', methods=['POST'])
+@api_perm_required('arena.students_manage')
+def api_arena_student_edit():
+    """Edit a student's name and/or email across all their records + PUID entry."""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    new_name = _clean_str(data.get("name"), 120)
+    new_email = _norm_email(data.get("new_email")) if data.get("new_email") else None
+    if new_email and "@" not in new_email:
+        return jsonify({"success": False, "error": "Enter a valid new email."}), 400
+    if not new_name and not new_email:
+        return jsonify({"success": False, "error": "Nothing to update."}), 400
+    arena_db.update_student(email, new_name=new_name or None, new_email=new_email)
+    try:
+        puid_db.update_by_email(email, new_name=new_name or None, new_email=new_email)
+    except Exception as e:
+        logger.warning(f"[STUDENT EDIT] PUID sync failed: {e}")
+    log_activity("arena_student_edit", "arena",
+                 f"{_arena_staff_name()} edited student {email}" + (f" ? {new_email}" if new_email else ""))
+    return jsonify({"success": True, "email": new_email or email, "name": new_name})
+
+
+@app.route('/api/arena/student/reset', methods=['POST'])
+@api_perm_required('arena.students_manage')
+def api_arena_student_reset():
+    """Reset a student's account: clears their saved PUID registration so they
+    re-register on their next scan. Visit history is preserved."""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    if not email or "@" not in email:
+        return jsonify({"success": False, "error": "A valid email is required."}), 400
+    removed = 0
+    try:
+        removed = puid_db.delete_by_email(email)
+    except Exception as e:
+        logger.warning(f"[STUDENT RESET] PUID delete failed: {e}")
+    log_activity("arena_student_reset", "arena", f"{_arena_staff_name()} reset account for {email}")
+    return jsonify({"success": True, "reset": bool(removed), "email": email})
+
+
+# -- Arena incident reports ------------------------------------------------
+
+def _arena_visible_incidents():
+    """Incidents the current user may see: all if 'arena.reports_all', else only their own."""
+    incidents = arena_db.list_incidents()
+    if not has_perm('arena.reports_all'):
+        me = _arena_staff_name()
+        incidents = [i for i in incidents if (i.get("author") or "") == me]
+    return incidents
+
+
+def _arena_can_edit_incident(rid):
+    """True if the user can resolve/delete this incident (owner or reports_all)."""
+    if has_perm('arena.reports_all'):
+        return True
+    me = _arena_staff_name()
+    return any(i.get("id") == rid and (i.get("author") or "") == me for i in arena_db.list_incidents())
+
+
+@app.route('/api/arena/incidents')
+@api_perm_required('page.arena_reports')
+def api_arena_incidents():
+    return jsonify({"success": True, "incidents": _arena_visible_incidents(),
+                    "can_see_all": has_perm('arena.reports_all')})
+
+
+@app.route('/api/arena/incidents', methods=['POST'])
+@api_perm_required('arena.reports')
+def api_arena_incident_create():
+    data = request.get_json(silent=True) or {}
+    title = _clean_str(data.get("title"), 140)
+    desc = _clean_str(data.get("description"), 4000)
+    if not title:
+        return jsonify({"success": False, "error": "A title is required."}), 400
+    itype = _clean_str(data.get("type"), 30) or "other"
+    severity = data.get("severity") if data.get("severity") in ("low", "medium", "high") else "low"
+    rid = arena_db.add_incident(
+        title, itype, severity, desc, _arena_staff_name(),
+        involved_name=_clean_str(data.get("involved_name"), 120),
+        involved_email=_norm_email(data.get("involved_email")),
+    )
+    log_activity("arena_incident", "arena", f"{_arena_staff_name()} filed incident: {title}")
+    return jsonify({"success": True, "id": rid, "incidents": _arena_visible_incidents()})
+
+
+@app.route('/api/arena/incidents/<rid>/resolve', methods=['POST'])
+@api_perm_required('arena.reports')
+def api_arena_incident_resolve(rid):
+    if not _arena_can_edit_incident(rid):
+        return jsonify({"success": False, "error": "You can only manage your own reports."}), 403
+    data = request.get_json(silent=True) or {}
+    status = data.get("status") if data.get("status") in ("open", "resolved") else "resolved"
+    arena_db.resolve_incident(rid, _arena_staff_name(), status)
+    return jsonify({"success": True, "incidents": _arena_visible_incidents()})
+
+
+@app.route('/api/arena/incidents/<rid>', methods=['DELETE'])
+@api_perm_required('arena.reports')
+def api_arena_incident_delete(rid):
+    if not _arena_can_edit_incident(rid):
+        return jsonify({"success": False, "error": "You can only delete your own reports."}), 403
+    arena_db.delete_incident(rid)
+    return jsonify({"success": True, "incidents": _arena_visible_incidents()})
+
+
+@app.route('/api/arena/ggleap-usage')
+@api_perm_required('arena.manage')
+def api_arena_ggleap_usage():
+    """Today's GGLeap API usage vs the daily cap (no GGLeap call — reads the local
+    meter). Lets staff see how close we are to the limit."""
+    with _ggleap_usage_lock:
+        today = _ggleap_usage_today()
+        if _ggleap_usage.get("date") != today:
+            used, by_kind = 0, {}
+        else:
+            used, by_kind = int(_ggleap_usage.get("total", 0)), dict(_ggleap_usage.get("by_kind", {}))
+    return jsonify({
+        "success": True,
+        "date": today,
+        "used": used,
+        "limit": GGLEAP_DAILY_LIMIT,
+        "remaining": max(0, GGLEAP_DAILY_LIMIT - used),
+        "pct": round(used / GGLEAP_DAILY_LIMIT * 100, 1) if GGLEAP_DAILY_LIMIT else 0,
+        "by_kind": by_kind,
+    })
+
+
+def _pc_collect_lock_targets(lock):
+    """Return [(uuid, name), ...] Island PCs to act on: for lock=True the idle
+    unlocked ones; for lock=False every admin-locked one. ([] on API error)."""
+    devices, error = _ggleap_get_machines()
+    if error and not devices:
+        return []
+    out = []
+    for d in devices:
+        if d.get("GgRockVm"):
+            continue
+        name, uuid = d.get("Name", ""), d.get("Uuid")
+        if not uuid or not _is_kiosk_pc(name):
+            continue
+        is_locked = bool(d.get("IsLocked"))
+        if lock:
+            if d.get("State") == "ReadyForUser" and not is_locked:
+                out.append((uuid, name))
+        else:
+            if is_locked and bool(d.get("LockedByAdmin")):
+                out.append((uuid, name))
+    return out
+
+
+def _pc_bulk_apply(items, lock):
+    """Background: lock/unlock a batch of PCs (throttled) and keep the reconcile
+    loop's memory in sync so its decision matches this manual override."""
+    for uuid, name in items:
+        ok, err = _ggleap_set_screen_lock(uuid, True, _pc_lock_message(name)) if lock \
+            else _ggleap_set_screen_lock(uuid, False)
+        if ok:
+            if lock:
+                _pc_human_unlocked.discard(uuid)
+                _pc_we_locked.add(uuid)
+            else:
+                _pc_we_locked.discard(uuid)
+                _pc_human_unlocked.add(uuid)  # stays unlocked until it reboots
+        else:
+            logger.warning(f"[PCLOCK] bulk {'lock' if lock else 'unlock'} {name} failed: {err}")
+
+
+@app.route('/api/arena/pcs/lock-status')
+@api_perm_required('arena.manage')
+def api_arena_pcs_lock_status():
+    """Lock overview for the Kiosk Manager: how many Island PCs are locked,
+    idle-and-unlocked (lockable now), in use, or offline."""
+    counts = {"locked": 0, "lockable": 0, "in_use": 0, "offline": 0, "total": 0, "enabled": bool(load_arena_config().get("pc_lock_enabled", False))}
+    devices, error = _ggleap_get_machines()
+    if error and not devices:
+        return jsonify({"success": False, "error": error, **counts})
+    for d in devices:
+        if d.get("GgRockVm") or not _is_kiosk_pc(d.get("Name", "")):
+            continue
+        counts["total"] += 1
+        state = d.get("State")
+        if bool(d.get("IsLocked")):
+            counts["locked"] += 1
+        elif state == "Off":
+            counts["offline"] += 1
+        elif state == "ReadyForUser":
+            counts["lockable"] += 1
+        else:
+            counts["in_use"] += 1
+    return jsonify({"success": True, **counts})
+
+
+@app.route('/api/arena/pcs/lock-all', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_pcs_lock_all():
+    """Lock every idle, unlocked Island PC now (manual trigger). Runs in the
+    background because calls are throttled to respect GGLeap's rate limit."""
+    targets = _pc_collect_lock_targets(lock=True)
+    if targets:
+        threading.Thread(target=_pc_bulk_apply, args=(list(targets), True), daemon=True).start()
+        log_activity("arena_pc_lock_all", "arena", f"Locking {len(targets)} idle PC(s)")
+    return jsonify({"success": True, "count": len(targets)})
+
+
+@app.route('/api/arena/pcs/unlock-all', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_pcs_unlock_all():
+    """Unlock every admin-locked Island PC now (manual trigger). They stay
+    unlocked until they reboot, even if the lock feature is on."""
+    targets = _pc_collect_lock_targets(lock=False)
+    if targets:
+        threading.Thread(target=_pc_bulk_apply, args=(list(targets), False), daemon=True).start()
+        log_activity("arena_pc_unlock_all", "arena", f"Unlocking {len(targets)} PC(s)")
+    return jsonify({"success": True, "count": len(targets)})
+
+
+@app.route('/api/arena/alerts')
+@api_auth_required
+def api_arena_alerts():
+    """Lightweight per-kiosk lock/online status for fast alerting (no signin file read)."""
+    cfg = load_arena_config()
+    state = load_arena_state()
+    kiosks = []
+    for kid in cfg.get("kiosks", {}):
+        kcfg = _arena_kiosk_cfg(cfg, kid)
+        ks = state.get(kid) or {}
+        online, last_seen = _arena_kiosk_online(state, kid)
+        kiosks.append({
+            "id": kid, "label": kcfg.get("label"), "room": kcfg.get("room"),
+            "locked": bool(ks.get("locked")), "attempts": ks.get("attempts", 0),
+            "max_attempts": cfg.get("max_attempts", 5),
+            "online": online, "last_seen": last_seen,
+        })
+    open_reports = 0
+    if has_perm('page.arena_reports'):
+        open_reports = sum(1 for i in _arena_visible_incidents() if i.get("status") != "resolved")
+    return jsonify({"success": True, "kiosks": kiosks, "flags": _arena_recent_flags(8, since_minutes=10),
+                    "open_reports": open_reports})
+
+
+# -- Arena API — public kiosk endpoints (no login) -------------------------
+
+@app.route('/api/arena/kiosk/<kid>/config')
+def api_arena_kiosk_config(kid):
+    """Public per-kiosk display config (no passcode). Doubles as a heartbeat."""
+    cfg = load_arena_config()
+    state = load_arena_state()
+    ks = state.setdefault(kid, {})
+    ks["last_seen"] = datetime.now(timezone.utc).isoformat()
+    # Kiosk reports its own lockout state so staff can see/unlock it remotely.
+    if request.args.get("locked") is not None:
+        reported_locked = request.args.get("locked") == "1"
+        # Ignore a stale locked=1 from a kiosk that hasn't yet processed the latest
+        # remote unlock (prevents the alert from re-appearing right after unlocking).
+        try:
+            kiosk_utok = int(request.args.get("utok", 0))
+        except (ValueError, TypeError):
+            kiosk_utok = 0
+        server_utok = int(_arena_kiosk_cfg(cfg, kid).get("unlock_token", 0))
+        if reported_locked and kiosk_utok < server_utok:
+            reported_locked = False
+        ks["locked"] = reported_locked
+        try:
+            ks["attempts"] = int(request.args.get("attempts", 0))
+        except (ValueError, TypeError):
+            ks["attempts"] = 0
+    save_arena_state(state)
+    return jsonify({"success": True, "config": _arena_kiosk_public(cfg, kid)})
+
+
+@app.route('/api/arena/kiosk/<kid>/reload', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_kiosk_reload(kid):
+    """Remotely tell a kiosk (or all) to reload — kiosks pick this up within seconds."""
+    cfg = load_arena_config()
+    targets = list(cfg.get("kiosks", {}).keys()) if kid == "all" else [kid]
+    if kid != "all" and kid not in cfg.get("kiosks", {}):
+        return jsonify({"success": False, "error": "Unknown kiosk"}), 404
+    for t in targets:
+        cfg["kiosks"][t]["reload_token"] = int(cfg["kiosks"][t].get("reload_token", 0)) + 1
+    save_arena_config(cfg)
+    return jsonify({"success": True})
+
+
+@app.route('/api/arena/kiosk/<kid>/unlock', methods=['POST'])
+@api_perm_required('arena.unlock')
+def api_arena_kiosk_unlock(kid):
+    """Remotely clear a kiosk's failed-attempt lockout so the visitor can retry."""
+    cfg = load_arena_config()
+    targets = list(cfg.get("kiosks", {}).keys()) if kid == "all" else [kid]
+    if kid != "all" and kid not in cfg.get("kiosks", {}):
+        return jsonify({"success": False, "error": "Unknown kiosk"}), 404
+    for t in targets:
+        cfg["kiosks"][t]["unlock_token"] = int(cfg["kiosks"][t].get("unlock_token", 0)) + 1
+    save_arena_config(cfg)
+    # Optimistically clear the reported lock state so the UI updates immediately.
+    state = load_arena_state()
+    for t in targets:
+        if t in state:
+            state[t]["locked"] = False
+            state[t]["attempts"] = 0
+    save_arena_state(state)
+    return jsonify({"success": True})
+
+
+
+
+@app.route('/api/arena/verify-pin', methods=['POST'])
+def api_arena_verify_pin():
+    """Public: verify the staff passcode for the on-kiosk admin panel."""
+    cfg = load_arena_config()
+    entered = (request.get_json(silent=True) or {}).get("pin", "")
+    if _arena_check_passcode(cfg, entered):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Incorrect passcode"}), 403
+
+
+@app.route('/api/arena/kiosk-unlock', methods=['POST'])
+def api_arena_kiosk_bypass_unlock():
+    """PIN-gated (or staff): unlock a station from the on-kiosk 'Unlock System'
+    map. Posts a 'System Unlocked · BYPASS ADMIN' event to the Live Feed."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    if not (_is_full_access_user() or has_perm('arena.manage')):
+        if not _arena_check_passcode(cfg, data.get("pin", "")):
+            return jsonify({"success": False, "error": "Incorrect passcode"}), 403
+    uid = _clean_str(data.get("machineUuid") or data.get("machine_uuid"), 60)
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    name = machine.get("name", "the station")
+    _pc_we_locked.discard(uid)
+    _pc_human_unlocked.add(uid)
+    _pc_kiosk_unlocked.add(uid)
+    _pc_session_ended.pop(uid, None)
+    ok, err = _ggleap_set_screen_lock(uid, False)
+    if not ok:
+        return jsonify({"success": False, "error": (err or "GGLeap error") + " Could not unlock the machine."}), 502
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    _arena_push_system_event({
+        "id": uuid.uuid4().hex,
+        "name": "System Unlocked",
+        "email": "",
+        "kiosk_id": kid, "kiosk_label": kcfg.get("label"),
+        "room": name,
+        "kind": "unlock",
+        "system_event": True,
+        "reason": "BYPASS ADMIN",
+        "machine": name, "machine_uuid": uid,
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    log_activity("arena_kiosk_unlock", "arena", f"System Unlocked (BYPASS ADMIN): {name}")
+    return jsonify({"success": True, "machine": name})
+
+
+@app.route('/api/arena/kiosk/<kid>/bypass', methods=['POST'])
+def api_arena_kiosk_bypass(kid):
+    """Toggle a kiosk's arena-hours bypass. Staff session OR correct passcode."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    if not (_is_full_access_user() or has_perm('arena.manage')):
+        if not _arena_check_passcode(cfg, data.get("pin", "")):
+            return jsonify({"success": False, "error": "Incorrect passcode"}), 403
+    if kid not in cfg.get("kiosks", {}):
+        return jsonify({"success": False, "error": "Unknown kiosk"}), 404
+    cfg["kiosks"][kid]["bypass"] = bool(data.get("value"))
+    save_arena_config(cfg)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    return jsonify({"success": True, "bypass": kcfg.get("bypass"), "open": _arena_is_open_now(cfg, kcfg)})
+
+
+# -- Sign-in protection: rate/duplicate guards + ban/watch list + flags feed --
+_ARENA_FLAGS_FILE = os.path.join(DATA_DIR, "arena_signin_flags.json")  # legacy — migrated to DB
+
+def _as_int(v, d=0):
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return d
+
+def _norm_email(e):
+    return (e or "").strip().lower()
+
+def _arena_watch_entry(cfg, email):
+    """Ban/watch entry for an email (read from the encrypted DB; cfg unused)."""
+    return arena_db.watchlist_get(_norm_email(email))
+
+def _arena_add_flag(kind, severity, email, name, kid, kcfg, reason):
+    """Record a sign-in flag (ban / watch / blocked attempt) in the encrypted DB."""
+    entry = arena_db.add_flag(kind, severity, _norm_email(email), name or "",
+                              kid, (kcfg or {}).get("label") or kid, reason or "")
+    try:
+        log_activity("arena_signin_flag", "arena",
+                     f"[{severity}] {kind}: {name} <{_norm_email(email)}> — {reason}")
+    except Exception:
+        pass
+    return entry
+
+def _arena_recent_flags(limit=60, since_minutes=None):
+    return arena_db.recent_flags(limit, since_minutes)
+
+def _signin_guard(cfg, email, name, kid, is_pc):
+    """Enforce the ban/watch list + rate/duplicate limits. Returns (allowed, message).
+    Bans, watches and blocked attempts are recorded as flags so staff see them in Nova."""
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    email = _norm_email(email)
+    # Ban / watch list applies even when the numeric guards are turned off.
+    w = _arena_watch_entry(cfg, email)
+    if w:
+        if (w.get("mode") or "watch") == "ban":
+            _arena_add_flag("ban", "high", email, name, kid, kcfg, w.get("reason") or "Banned email attempted check-in")
+            g = cfg.get("signin_guard") or {}
+            return False, (g.get("ban_message") or "").strip() or "Please see the front desk to check in."
+        _arena_add_flag("watch", "med", email, name, kid, kcfg, w.get("reason") or "Watch-listed guest checked in")
+        # watched ? allowed, but the desk is alerted
+    g = cfg.get("signin_guard") or {}
+    if not g.get("enabled", True) or not email:
+        return True, None
+    now = datetime.now()
+    records = load_arena_signins()
+    mine = [r for r in records if _norm_email(r.get("email")) == email]
+    cd = _as_int(g.get("cooldown_minutes"), 0)
+    if cd > 0 and mine:
+        last = max((_arena_parse_dt(r.get("signed_in_at", "")) or datetime.min) for r in mine)
+        if last and (now - last).total_seconds() < cd * 60:
+            _arena_add_flag("cooldown", "low", email, name, kid, kcfg, f"Re-check-in within {cd} min")
+            return False, "You just checked in a moment ago — please wait a bit before signing in again."
+    mx = _as_int(g.get("max_per_day"), 0)
+    if mx > 0:
+        today = now.strftime("%Y-%m-%d")
+        cnt = sum(1 for r in mine if (r.get("signed_in_at") or "")[:10] == today)
+        if cnt >= mx:
+            _arena_add_flag("daily_cap", "low", email, name, kid, kcfg, f"Reached {mx} check-ins today")
+            return False, "You've reached today's check-in limit. Please see the front desk."
+    if is_pc:
+        mxpc = _as_int(g.get("max_active_pc"), 0)
+        if mxpc > 0:
+            import time as _t
+            nowts = _t.time()
+            active = sum(1 for h in _arena_pc_holds.values()
+                         if _norm_email(h.get("email")) == email and h.get("until", 0) > nowts)
+            if active >= mxpc:
+                _arena_add_flag("dup_pc", "med", email, name, kid, kcfg, "Already holds a station")
+                return False, "You already have a station reserved — head to that one, or ask the front desk."
+    return True, None
+
+
+@app.route('/api/arena/signin', methods=['POST'])
+def api_arena_signin():
+    """Public: log a visitor entering the arena from a kiosk."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+
+    if not kcfg.get("enabled", True):
+        return jsonify({"success": False, "error": "This kiosk is disabled."}), 403
+    if not _arena_is_open_now(cfg, kcfg):
+        return jsonify({"success": False, "error": _arena_closed_message(cfg)}), 403
+
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    name = _clean_str(data.get("name"), 120) or (first + " " + last).strip()
+    if not name:
+        return jsonify({"success": False, "error": "Please enter your full name."}), 400
+
+    email = _clean_str(data.get("email"), 120).lower()
+    if cfg.get("require_email", True):
+        domains = [d.lower().lstrip("@") for d in (cfg.get("email_domains") or [])]
+        if not email or (domains and not any(email.endswith("@" + d) for d in domains)):
+            allowed = " or ".join("@" + d for d in domains) if domains else "a valid email"
+            return jsonify({"success": False, "error": f"Please use {allowed}."}), 400
+
+    guard_ok, guard_msg = _signin_guard(cfg, email, name, kid, is_pc=False)
+    if not guard_ok:
+        return jsonify({"success": False, "error": guard_msg, "blocked": True}), 403
+
+    records = load_arena_signins()
+    records, _ = _arena_prune_signins(records)
+    # Every kiosk sign-in creates its own entry (a person can enter more than once).
+
+    prior = arena_db.find_recent_guest(email) if email else None
+    returning = bool(prior)
+
+    record = {
+        "id": uuid.uuid4().hex,
+        "name": name,
+        "first_name": first,
+        "last_name": last,
+        "email": email,
+        "kiosk_id": kid,
+        "kiosk_label": kcfg.get("label"),
+        "room": _clean_str(data.get("room"), 60) or kcfg.get("room", ""),
+        "accepted_rules": bool(data.get("acceptedRules") or data.get("accepted_rules")),
+        "reason": _clean_str(data.get("reason"), 60),
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    arena_db.add_signin(record)
+    record["returning"] = returning
+    return jsonify({"success": True, "record": record, "returning": returning})
+
+
+@app.route('/api/arena/manual-signin', methods=['POST'])
+@api_perm_required('page.arena_live')
+def api_arena_manual_signin():
+    """Staff fallback: check a visitor in from the dashboard when a kiosk is unavailable.
+    Bypasses open-hours / kiosk-enabled / email-domain checks (trusted staff action)."""
+    cfg = load_arena_config()
+    data = request.get_json(silent=True) or {}
+    kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
+    if kid not in cfg.get("kiosks", {}):
+        kid = next(iter(cfg.get("kiosks", {})), "kiosk-1")
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+
+    first = _clean_str(data.get("firstName") or data.get("first_name"), 60)
+    last = _clean_str(data.get("lastName") or data.get("last_name"), 60)
+    name = _clean_str(data.get("name"), 120) or (first + " " + last).strip()
+    if not name:
+        return jsonify({"success": False, "error": "Please enter the visitor's full name."}), 400
+    email = _clean_str(data.get("email"), 120).lower()
+    reason = _clean_str(data.get("reason"), 200)
+    _u = session.get('dashboard_user') or {}
+    staff_name = _u.get('display_name') or _u.get('username') or 'Staff'
+
+    records = load_arena_signins()
+    records, _ = _arena_prune_signins(records)
+    # Staff check-in is a deliberate action — always create a fresh entry so the same
+    # person can be checked in again (e.g. they left and returned).
+
+    record = {
+        "id": uuid.uuid4().hex,
+        "name": name,
+        "first_name": first,
+        "last_name": last,
+        "email": email,
+        "kiosk_id": kid,
+        "kiosk_label": kcfg.get("label"),
+        "room": _clean_str(data.get("room"), 60) or kcfg.get("room", ""),
+        "accepted_rules": True,
+        "manual": True,
+        "reason": reason,
+        "checked_in_by": staff_name,
+        "signed_in_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    arena_db.add_signin(record)
+    log_activity("arena_manual_signin", "arena",
+                 f"{staff_name} manually checked in {name}" + (f" — {reason}" if reason else ""))
+    return jsonify({"success": True, "record": record})
+
+
 # ============ Health Check Endpoint ============
 
 @app.route('/health')
@@ -9021,6 +12759,62 @@ def health_check():
     })
 
 # ============ Main ============
+
+# Migrate any existing plaintext PII to encrypted form on startup
+migrate_rosters_pii()
+
+# Initialize the encrypted arena sign-in database (migrates arena_signins.json once)
+arena_db.init_arena_db(ARENA_SIGNINS_FILE)
+
+# Initialize the secure (encrypted) PUID store
+puid_db.init_puid_db()
+
+# Ensure Student Workers can view + manage arena students (edit / reset / notes).
+try:
+    auth_db.ensure_group_permissions("Student Workers",
+        ["section.arena", "page.arena_students", "arena.notes", "arena.students_manage"])
+except Exception as _e:
+    logger.warning(f"Could not grant arena student perms to Student Workers: {_e}")
+
+# Sessions (PC room map) is its own permission, split out from page.arena_live. Student
+# Workers, Supervisors, and Directors all need full view + control of PC sessions
+# (lock/unlock/check-in/restart/shutdown), same as an admin.
+try:
+    for _grp in ("Student Workers", "Supervisors", "Directors"):
+        auth_db.ensure_group_permissions(_grp, ["page.arena_sessions", "arena.manage"])
+except Exception as _e:
+    logger.warning(f"Could not grant page.arena_sessions/arena.manage: {_e}")
+
+
+def _migrate_arena_json_to_db():
+    """One-time move of the watch/ban list and sign-in flags from JSON into the
+    encrypted DB, then delete the plaintext files."""
+    # Watch/ban list (was stored inside arena_kiosk_config.json)
+    try:
+        raw = load_json_file(ARENA_CONFIG_FILE, {}) or {}
+        wl = raw.get("watchlist")
+        if isinstance(wl, list) and wl:
+            arena_db.migrate_watchlist(wl)
+        if "watchlist" in raw:
+            raw.pop("watchlist", None)
+            save_json_file(ARENA_CONFIG_FILE, raw)  # rewrite config without the PII list
+    except Exception as e:
+        logger.warning(f"[ARENA] watchlist migration skipped: {e}")
+    # Sign-in flags (was arena_signin_flags.json)
+    try:
+        if os.path.exists(_ARENA_FLAGS_FILE):
+            flags = load_json_file(_ARENA_FLAGS_FILE, []) or []
+            if isinstance(flags, list) and flags and arena_db.recent_flags(1) == []:
+                arena_db.migrate_flags(flags)
+            os.replace(_ARENA_FLAGS_FILE, _ARENA_FLAGS_FILE + ".migrated")
+    except Exception as e:
+        logger.warning(f"[ARENA] flags migration skipped: {e}")
+
+
+_migrate_arena_json_to_db()
+
+# Start the background loop that keeps kiosk PCs locked/unlocked per check-ins.
+_start_pc_lock_thread()
 
 if __name__ == '__main__':
     import sys

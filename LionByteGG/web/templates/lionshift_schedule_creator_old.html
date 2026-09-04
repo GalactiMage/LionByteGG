@@ -1,0 +1,1477 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule Creator - LionShiftGG{% endblock %}
+{% block page_title %}Schedule Creator{% endblock %}
+
+{% block extra_head %}
+<style>
+    .shift-accent { color: #f59e0b; }
+
+    /* ─── Hero ─── */
+    .creator-hero {
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 50%, #dc2626 100%);
+        border-radius: 20px;
+        padding: 28px 32px;
+        margin-bottom: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+    }
+    .creator-hero::before {
+        content: '';
+        position: absolute;
+        top: -60%;
+        right: -15%;
+        width: 50%;
+        height: 220%;
+        background: rgba(255,255,255,0.07);
+        transform: rotate(25deg);
+        pointer-events: none;
+    }
+    .creator-hero-text { position: relative; z-index: 1; }
+    .creator-hero h2 {
+        color: #fff;
+        font-size: 24px;
+        font-weight: 800;
+        margin: 0 0 4px;
+        letter-spacing: -0.5px;
+    }
+    .creator-hero p {
+        color: rgba(255,255,255,0.85);
+        font-size: 14px;
+        margin: 0;
+    }
+    .creator-hero-actions {
+        display: flex;
+        gap: 10px;
+        position: relative;
+        z-index: 1;
+        flex-shrink: 0;
+    }
+
+    /* ─── View Toggle ─── */
+    .view-toggle {
+        display: flex;
+        gap: 4px;
+        background: var(--surface);
+        padding: 4px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        margin-bottom: 24px;
+    }
+    .view-toggle-btn {
+        padding: 8px 18px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.2s;
+        font-family: 'Inter', sans-serif;
+    }
+    .view-toggle-btn.active {
+        background: #f59e0b;
+        color: #000;
+    }
+    .view-toggle-btn:hover:not(.active) {
+        color: var(--text-primary);
+        background: var(--surface-light);
+    }
+
+    /* ─── Layout ─── */
+    .creator-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 24px;
+    }
+    @media (max-width: 1100px) {
+        .creator-layout { grid-template-columns: 1fr; }
+    }
+
+    /* ─── Cards ─── */
+    .creator-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+    .creator-card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--text-primary);
+    }
+    .creator-card-header i {
+        color: #f59e0b;
+        font-size: 16px;
+    }
+    .creator-card-body {
+        padding: 22px;
+    }
+
+    /* ─── Form Fields ─── */
+    .form-group {
+        margin-bottom: 18px;
+    }
+    .form-group:last-child {
+        margin-bottom: 0;
+    }
+    .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+    }
+    .form-input, .form-select, .form-textarea {
+        width: 100%;
+        padding: 10px 14px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text-primary);
+        font-size: 14px;
+        font-family: 'Inter', sans-serif;
+        transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+        outline: none;
+        border-color: #f59e0b;
+    }
+    .form-textarea {
+        resize: vertical;
+        min-height: 80px;
+    }
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    .form-hint {
+        font-size: 11px;
+        color: var(--text-muted, #71717a);
+        margin-top: 4px;
+    }
+
+    /* ─── Toggle Switch ─── */
+    .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .toggle-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .toggle-desc {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        flex-shrink: 0;
+    }
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: var(--border);
+        border-radius: 24px;
+        transition: 0.2s;
+    }
+    .toggle-slider::before {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        left: 3px;
+        bottom: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+        background: #f59e0b;
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+        transform: translateX(20px);
+    }
+
+    /* ─── Shift Builder ─── */
+    .shift-builder-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .shift-day-tabs {
+        display: flex;
+        gap: 4px;
+        background: var(--background);
+        padding: 4px;
+        border-radius: 10px;
+        flex-wrap: wrap;
+    }
+    .shift-day-tab {
+        padding: 6px 14px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.2s;
+    }
+    .shift-day-tab.active {
+        background: #f59e0b;
+        color: #000;
+    }
+    .shift-day-tab:hover:not(.active) {
+        background: var(--surface-light);
+        color: var(--text-primary);
+    }
+    .shift-day-tab .shift-count {
+        display: inline-block;
+        background: rgba(0,0,0,0.2);
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        line-height: 18px;
+        text-align: center;
+        font-size: 10px;
+        margin-left: 4px;
+    }
+    .shift-day-tab.active .shift-count {
+        background: rgba(0,0,0,0.25);
+        color: #000;
+    }
+
+    .add-shift-btn {
+        padding: 7px 16px;
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        border: none;
+        color: #fff;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.2s;
+        margin-left: auto;
+    }
+    .add-shift-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+
+    /* Shift Cards */
+    .shifts-container {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 60px;
+    }
+    .shift-card {
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        transition: all 0.2s;
+    }
+    .shift-card:hover {
+        border-color: rgba(245, 158, 11, 0.3);
+    }
+    .shift-type-badge {
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        min-width: 64px;
+        text-align: center;
+    }
+    .shift-type-badge.opener {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+    .shift-type-badge.mid {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+    .shift-type-badge.closer {
+        background: rgba(168, 85, 247, 0.15);
+        color: #a855f7;
+    }
+    .shift-card-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .shift-card-time {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .shift-card-worker {
+        font-size: 12px;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .shift-card-worker img {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+    }
+    .shift-card-actions {
+        display: flex;
+        gap: 6px;
+    }
+    .shift-action-btn {
+        width: 30px;
+        height: 30px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .shift-action-btn:hover {
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.3);
+        background: rgba(239, 68, 68, 0.1);
+    }
+
+    .shifts-empty {
+        text-align: center;
+        padding: 30px 20px;
+        color: var(--text-secondary);
+    }
+    .shifts-empty i {
+        font-size: 28px;
+        margin-bottom: 8px;
+        opacity: 0.4;
+        display: block;
+    }
+
+    /* ─── Worker Picker ─── */
+    .worker-picker {
+        position: relative;
+    }
+    .worker-picker-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-top: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 100;
+        display: none;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .worker-picker-dropdown.show { display: block; }
+    .worker-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .worker-option:hover {
+        background: var(--surface-light);
+    }
+    .worker-option img {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+    }
+    .worker-option-initial {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+    }
+    .worker-option-name {
+        font-size: 13px;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    /* ─── Add Shift Modal ─── */
+    .shift-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(4px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .shift-modal-overlay.active {
+        display: flex;
+    }
+    .shift-modal {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        width: 440px;
+        max-width: 95vw;
+        overflow: hidden;
+    }
+    .shift-modal-header {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .shift-modal-header h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0;
+    }
+    .shift-modal-close {
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-radius: 8px;
+        font-size: 18px;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .shift-modal-close:hover {
+        background: var(--surface-light);
+        color: var(--text-primary);
+    }
+    .shift-modal-body {
+        padding: 22px;
+    }
+    .shift-modal-footer {
+        padding: 16px 22px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    /* ─── Schedules List ─── */
+    .schedules-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .schedule-list-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 22px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .schedule-list-card:hover {
+        border-color: rgba(245, 158, 11, 0.3);
+        transform: translateY(-1px);
+    }
+    .schedule-list-card.active {
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 1px #f59e0b;
+    }
+    .schedule-list-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .schedule-list-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .schedule-status-badge {
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .schedule-status-badge.draft {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+    .schedule-status-badge.published {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+    .schedule-list-dates {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+    }
+    .schedule-list-meta {
+        font-size: 11px;
+        color: var(--text-muted, #71717a);
+        display: flex;
+        gap: 14px;
+    }
+    .schedule-list-meta span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* ─── Buttons ─── */
+    .btn {
+        padding: 9px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+        font-family: 'Inter', sans-serif;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .btn-primary {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #fff;
+        border: none;
+    }
+    .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .btn-secondary {
+        background: var(--surface-light);
+        color: var(--text-primary);
+        border-color: var(--border);
+    }
+    .btn-secondary:hover {
+        border-color: var(--text-secondary);
+    }
+    .btn-success {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #fff;
+        border: none;
+    }
+    .btn-success:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+    }
+    .btn-danger {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+    .btn-danger:hover {
+        background: #ef4444;
+        color: #fff;
+    }
+    .btn-ghost {
+        background: transparent;
+        color: var(--text-secondary);
+        border: none;
+        padding: 8px 12px;
+    }
+    .btn-ghost:hover {
+        color: var(--text-primary);
+        background: var(--surface-light);
+    }
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 8px;
+    }
+
+    /* ─── Publish Sidebar ─── */
+    .publish-card {
+        position: sticky;
+        top: 24px;
+    }
+    .publish-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .publish-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* ─── Preview ─── */
+    .preview-embed {
+        background: #2b2d31;
+        border-left: 4px solid #22c55e;
+        border-radius: 4px;
+        padding: 16px;
+        margin-top: 12px;
+    }
+    .preview-embed-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 10px;
+    }
+    .preview-embed-field {
+        margin-bottom: 8px;
+    }
+    .preview-embed-field-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 2px;
+    }
+    .preview-embed-field-value {
+        font-size: 13px;
+        color: #dbdee1;
+    }
+    .preview-embed-footer {
+        font-size: 11px;
+        color: #949ba4;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 768px) {
+        .creator-hero {
+            flex-direction: column;
+            text-align: center;
+            padding: 24px 20px;
+        }
+        .creator-hero-actions {
+            width: 100%;
+            justify-content: center;
+        }
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+        .shift-builder-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .add-shift-btn {
+            margin-left: 0;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Banner -->
+<div class="creator-hero">
+    <div class="creator-hero-text">
+        <h2><i class="fas fa-calendar-plus"></i> Schedule Creator</h2>
+        <p>Build shift schedules, assign workers, and publish when ready</p>
+    </div>
+    <div class="creator-hero-actions">
+        <button class="btn btn-secondary" onclick="loadExistingSchedules()" style="background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.25);">
+            <i class="fas fa-list"></i> All Schedules
+        </button>
+    </div>
+</div>
+
+<!-- View Toggle -->
+<div class="view-toggle">
+    <button class="view-toggle-btn active" data-view="creator" onclick="switchView('creator')">
+        <i class="fas fa-plus-circle"></i> Create New
+    </button>
+    <button class="view-toggle-btn" data-view="existing" onclick="switchView('existing')">
+        <i class="fas fa-folder-open"></i> Existing Schedules <span id="scheduleCountBadge" style="background: rgba(245,158,11,0.2); color: #f59e0b; padding: 1px 7px; border-radius: 10px; font-size: 11px; margin-left: 4px;">0</span>
+    </button>
+</div>
+
+<!-- ═══ Creator View ═══ -->
+<div id="creatorView">
+    <div class="creator-layout">
+        <!-- Left Column: Main Form + Shift Builder -->
+        <div class="creator-main">
+            <!-- Schedule Details Card -->
+            <div class="creator-card" style="margin-bottom: 24px;">
+                <div class="creator-card-header">
+                    <i class="fas fa-info-circle"></i>
+                    Schedule Details
+                </div>
+                <div class="creator-card-body">
+                    <div class="form-group">
+                        <label class="form-label">Schedule Name</label>
+                        <input type="text" class="form-input" id="scheduleName" placeholder="e.g. Apr 14th – Apr 20th">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Start Date</label>
+                            <input type="date" class="form-input" id="startDate">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">End Date</label>
+                            <input type="date" class="form-input" id="endDate">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Schedule Link <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+                        <input type="url" class="form-input" id="scheduleLink" placeholder="https://docs.google.com/spreadsheets/...">
+                        <div class="form-hint">Link to the full schedule in Google Sheets, SharePoint, etc.</div>
+                    </div>
+                    <div class="toggle-row">
+                        <div class="toggle-info">
+                            <span class="toggle-title">Allow Shift Trading</span>
+                            <span class="toggle-desc">Workers can offer and trade shifts for this schedule</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="allowOffers" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Shift Builder Card -->
+            <div class="creator-card">
+                <div class="creator-card-header">
+                    <i class="fas fa-clock"></i>
+                    Shift Builder
+                </div>
+                <div class="creator-card-body">
+                    <div class="shift-builder-toolbar">
+                        <div class="shift-day-tabs" id="dayTabs">
+                            <!-- Generated dynamically -->
+                        </div>
+                        <button class="add-shift-btn" onclick="openAddShiftModal()">
+                            <i class="fas fa-plus"></i> Add Shift
+                        </button>
+                    </div>
+                    <div class="shifts-container" id="shiftsContainer">
+                        <div class="shifts-empty">
+                            <i class="fas fa-calendar-day"></i>
+                            <p>Set a date range above to start building shifts</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Publish & Preview -->
+        <div>
+            <!-- Publish Card -->
+            <div class="creator-card publish-card" style="margin-bottom: 24px;">
+                <div class="creator-card-header">
+                    <i class="fas fa-paper-plane"></i>
+                    Publish
+                </div>
+                <div class="creator-card-body">
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="scheduleStatus">
+                            <option value="draft">📝 Draft</option>
+                            <option value="published">✅ Published</option>
+                        </select>
+                    </div>
+                    <div class="toggle-row" style="border-bottom: 1px solid var(--border);">
+                        <div class="toggle-info">
+                            <span class="toggle-title">DM Workers</span>
+                            <span class="toggle-desc">Notify all workers via DM</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="notifyWorkers">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top: 14px;">
+                        <label class="form-label">Schedule Announcement <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+                        <input type="datetime-local" class="form-input" id="announceAt">
+                        <div class="form-hint">Leave empty to announce immediately on publish</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Custom Message <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+                        <textarea class="form-textarea" id="customMessage" placeholder="Hey team, here's the new schedule!"></textarea>
+                    </div>
+                    <div class="publish-actions" style="margin-top: 16px;">
+                        <button class="btn btn-primary" onclick="saveSchedule('draft')">
+                            <i class="fas fa-save"></i> Save Draft
+                        </button>
+                        <button class="btn btn-success" onclick="saveSchedule('published')">
+                            <i class="fas fa-paper-plane"></i> Publish Schedule
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Discord Preview Card -->
+            <div class="creator-card">
+                <div class="creator-card-header">
+                    <i class="fab fa-discord"></i>
+                    Announcement Preview
+                </div>
+                <div class="creator-card-body" style="padding: 16px;">
+                    <div class="preview-embed" id="discordPreview">
+                        <div class="preview-embed-title">📅 New Schedule Posted!</div>
+                        <div class="preview-embed-field">
+                            <div class="preview-embed-field-name">Schedule Name</div>
+                            <div class="preview-embed-field-value" id="previewName">—</div>
+                        </div>
+                        <div class="preview-embed-field">
+                            <div class="preview-embed-field-name">📆 Date Range</div>
+                            <div class="preview-embed-field-value" id="previewDates">— to —</div>
+                        </div>
+                        <div class="preview-embed-field">
+                            <div class="preview-embed-field-name">🔄 Shift Trading</div>
+                            <div class="preview-embed-field-value" id="previewOffers">✅ Allowed</div>
+                        </div>
+                        <div class="preview-embed-footer" id="previewFooter">Posted by Dashboard Admin</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Existing Schedules View ═══ -->
+<div id="existingView" style="display: none;">
+    <div class="schedules-list" id="schedulesList">
+        <div class="shifts-empty">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading schedules...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Add Shift Modal -->
+<div class="shift-modal-overlay" id="addShiftModal">
+    <div class="shift-modal">
+        <div class="shift-modal-header">
+            <h3><i class="fas fa-plus-circle" style="color: #f59e0b; margin-right: 6px;"></i> Add Shift</h3>
+            <button class="shift-modal-close" onclick="closeAddShiftModal()">&times;</button>
+        </div>
+        <div class="shift-modal-body">
+            <div class="form-group">
+                <label class="form-label">Shift Type</label>
+                <select class="form-select" id="shiftType">
+                    <option value="opener">🌅 Opener</option>
+                    <option value="mid">☀️ Mid</option>
+                    <option value="closer">🌙 Closer</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Start Time</label>
+                    <input type="time" class="form-input" id="shiftStart" value="09:00">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Time</label>
+                    <input type="time" class="form-input" id="shiftEnd" value="13:00">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Assigned Worker</label>
+                <div class="worker-picker">
+                    <input type="text" class="form-input" id="workerSearch" placeholder="Search workers..." autocomplete="off" onfocus="showWorkerPicker()" oninput="filterWorkers()">
+                    <input type="hidden" id="workerIdField">
+                    <div class="worker-picker-dropdown" id="workerDropdown"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">(optional)</span></label>
+                <input type="text" class="form-input" id="shiftNotes" placeholder="e.g. Cover for Katie">
+            </div>
+        </div>
+        <div class="shift-modal-footer">
+            <button class="btn btn-secondary" onclick="closeAddShiftModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="addShift()">
+                <i class="fas fa-plus"></i> Add Shift
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ═══ State ═══
+let workers = [];
+let scheduleShifts = {}; // { "2026-04-14": [ {type, start, end, worker_id, worker_name, notes} ], ... }
+let selectedDay = null;
+let allSchedules = [];
+let editingIndex = null; // null = new, number = editing existing
+
+// ═══ Init ═══
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadWorkers();
+    loadExistingSchedules();
+
+    // Auto-generate name from dates
+    document.getElementById('startDate').addEventListener('change', onDateChange);
+    document.getElementById('endDate').addEventListener('change', onDateChange);
+
+    // Live preview updates
+    ['scheduleName', 'startDate', 'endDate', 'allowOffers', 'customMessage'].forEach(id => {
+        document.getElementById(id).addEventListener('input', updatePreview);
+        document.getElementById(id).addEventListener('change', updatePreview);
+    });
+
+    // Close worker picker on outside click
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.worker-picker')) {
+            document.getElementById('workerDropdown').classList.remove('show');
+        }
+    });
+
+    updatePreview();
+});
+
+// ═══ Workers ═══
+async function loadWorkers() {
+    try {
+        const res = await fetch('/api/lionshift/workers');
+        const data = await res.json();
+        workers = data.workers || [];
+    } catch (e) {
+        console.error('Failed to load workers:', e);
+    }
+}
+
+function showWorkerPicker() {
+    const dropdown = document.getElementById('workerDropdown');
+    renderWorkerOptions(workers);
+    dropdown.classList.add('show');
+}
+
+function filterWorkers() {
+    const q = document.getElementById('workerSearch').value.toLowerCase();
+    const filtered = workers.filter(w => (w.name || w.username || '').toLowerCase().includes(q));
+    renderWorkerOptions(filtered);
+    document.getElementById('workerDropdown').classList.add('show');
+}
+
+function renderWorkerOptions(list) {
+    const dropdown = document.getElementById('workerDropdown');
+    if (list.length === 0) {
+        dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-secondary); font-size: 13px;">No workers found</div>';
+        return;
+    }
+    dropdown.innerHTML = list.map(w => `
+        <div class="worker-option" onclick="selectWorker('${w.id || w.discord_id}', '${escapeHtml(w.name || w.username)}', '${w.avatar_url || ''}')">
+            ${w.avatar_url
+                ? `<img src="${w.avatar_url}" alt="">`
+                : `<div class="worker-option-initial">${(w.name || w.username || '?').charAt(0).toUpperCase()}</div>`
+            }
+            <span class="worker-option-name">${escapeHtml(w.name || w.username)}</span>
+        </div>
+    `).join('');
+}
+
+function selectWorker(id, name, avatar) {
+    document.getElementById('workerSearch').value = name;
+    document.getElementById('workerIdField').value = id;
+    document.getElementById('workerDropdown').classList.remove('show');
+}
+
+// ═══ Date Range → Day Tabs ═══
+function onDateChange() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+
+    // Auto-generate name
+    if (start && end && !document.getElementById('scheduleName').dataset.userEdited) {
+        const s = new Date(start + 'T00:00:00');
+        const e = new Date(end + 'T00:00:00');
+        const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        document.getElementById('scheduleName').value = `${fmt(s)} – ${fmt(e)}`;
+    }
+
+    if (start && end) {
+        buildDayTabs(start, end);
+    }
+    updatePreview();
+}
+
+// Mark name as user-edited if they type in it
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('scheduleName').addEventListener('input', function() {
+        this.dataset.userEdited = 'true';
+    });
+});
+
+function buildDayTabs(startStr, endStr) {
+    const tabs = document.getElementById('dayTabs');
+    const start = new Date(startStr + 'T00:00:00');
+    const end = new Date(endStr + 'T00:00:00');
+
+    if (end < start) return;
+
+    // Limit to 14 days
+    const diffDays = Math.round((end - start) / 86400000) + 1;
+    if (diffDays > 14) {
+        tabs.innerHTML = '<span style="color: var(--text-secondary); font-size: 12px; padding: 6px;">Max 14 days per schedule</span>';
+        return;
+    }
+
+    const days = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        days.push(new Date(d));
+    }
+
+    tabs.innerHTML = days.map(d => {
+        const key = dateKey(d);
+        if (!scheduleShifts[key]) scheduleShifts[key] = [];
+        const count = scheduleShifts[key].length;
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayNum = d.getDate();
+        return `<button class="shift-day-tab ${selectedDay === key ? 'active' : ''}" onclick="selectDay('${key}')">
+            ${dayName} ${dayNum}${count > 0 ? ` <span class="shift-count">${count}</span>` : ''}
+        </button>`;
+    }).join('');
+
+    // Auto-select first day if none selected
+    if (!selectedDay || !scheduleShifts[selectedDay]) {
+        selectDay(dateKey(days[0]));
+    } else {
+        renderShifts();
+    }
+}
+
+function dateKey(d) {
+    return d.toISOString().split('T')[0];
+}
+
+function selectDay(key) {
+    selectedDay = key;
+    document.querySelectorAll('.shift-day-tab').forEach(t => t.classList.remove('active'));
+    const tabs = document.querySelectorAll('.shift-day-tab');
+    tabs.forEach(t => {
+        if (t.onclick.toString().includes(key)) t.classList.add('active');
+    });
+    // Re-activate via content match
+    document.querySelectorAll('.shift-day-tab').forEach(t => {
+        t.classList.toggle('active', t.getAttribute('onclick')?.includes(key));
+    });
+    renderShifts();
+}
+
+// ═══ Shift Rendering ═══
+function renderShifts() {
+    const container = document.getElementById('shiftsContainer');
+    if (!selectedDay || !scheduleShifts[selectedDay]) {
+        container.innerHTML = `<div class="shifts-empty"><i class="fas fa-calendar-day"></i><p>Select a day to view shifts</p></div>`;
+        return;
+    }
+
+    const shifts = scheduleShifts[selectedDay];
+    if (shifts.length === 0) {
+        const d = new Date(selectedDay + 'T00:00:00');
+        const dayLabel = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        container.innerHTML = `<div class="shifts-empty"><i class="fas fa-plus-circle"></i><p>No shifts for ${dayLabel}</p><p style="font-size: 12px; margin-top: 4px;">Click "Add Shift" to get started</p></div>`;
+        return;
+    }
+
+    // Sort by start time
+    shifts.sort((a, b) => a.start.localeCompare(b.start));
+
+    container.innerHTML = shifts.map((s, i) => `
+        <div class="shift-card">
+            <div class="shift-type-badge ${s.type}">${s.type}</div>
+            <div class="shift-card-info">
+                <div class="shift-card-time">${formatTime(s.start)} – ${formatTime(s.end)}</div>
+                <div class="shift-card-worker">
+                    ${s.worker_name
+                        ? `<i class="fas fa-user" style="color: #f59e0b;"></i> ${escapeHtml(s.worker_name)}`
+                        : `<i class="fas fa-user-slash" style="opacity: 0.4;"></i> <span style="opacity: 0.5;">Unassigned</span>`
+                    }
+                    ${s.notes ? `<span style="opacity: 0.5; margin-left: 6px;">· ${escapeHtml(s.notes)}</span>` : ''}
+                </div>
+            </div>
+            <div class="shift-card-actions">
+                <button class="shift-action-btn" title="Remove" onclick="removeShift('${selectedDay}', ${i})">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function formatTime(t) {
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour = h % 12 || 12;
+    return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+}
+
+// ═══ Add / Remove Shifts ═══
+function openAddShiftModal() {
+    if (!selectedDay) {
+        if (typeof showToast === 'function') showToast('Select a date range first', 'warning');
+        return;
+    }
+    document.getElementById('shiftType').value = 'opener';
+    document.getElementById('shiftStart').value = '09:00';
+    document.getElementById('shiftEnd').value = '13:00';
+    document.getElementById('workerSearch').value = '';
+    document.getElementById('workerIdField').value = '';
+    document.getElementById('shiftNotes').value = '';
+    document.getElementById('addShiftModal').classList.add('active');
+}
+
+function closeAddShiftModal() {
+    document.getElementById('addShiftModal').classList.remove('active');
+}
+
+function addShift() {
+    const type = document.getElementById('shiftType').value;
+    const start = document.getElementById('shiftStart').value;
+    const end = document.getElementById('shiftEnd').value;
+    const workerId = document.getElementById('workerIdField').value;
+    const workerName = document.getElementById('workerSearch').value;
+    const notes = document.getElementById('shiftNotes').value.trim();
+
+    if (!start || !end) {
+        if (typeof showToast === 'function') showToast('Start and end time required', 'warning');
+        return;
+    }
+
+    if (!scheduleShifts[selectedDay]) scheduleShifts[selectedDay] = [];
+
+    scheduleShifts[selectedDay].push({
+        type,
+        start,
+        end,
+        worker_id: workerId || null,
+        worker_name: workerName || null,
+        notes: notes || null,
+    });
+
+    closeAddShiftModal();
+    rebuildDayTabs();
+    renderShifts();
+    if (typeof showToast === 'function') showToast('Shift added', 'success');
+}
+
+function removeShift(day, index) {
+    if (scheduleShifts[day]) {
+        scheduleShifts[day].splice(index, 1);
+        rebuildDayTabs();
+        renderShifts();
+    }
+}
+
+function rebuildDayTabs() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    if (start && end) buildDayTabs(start, end);
+}
+
+// ═══ Save Schedule ═══
+async function saveSchedule(status) {
+    const name = document.getElementById('scheduleName').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    if (!name || !startDate || !endDate) {
+        if (typeof showToast === 'function') showToast('Name, start date, and end date are required', 'warning');
+        return;
+    }
+
+    // Flatten shifts
+    const shifts = [];
+    for (const [day, dayShifts] of Object.entries(scheduleShifts)) {
+        for (const s of dayShifts) {
+            shifts.push({ ...s, date: day });
+        }
+    }
+
+    const payload = {
+        name,
+        start_date: startDate,
+        end_date: endDate,
+        schedule_link: document.getElementById('scheduleLink').value.trim(),
+        allow_offers: document.getElementById('allowOffers').checked,
+        status: status || 'draft',
+        shifts,
+        announce_at: document.getElementById('announceAt').value || null,
+        custom_message: document.getElementById('customMessage').value.trim(),
+        notify_workers: document.getElementById('notifyWorkers').checked,
+    };
+
+    try {
+        let res;
+        if (editingIndex !== null) {
+            res = await fetch(`/api/lionshift/schedules/${editingIndex}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+        } else {
+            res = await fetch('/api/lionshift/schedules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+        }
+        const data = await res.json();
+        if (data.success) {
+            if (typeof showToast === 'function') showToast(data.message, 'success');
+            if (editingIndex === null) resetForm();
+            loadExistingSchedules();
+        } else {
+            if (typeof showToast === 'function') showToast(data.message || 'Failed to save', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        if (typeof showToast === 'function') showToast('Failed to save schedule', 'error');
+    }
+}
+
+function resetForm() {
+    editingIndex = null;
+    document.getElementById('scheduleName').value = '';
+    document.getElementById('scheduleName').dataset.userEdited = '';
+    document.getElementById('startDate').value = '';
+    document.getElementById('endDate').value = '';
+    document.getElementById('scheduleLink').value = '';
+    document.getElementById('allowOffers').checked = true;
+    document.getElementById('scheduleStatus').value = 'draft';
+    document.getElementById('notifyWorkers').checked = false;
+    document.getElementById('announceAt').value = '';
+    document.getElementById('customMessage').value = '';
+    scheduleShifts = {};
+    selectedDay = null;
+    document.getElementById('dayTabs').innerHTML = '';
+    document.getElementById('shiftsContainer').innerHTML = `<div class="shifts-empty"><i class="fas fa-calendar-day"></i><p>Set a date range above to start building shifts</p></div>`;
+    updatePreview();
+}
+
+// ═══ Load Existing ═══
+async function loadExistingSchedules() {
+    try {
+        const res = await fetch('/api/lionshift/schedules');
+        const data = await res.json();
+        allSchedules = data.schedules || [];
+        document.getElementById('scheduleCountBadge').textContent = allSchedules.length;
+        renderSchedulesList();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderSchedulesList() {
+    const container = document.getElementById('schedulesList');
+    if (allSchedules.length === 0) {
+        container.innerHTML = `<div class="shifts-empty"><i class="fas fa-folder-open"></i><p>No schedules yet</p><p style="font-size: 12px; margin-top: 4px;">Create your first schedule using the creator</p></div>`;
+        return;
+    }
+
+    // Sort newest first
+    const sorted = allSchedules.map((s, i) => ({ ...s, _index: i })).reverse();
+
+    container.innerHTML = sorted.map(s => {
+        const status = s.status || 'published';
+        const shiftCount = (s.shifts || []).length;
+        const created = s.created_at ? new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        return `
+        <div class="schedule-list-card" onclick="loadScheduleForEditing(${s._index})">
+            <div class="schedule-list-header">
+                <span class="schedule-list-name">${escapeHtml(s.name || 'Untitled')}</span>
+                <span class="schedule-status-badge ${status}">${status}</span>
+            </div>
+            <div class="schedule-list-dates">
+                <i class="fas fa-calendar-alt" style="margin-right: 4px; opacity: 0.5;"></i>
+                ${s.start_date || '?'} → ${s.end_date || '?'}
+            </div>
+            <div class="schedule-list-meta">
+                <span><i class="fas fa-clock"></i> ${shiftCount} shift${shiftCount !== 1 ? 's' : ''}</span>
+                <span><i class="fas fa-user"></i> ${escapeHtml(s.created_by || 'Unknown')}</span>
+                ${created ? `<span><i class="fas fa-calendar"></i> ${created}</span>` : ''}
+                ${s.allow_offers ? '<span><i class="fas fa-exchange-alt" style="color: #22c55e;"></i> Trading on</span>' : ''}
+            </div>
+            <div style="position: absolute; top: 16px; right: 16px; display: flex; gap: 6px;">
+                ${status === 'draft' ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation(); publishSchedule(${s._index})"><i class="fas fa-paper-plane"></i> Publish</button>` : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); announceSchedule(${s._index})"><i class="fas fa-bullhorn"></i> Announce</button>`}
+                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteSchedule(${s._index})"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+function loadScheduleForEditing(index) {
+    const s = allSchedules[index];
+    if (!s) return;
+
+    editingIndex = index;
+    document.getElementById('scheduleName').value = s.name || '';
+    document.getElementById('scheduleName').dataset.userEdited = 'true';
+    document.getElementById('startDate').value = s.start_date || '';
+    document.getElementById('endDate').value = s.end_date || '';
+    document.getElementById('scheduleLink').value = s.schedule_link || '';
+    document.getElementById('allowOffers').checked = s.allow_offers !== false;
+    document.getElementById('scheduleStatus').value = s.status || 'draft';
+    document.getElementById('notifyWorkers').checked = s.notify_workers || false;
+    document.getElementById('announceAt').value = s.announce_at || '';
+    document.getElementById('customMessage').value = s.custom_message || '';
+
+    // Rebuild shifts by day
+    scheduleShifts = {};
+    if (s.shifts && s.shifts.length > 0) {
+        for (const shift of s.shifts) {
+            const day = shift.date;
+            if (!scheduleShifts[day]) scheduleShifts[day] = [];
+            scheduleShifts[day].push({
+                type: shift.type,
+                start: shift.start,
+                end: shift.end,
+                worker_id: shift.worker_id,
+                worker_name: shift.worker_name,
+                notes: shift.notes,
+            });
+        }
+    }
+
+    selectedDay = null;
+    if (s.start_date && s.end_date) {
+        buildDayTabs(s.start_date, s.end_date);
+    }
+
+    switchView('creator');
+    updatePreview();
+    if (typeof showToast === 'function') showToast(`Editing: ${s.name}`, 'info');
+}
+
+// ═══ Publish / Announce / Delete ═══
+async function publishSchedule(index) {
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${index}/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notify_workers: true,
+            }),
+        });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+        loadExistingSchedules();
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('Failed to publish', 'error');
+    }
+}
+
+async function announceSchedule(index) {
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${index}/announce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notify_workers: true }),
+        });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('Failed to announce', 'error');
+    }
+}
+
+async function deleteSchedule(index) {
+    if (!confirm('Delete this schedule? This cannot be undone.')) return;
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${index}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+        loadExistingSchedules();
+        if (editingIndex === index) resetForm();
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('Failed to delete', 'error');
+    }
+}
+
+// ═══ View Switching ═══
+function switchView(view) {
+    document.getElementById('creatorView').style.display = view === 'creator' ? '' : 'none';
+    document.getElementById('existingView').style.display = view === 'existing' ? '' : 'none';
+    document.querySelectorAll('.view-toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === view);
+    });
+    if (view === 'existing') loadExistingSchedules();
+}
+
+// ═══ Discord Preview ═══
+function updatePreview() {
+    const name = document.getElementById('scheduleName').value || '—';
+    const start = document.getElementById('startDate').value || '—';
+    const end = document.getElementById('endDate').value || '—';
+    const offers = document.getElementById('allowOffers').checked;
+    const msg = document.getElementById('customMessage').value;
+
+    document.getElementById('previewName').textContent = name;
+    document.getElementById('previewDates').textContent = `${start} to ${end}`;
+    document.getElementById('previewOffers').textContent = offers ? '✅ Allowed' : '❌ Not Allowed';
+
+    const title = document.querySelector('.preview-embed-title');
+    title.textContent = msg || '📅 New Schedule Posted!';
+}
+
+// ═══ Utility ═══
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

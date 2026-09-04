@@ -65,26 +65,39 @@ ALL_PERMISSIONS = [
     "settings.manage",                    # Manage games, team roles, arena hours
 
     # =======================================================
-    # WORKER ON DUTY — Equipment & Dashboard
-    # =======================================================
-    "section.onduty",                     # Show Worker On Duty in sidebar
-    "page.onduty_dashboard",              # View on-duty dashboard
-    "page.onduty_equipment",              # View equipment page
-    "equipment.use",                      # Check out / check in equipment
-    "equipment.manage",                   # Add/edit/delete items, reports, export
-
-    # =======================================================
     # LIONSHIFTGG — Shift Management
     # =======================================================
     "section.lionshift",                  # Show LionShiftGG in sidebar
     "page.shift_dashboard",               # View shift dashboard
     "page.shift_schedules",               # View schedules
+    "schedules.manage",                   # Create, edit, delete, publish schedules
     "page.shift_offers",                  # View / manage shift offers
     "page.shift_trades",                  # View / manage trade requests
     "page.shift_timeoff",                 # View / manage time-off requests
     "page.shift_logs",                    # View shift logs
     "page.shift_workers",                 # View / manage workers
     "page.shift_settings",               # View / manage shift settings
+
+    # =======================================================
+    # ARENA STAFF — iPad Kiosk Sign-in System
+    # =======================================================
+    "section.arena",                      # Show Arena Staff in sidebar
+    "page.arena_live",                    # View live sign-in feed
+    "page.arena_sessions",                # View & control the PC Sessions room map
+    "page.arena_logs",                    # View sign-in logs
+    "page.arena_controls",                # View Kiosk Manager (admin-only kiosk controls)
+    "arena.manage",                       # Manage kiosk settings, force sign-out, reload, clear logs
+    "arena.unlock",                       # Remotely unlock a locked kiosk
+    "page.arena_inventory",               # View & use the Arena inventory (equipment)
+    "equipment.use",                      # Check out / check in equipment
+    "equipment.manage",                   # Add/edit/delete items, reports, export
+    "page.arena_students",                # View student profiles, visit history & notes
+    "arena.notes",                        # Add / remove notes on students
+    "arena.ban",                          # Ban / watch-list students
+    "arena.students_manage",              # Delete students & their records
+    "page.arena_reports",                 # View incident reports (own by default)
+    "arena.reports_all",                  # View ALL incident reports (not just your own)
+    "arena.reports",                      # File / resolve / delete incident reports
 
     # =======================================================
     # LIONBEATSGG — Music Bot
@@ -177,6 +190,10 @@ PERMISSION_ALIASES = {
     "equipment.checkin":           "equipment.use",
     "equipment.reports":           "equipment.manage",
     "equipment.export":            "equipment.manage",
+    # Inventory moved from the retired "Worker On Duty" app into Arena Staff
+    "page.onduty_equipment":       "page.arena_inventory",
+    "page.onduty_dashboard":       "page.arena_inventory",
+    "section.onduty":              "section.arena",
     # Music
     "music.player_controls":       "music.controls",
     "music.manage_queue":          "music.controls",
@@ -272,8 +289,10 @@ def init_db():
         # Migrate old granular permission keys to consolidated keys
         _migrate_permission_keys(conn)
 
-        # Sync preset group permissions (add any missing permissions from presets)
-        _sync_preset_permissions(conn)
+        # Seed preset groups that have never been configured. This is
+        # NON-DESTRUCTIVE: a preset group that already has permissions is left
+        # exactly as the admin set it, so customizations persist across restarts.
+        _seed_preset_permissions(conn)
 
 
 def _migrate_permission_keys(conn):
@@ -296,20 +315,32 @@ def _migrate_permission_keys(conn):
             )
 
 
-def _sync_preset_permissions(conn):
-    """Ensure preset groups have all permissions defined in PRESET_GROUPS.
+def _seed_preset_permissions(conn):
+    """Seed permissions for preset groups that have never been configured.
 
-    This adds any NEW permissions that were added to the preset definitions
-    without removing manually customised permissions.  It only touches groups
-    whose name matches a preset exactly.
+    Non-destructive: a preset group that already has ANY permissions is left
+    exactly as the admin set it, so customizations (e.g. revoking a permission
+    from Student Workers) persist across restarts. Only empty preset groups, or
+    preset groups that don't exist yet, get their default permission set.
     """
+    now = datetime.now(timezone.utc).isoformat()
     for preset in PRESET_GROUPS:
         row = conn.execute(
             "SELECT id FROM groups WHERE name = ?", (preset["name"],)
         ).fetchone()
-        if not row:
-            continue
-        group_id = row["id"]
+        if row:
+            group_id = row["id"]
+            has_perms = conn.execute(
+                "SELECT COUNT(*) AS c FROM group_permissions WHERE group_id = ?", (group_id,)
+            ).fetchone()["c"]
+            if has_perms:
+                continue  # admin-managed — never overwrite
+        else:
+            cursor = conn.execute(
+                "INSERT INTO groups (name, description, created_at) VALUES (?, ?, ?)",
+                (preset["name"], preset.get("description", ""), now),
+            )
+            group_id = cursor.lastrowid
         for perm in preset["permissions"]:
             if perm in ALL_PERMISSIONS:
                 conn.execute(
@@ -333,15 +364,15 @@ def _create_master_admin(conn):
 PRESET_GROUPS = [
     {
         "name": "Student Workers",
-        "description": "Standard access — equipment check in/out, dashboard, and GGLeap.",
+        "description": "Standard access — equipment check in/out and GGLeap arena management only.",
         "permissions": [
             "section.onduty",
             "page.onduty_dashboard",
             "page.onduty_equipment",
             "equipment.use",
-            "section.lionbyte",
-            "page.dashboard",
             "page.ggleap",
+            "page.arena_sessions",
+            "arena.manage",
         ],
     },
     {
@@ -354,6 +385,13 @@ PRESET_GROUPS = [
             "page.onduty_equipment",
             "equipment.use",
             "equipment.manage",
+            # Arena Staff — kiosk sign-in system
+            "section.arena",
+            "page.arena_live",
+            "page.arena_sessions",
+            "page.arena_logs",
+            "page.arena_controls",
+            "arena.manage",
             # LionByteGG — operational pages
             "section.lionbyte",
             "page.dashboard",
@@ -386,6 +424,7 @@ PRESET_GROUPS = [
             "section.lionshift",
             "page.shift_dashboard",
             "page.shift_schedules",
+            "schedules.manage",
             "page.shift_offers",
             "page.shift_trades",
             "page.shift_timeoff",
@@ -473,10 +512,18 @@ PRESET_GROUPS = [
             "page.onduty_equipment",
             "equipment.use",
             "equipment.manage",
+            # Arena Staff — kiosk sign-in system
+            "section.arena",
+            "page.arena_live",
+            "page.arena_sessions",
+            "page.arena_logs",
+            "page.arena_controls",
+            "arena.manage",
             # LionShiftGG
             "section.lionshift",
             "page.shift_dashboard",
             "page.shift_schedules",
+            "schedules.manage",
             "page.shift_offers",
             "page.shift_trades",
             "page.shift_timeoff",
@@ -558,6 +605,13 @@ def get_user_by_id(user_id):
     return _row_to_user(row) if row else None
 
 
+def get_user_by_username(username):
+    """Get a single user by username (case-sensitive, matches login lookup)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    return _row_to_user(row) if row else None
+
+
 def get_all_users():
     """Get all users."""
     with get_db() as conn:
@@ -577,7 +631,10 @@ def create_user(username, password, display_name, group_id=None, is_admin=False)
             "VALUES (?, ?, ?, ?, ?, 1, ?)",
             (username, pw_hash, display_name, group_id, 1 if is_admin else 0, now),
         )
-        return get_user_by_id(cursor.lastrowid)
+        new_user_id = cursor.lastrowid
+    # Fetch AFTER the transaction commits (get_db commits on block exit) so the
+    # new row is visible to the fresh connection opened inside get_user_by_id().
+    return get_user_by_id(new_user_id)
 
 
 def update_user(user_id, display_name=None, group_id=None, is_admin=None, is_active=None):
@@ -711,6 +768,26 @@ def get_group_permissions(group_id):
     return [r["permission_key"] for r in rows]
 
 
+def ensure_group_permissions(group_name, perms):
+    """Idempotently grant a set of permissions to a named group (adds only what's
+    missing; never revokes anything an admin set). Returns the number added."""
+    added = 0
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM groups WHERE name = ?", (group_name,)).fetchone()
+        if not row:
+            return 0
+        gid = row["id"]
+        for perm in perms:
+            if perm not in ALL_PERMISSIONS:
+                continue
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO group_permissions (group_id, permission_key, granted) VALUES (?, ?, 1)",
+                (gid, perm),
+            )
+            added += cur.rowcount
+    return added
+
+
 def create_group(name, description="", permissions=None):
     """Create a new group with optional permissions."""
     now = datetime.now(timezone.utc).isoformat()
@@ -757,3 +834,5 @@ def delete_group(group_id):
             return False
         conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
     return True
+
+

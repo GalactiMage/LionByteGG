@@ -2,6 +2,10 @@
 {% block title %}Analytics{% endblock %}
 {% block page_title %}Analytics Dashboard{% endblock %}
 
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="content-wrapper">
     <!-- Summary Cards -->
@@ -55,11 +59,11 @@
                 <div class="chart-container" style="display: flex; flex-direction: column; gap: 20px;">
                     <div class="stat-bar">
                         <div class="stat-bar-label">
-                            <span>Warnings</span>
-                            <span id="warning-count">0</span>
+                            <span>Violations</span>
+                            <span id="violation-count">0</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill warning" id="warning-bar" style="width: 0%;"></div>
+                            <div class="progress-fill warning" id="violation-bar" style="width: 0%;"></div>
                         </div>
                     </div>
                     <div class="stat-bar">
@@ -93,20 +97,40 @@
                 <h2><i class="fas fa-trophy"></i> Varsity Registrations</h2>
             </div>
             <div class="card-body">
-                <div class="varsity-stats">
-                    <div class="varsity-stat pending">
-                        <div class="varsity-stat-number" id="varsity-pending">0</div>
-                        <div class="varsity-stat-label">Pending</div>
+                <div style="display: flex; align-items: center; gap: 24px;">
+                    <div style="width: 200px; height: 200px; flex-shrink: 0;">
+                        <canvas id="varsity-chart"></canvas>
                     </div>
-                    <div class="varsity-stat approved">
-                        <div class="varsity-stat-number" id="varsity-approved">0</div>
-                        <div class="varsity-stat-label">Approved</div>
-                    </div>
-                    <div class="varsity-stat denied">
-                        <div class="varsity-stat-number" id="varsity-denied">0</div>
-                        <div class="varsity-stat-label">Denied</div>
+                    <div style="flex: 1;">
+                        <div class="chart-legend-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                            <div style="width: 12px; height: 12px; border-radius: 3px; background: #f59e0b;"></div>
+                            <span style="flex: 1; color: var(--text-secondary);">Pending</span>
+                            <strong id="varsity-pending" style="font-size: 18px; color: var(--warning);">0</strong>
+                        </div>
+                        <div class="chart-legend-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                            <div style="width: 12px; height: 12px; border-radius: 3px; background: #10b981;"></div>
+                            <span style="flex: 1; color: var(--text-secondary);">Approved</span>
+                            <strong id="varsity-approved" style="font-size: 18px; color: var(--success);">0</strong>
+                        </div>
+                        <div class="chart-legend-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                            <div style="width: 12px; height: 12px; border-radius: 3px; background: #ef4444;"></div>
+                            <span style="flex: 1; color: var(--text-secondary);">Denied</span>
+                            <strong id="varsity-denied" style="font-size: 18px; color: var(--danger);">0</strong>
+                        </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Members Breakdown Chart -->
+    <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">
+            <h2><i class="fas fa-chart-bar"></i> Member Composition</h2>
+        </div>
+        <div class="card-body">
+            <div style="height: 280px;">
+                <canvas id="members-chart"></canvas>
             </div>
         </div>
     </div>
@@ -345,6 +369,122 @@
 </style>
 
 <script>
+    // Chart.js global config for dark theme
+    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.borderColor = 'rgba(55, 65, 81, 0.5)';
+    Chart.defaults.font.family = 'Inter, sans-serif';
+
+    let varsityChart, membersChart;
+
+    function createCharts() {
+        // Varsity Doughnut Chart
+        const varCtx = document.getElementById('varsity-chart');
+        if (varCtx) {
+            varsityChart = new Chart(varCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Pending', 'Approved', 'Denied'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: ['#f59e0b', '#10b981', '#ef4444'],
+                        borderColor: 'transparent',
+                        borderWidth: 0,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#131a2e',
+                            titleColor: '#fff',
+                            bodyColor: '#9ca3af',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            cornerRadius: 10,
+                            padding: 12
+                        }
+                    },
+                    animation: {
+                        animateRotate: true,
+                        duration: 800,
+                        easing: 'easeOutQuart'
+                    }
+                }
+            });
+        }
+
+        // Members Bar Chart
+        const memCtx = document.getElementById('members-chart');
+        if (memCtx) {
+            membersChart = new Chart(memCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Humans', 'Bots', 'Guests'],
+                    datasets: [{
+                        label: 'Count',
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            'rgba(124, 58, 237, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(16, 185, 129, 0.8)'
+                        ],
+                        borderColor: [
+                            '#7c3aed',
+                            '#f59e0b',
+                            '#10b981'
+                        ],
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false,
+                        barPercentage: 0.5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#131a2e',
+                            titleColor: '#fff',
+                            bodyColor: '#9ca3af',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            cornerRadius: 10,
+                            padding: 12
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(55, 65, 81, 0.3)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                padding: 8
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                padding: 8
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
+                    }
+                }
+            });
+        }
+    }
+
     async function loadAnalytics() {
         try {
             const response = await fetch('/api/analytics');
@@ -356,20 +496,39 @@
             document.getElementById('bot-members').textContent = data.members.bots.toLocaleString();
             document.getElementById('guest-count').textContent = data.members.guests.toLocaleString();
             
-            // Update moderation stats
-            const maxMod = Math.max(data.moderation.total_warnings, data.moderation.total_kicks, data.moderation.total_bans, 1);
-            document.getElementById('warning-count').textContent = data.moderation.total_warnings;
+            // Update moderation stats (progress bars)
+            const maxMod = Math.max(data.moderation.total_violations, data.moderation.total_kicks, data.moderation.total_bans, 1);
+            document.getElementById('violation-count').textContent = data.moderation.total_violations;
             document.getElementById('kick-count').textContent = data.moderation.total_kicks;
             document.getElementById('ban-count').textContent = data.moderation.total_bans;
-            document.getElementById('warning-bar').style.width = (data.moderation.total_warnings / maxMod * 100) + '%';
+            document.getElementById('violation-bar').style.width = (data.moderation.total_violations / maxMod * 100) + '%';
             document.getElementById('kick-bar').style.width = (data.moderation.total_kicks / maxMod * 100) + '%';
             document.getElementById('ban-bar').style.width = (data.moderation.total_bans / maxMod * 100) + '%';
             document.getElementById('users-with-records').textContent = data.moderation.users_with_records;
             
-            // Update varsity stats
+            // Update varsity chart
             document.getElementById('varsity-pending').textContent = data.varsity.pending;
             document.getElementById('varsity-approved').textContent = data.varsity.approved;
             document.getElementById('varsity-denied').textContent = data.varsity.denied;
+
+            if (varsityChart) {
+                varsityChart.data.datasets[0].data = [
+                    data.varsity.pending,
+                    data.varsity.approved,
+                    data.varsity.denied
+                ];
+                varsityChart.update('active');
+            }
+
+            // Update members bar chart
+            if (membersChart) {
+                membersChart.data.datasets[0].data = [
+                    data.members.humans,
+                    data.members.bots,
+                    data.members.guests
+                ];
+                membersChart.update('active');
+            }
             
             // Update roles
             const rolesContainer = document.getElementById('roles-list');
@@ -397,8 +556,11 @@
         return div.innerHTML;
     }
 
-    // Load on page load
-    document.addEventListener('DOMContentLoaded', loadAnalytics);
+    // Initialize charts and load data
+    document.addEventListener('DOMContentLoaded', function() {
+        createCharts();
+        loadAnalytics();
+    });
     
     // Refresh every 60 seconds
     setInterval(loadAnalytics, 60000);

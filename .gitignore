@@ -12,6 +12,7 @@
 .env.*
 !.env.example
 **/.flask_secret_key
+**/.roster_encrypt_key
 
 # ========================
 # STUDENT DATA & PERSONAL INFORMATION

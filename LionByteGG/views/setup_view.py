@@ -17,6 +17,7 @@ from utils.constants import (
 )
 from utils.log_channels import get_or_create_log_channel
 from utils.safe_json import safe_json_dump
+from utils import db as user_db
 
 GUEST_TIMES_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../guest_times"))
 USER_RECORDS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../user_records"))
@@ -123,20 +124,15 @@ async def remove_expired_guests(bot):
 
 def add_user_record(user_id, record):
     from datetime import datetime, timezone
-    USER_RECORDS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../user_records"))
-    os.makedirs(USER_RECORDS_DIR, exist_ok=True)
-    path = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-    try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        else:
-            data = []
-    except Exception:
-        data = []
-    record["timestamp"] = datetime.now(timezone.utc).isoformat()
-    data.append(record)
-    safe_json_dump(data, path, indent=2)
+    record.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    user_db.add_record(
+        user_id=user_id,
+        type_=record.get("type", "Note"),
+        reason=record.get("reason", ""),
+        moderator=record.get("moderator"),
+        moderator_id=record.get("moderator_id"),
+        source=record.get("source", "discord")
+    )
 
 
 def format_phone(phone):

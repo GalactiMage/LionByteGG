@@ -1,0 +1,252 @@
+{
+  "chapter": 4,
+  "title": "LionByteGG Bot — Flagship PNW Esports Discord Bot",
+  "path": "LionByteGG\\ (bot side, excluding web\\)",
+  "overview": {
+    "purpose": "Main/flagship Discord bot for PNW Esports. Handles member onboarding (Student/Guest), moderation with 3-tier AutoMod sync, ticket support, varsity/JV team registration + Discord role sync, dynamic voice channel generation, arena status presence, GGLeap PC-status/game-list panels, and a watchlist surveillance feature.",
+    "guild_id": "728274695673348140",
+    "stack": "discord.py >= 2.3.0, SQLite (user_records.db), JSON files, cryptography (Fernet for PII)",
+    "entry_points": {
+      "main.py": "Standalone bot process",
+      "run_combined.py": "Runs BOTH the bot and the Flask web dashboard in one process (dashboard on a background thread, bot on the main async loop)",
+      "intro_animation.py": "Matrix-style ASCII startup animation shown before the bot launches",
+      "master_terminal.py": "PyQt6 GUI control panel to start/stop/monitor ALL 6 services at once"
+    },
+    "start_scripts": ["start_bot.bat (bot only)", "Start LionServices.bat (all 6 services + Master Terminal)"],
+    "stop_scripts": ["stop_bot.bat", "stop_master_terminal.bat"]
+  },
+  "env_vars": {
+    "DISCORD_BOT_TOKEN": "Required",
+    "SECURITY_CODE": "Optional override, default 146332 — required by several destructive admin commands via a modal",
+    "GGLEAP_AUTH_TOKEN_GAMES": "GGLeap API token for the games/apps list feature",
+    "GGLEAP_AUTH_TOKEN_STATUS": "GGLeap API token for the PC status feature"
+  },
+  "intents": ["message_content", "guilds", "members", "guild_messages", "presences", "auto_moderation_execution", "voice_states"],
+  "startup_sequence_main_py": {
+    "on_ready": [
+      "Write PID file to data/bot.pid",
+      "Start arena status update loop",
+      "Register persistent Views (ticket, varsity, migrate-to-student)",
+      "Instantiate 3 cogs directly (not via extension): AdminCommands, TicketCommands, Moderation",
+      "Sync slash commands to guild",
+      "Start loops: dashboard_sync_loop(30s), check_for_timeouts(1m), arena_status_loop(1m), process_moderation_queue(10s), check_bot_control(5s), process_discord_notifications(10s)",
+      "Ensure ticket panel message exists"
+    ],
+    "cog_load_order": ["reaction_roles", "admin_commands", "vc-system", "ggleap_status", "ggleap_games", "userinfo", "varsity_view"]
+  },
+  "data_files": {
+    "data/bot_status.json": "Bot latency, guild count, member count — read by Nova web dashboard",
+    "data/bot.pid": "Process ID for dashboard stop/restart",
+    "data/members_cache.json": "Cached member list for dashboard",
+    "data/channels_cache.json": "Cached channel list for dashboard",
+    "data/vc-generators.json": "VC generator + tracked generated-VC configuration",
+    "data/vc_live_cache.json": "Live voice channel status",
+    "data/watchlist.json": "Watched users + activity log",
+    "data/join_times.json": "Tracks when a user joined (for the 4-day incomplete-setup kick)",
+    "data/moderation_queue.json": "Moderation actions queued by the dashboard for the bot to execute",
+    "data/bot_control.json": "Dashboard 'restart'/'stop' commands (must be < 30s old to be honored)",
+    "data/discord_notification_queue.json": "General-purpose queue: varsity registrations, team announcements, ticket actions, VC control actions",
+    "data/live_notifications.json": "Dashboard bell notifications (max 100)",
+    "data/job_progress.json": "Long-running job progress (e.g. bulk Discord role sync)",
+    "data/reaction_roles.json": "{message_id: {emoji: role_id}} mapping",
+    "data/ticket_log.json": "Ticket open/closed/blacklist arrays",
+    "data/teams.json / data/rosters.json": "Varsity team + player roster data (rosters.json PII Fernet-encrypted)",
+    "data/esports_games.json": "Playable games list used by varsity registration forms",
+    "data/arena_hours.json": "Weekly open/close hours consumed by arena_status.py",
+    "user_records.db (SQLite)": "user_records table: id, user_id, type, reason, moderator, moderator_id, source, timestamp — indexed on user_id"
+  },
+  "event_listeners": {
+    "on_member_join": ["Watchlist check + alert if configured", "Sends welcome embed with Student/Guest Access buttons (SetupView) to SETUP_CHANNEL_ID", "Records join time to join_times.json"],
+    "on_member_remove": ["Clears SetupView.selection_made set", "Removes welcome message if user left before setup", "Clears join time record"],
+    "on_message": ["Watchlist message tracking (normal=log only, high=immediate alert)"],
+    "on_voice_state_update": ["Watchlist voice-channel join/leave/switch tracking", "vc-system.py: generator-VC join creates a temp VC; generated-VC leave deletes it if empty"]
+  },
+  "background_tasks": [
+    {"name": "check_for_timeouts", "interval": "1 minute", "does": "DMs a reminder if a pending_users entry is > 1 minute old"},
+    {"name": "arena_status_loop", "interval": "1 minute", "does": "Calls update_arena_status(bot) to refresh bot presence"},
+    {"name": "dashboard_sync_loop", "interval": "30 seconds", "does": "save_bot_status(), save_members_cache(), applies pending bot_activity.json changes"},
+    {"name": "process_moderation_queue", "interval": "10 seconds", "does": "Applies queued moderation actions (warn/kick/ban) from moderation_queue.json"},
+    {"name": "check_bot_control", "interval": "5 seconds", "does": "Honors 'restart' (os.execv) or 'stop' (bot.close()) commands < 30s old"},
+    {"name": "process_discord_notifications", "interval": "10 seconds", "does": "Main dashboard->bot bridge; see notification_types below"},
+    {"name": "registration_timeout_check", "interval": "1 hour", "does": "Kicks users who joined > 4 days ago and never completed Student/Guest setup"}
+  ],
+  "notification_types_processed": ["varsity_registration", "team_announcement (priority low/normal/high/urgent)", "ticket_blacklist_add/remove", "close_ticket", "ticket_message", "ticket_assign", "vc_kick_user", "vc_lock/unlock", "vc_set_limit"],
+  "cogs": [
+    {
+      "file": "cogs/admin_commands.py",
+      "class": "AdminCommands",
+      "commands": [
+        {"name": "/force-setup-user", "params": "user", "perm": "admin", "does": "DMs the onboarding SetupView to a specific user"},
+        {"name": "/set-activity", "params": "activity", "perm": "admin+SecurityCodeModal", "does": "Overrides bot presence text"},
+        {"name": "/reset-activity", "perm": "admin+SecurityCodeModal", "does": "Restores arena open/closed presence"},
+        {"name": "/restart_service", "perm": "admin+SecurityCodeModal", "does": "os.execv() respawn using PID file"},
+        {"name": "/stop-service", "perm": "admin+SecurityCodeModal", "does": "Confirmation dialog -> bot.close()"},
+        {"name": "/ping", "perm": "public"},
+        {"name": "/about", "perm": "public"},
+        {"name": "/club", "perm": "public", "does": "Link to Student Life club signup"},
+        {"name": "/arena-hours", "perm": "public", "does": "Shows weekly arena hours"},
+        {"name": "/help", "perm": "public"},
+        {"name": "/join-mc-server", "perm": "public", "does": "Placeholder 'COMING SOON'"},
+        {"name": "/clear", "params": "amount(1-100)", "perm": "admin", "does": "Bulk deletes messages"},
+        {"name": "/warn", "params": "user, reason", "perm": "admin", "does": "DM + log channel + DB 'Violation' record"},
+        {"name": "/kick", "params": "user, reason", "perm": "admin + Kick Members", "does": "DM + kick + log + DB record"},
+        {"name": "/ban", "params": "user, reason", "perm": "admin + Ban Members", "does": "DM + ban + log + DB record"},
+        {"name": "/unban", "params": "user_id", "perm": "admin"},
+        {"name": "/mute", "params": "user, duration_minutes, reason(optional)", "perm": "admin + Moderate Members", "does": "Applies a timeout"},
+        {"name": "/announce", "params": "channel, message", "perm": "admin", "does": "Gold announcement embed, pings Student role"},
+        {"name": "/lock / /unlock", "params": "channel", "perm": "admin", "does": "Toggles send_messages for @everyone"},
+        {"name": "/serverinfo", "perm": "public"},
+        {"name": "/setup-tickets", "perm": "admin", "does": "Posts ticket panel (persistent view)"},
+        {"name": "/setup_guest_transfer", "params": "channel", "perm": "admin", "does": "Posts a permanent 'Migrate to Student' button (MigrateToStudentView)"},
+        {"name": "/time", "perm": "public (self)", "does": "Shows remaining guest-access countdown"},
+        {"name": "/force-register-all", "perm": "admin", "does": "Two-stage confirmation (threshold 50 users), DMs SetupView to all non-student/non-bot members, 2s rate limit per DM"},
+        {"name": "/download-transcript", "params": "user", "perm": "admin", "does": "Exports moderation record as .txt"},
+        {"name": "/setup_reaction_role", "params": "channel, message_id, emoji, role", "perm": "admin"},
+        {"name": "/admin-help", "perm": "admin", "does": "Paginated admin command reference"},
+        {"name": "/say", "params": "message", "perm": "admin"}
+      ],
+      "modal": {"SecurityCodeModal": "Prompts for the SECURITY_CODE env var before proceeding with a sensitive action"},
+      "view": {"MigrateToStudentView": "'Migrate' button (🎓) -> AccountSetupModal for guest->student conversion"}
+    },
+    {
+      "file": "cogs/moderation.py",
+      "class": "Moderation",
+      "database": "SQLite user_records.db via utils/db.py",
+      "flagged_words_file": "data/flagged_words.json — 3-tier system: bannable (auto-ban), kickable (auto-kick), warning (DM only)",
+      "event_on_automod_action": "Deduplicates by user_id:rule_id:message_id; checks custom tiers first (ban/kick/DM as appropriate), else logs 'AutoMod Flag' (Discord already blocked it); always logs to DB + AutoMod log channel",
+      "event_on_audit_log_entry_create": "Monitors ban/kick audit entries, logs to #lionbyte-logs",
+      "commands": [
+        {"name": "/addword", "params": "word, tier", "perm": "admin", "does": "Adds word + triggers Discord AutoMod sync"},
+        {"name": "/removeword", "params": "word", "perm": "admin"},
+        {"name": "/Records", "params": "user", "perm": "admin", "does": "Alias of /userinfo"}
+      ],
+      "key_methods": ["reload_words()", "persist_words()", "add_record(user_id, type_, reason, moderator, moderator_id, source)", "_sync_automod() [threaded]"]
+    },
+    {
+      "file": "cogs/reaction_roles.py",
+      "class": "ReactionRoles",
+      "data_file": "data/reaction_roles.json",
+      "events": ["on_raw_reaction_add (adds role, DMs confirmation, retries on 429 up to 5x)", "on_raw_reaction_remove (removes role, DMs confirmation)"],
+      "methods": ["update_reaction_role(message_id, emoji, role_id)", "_handle_role_change(member, role, add, reason)"]
+    },
+    {
+      "file": "cogs/ticket_commands.py",
+      "class": "TicketCommands",
+      "commands": [
+        {"name": "/blacklist-tickets", "params": "user", "perm": "admin"},
+        {"name": "/whitelist-tickets", "params": "user", "perm": "admin"}
+      ]
+    },
+    {
+      "file": "cogs/userinfo.py",
+      "class": "UserInfo",
+      "command": {"name": "/userinfo", "params": "user", "perm": "admin + SecurityCodeModal (UserInfoSecurityModal)", "does": "Full profile: identity, moderation record summary, guest timer, varsity registration status, last 50 record transcript"},
+      "modal": "ActionReasonModal (used by Clear Record, Kick, Ban buttons)",
+      "views": ["ClearRecordView (Clear Record, Cancel Timer, Reset Guest Timer, Kick, Ban, Register Varsity, VarsityHUB — 60s timeout)", "ConfirmClearRecordView (Yes/No)"],
+      "helpers": ["save_guest_time/remove_guest_time/load_guest_times", "_show_userinfo(interaction, user, skip_loading=False)"]
+    },
+    {
+      "file": "cogs/vc-system.py",
+      "class": "VCSystem",
+      "data_file": "data/vc-generators.json — {normal:[...], tryout:[...], generated:[...]}",
+      "commands": [
+        {"name": "/setup_vc_generator", "params": "voice_channel, category", "perm": "admin"},
+        {"name": "/setup_tryout_vc", "params": "voice_channel, category", "perm": "admin"},
+        {"name": "/list_vc_generators", "perm": "public"}
+      ],
+      "event_on_voice_state_update": "Joining a generator VC creates '{Generator Name} #{N}' and moves the member in; leaving a generated VC deletes it once empty",
+      "methods": ["_track/_untrack(vc_id)", "_save_to_disk/_load_from_disk()", "_try_delete(channel_id, reason)", "_print_status()"],
+      "view": "VCControls (owner-only lock/limit/info buttons)"
+    }
+  ],
+  "utils": {
+    "utils/constants.py": {
+      "server_setup": ["GUILD_ID", "SETUP_CHANNEL_ID", "STUDENT_LIFE_LINK"],
+      "role_ids": ["STUDENT_ROLE_ID", "GUEST_ROLE_ID", "TECHNICIAN_ROLE_ID", "MINECRAFT_ROLE_ID", "VARSITY_ROLE_ID (unset)", "JV_ROLE_ID (unset)"],
+      "channel_ids": ["ANNOUNCE_CHANNEL_ID", "TICKET_PANEL_CHANNEL_ID"],
+      "auto_created_log_channels": ["lionbyte-logs", "lionbyte-ticket-logs", "studentworker-logs", "varsity-registrations"],
+      "ticket_config": ["TICKET_CATEGORY_NAME = Tickets", "TICKET_CHANNEL_PREFIX = ticket-", "ticket_blacklist (in-memory set)"],
+      "esports_config": ["ESPORTS_ROLES (igl/captain/support/...)", "PLAYER_STATUSES (active/inactive/benched/suspended/tryout)", "TEAM_ROLE_MAPPING (per-game varsity/jv role ids)"],
+      "directories": ["USER_RECORDS_DIR", "GUEST_TIMES_DIR", "VARSITY_REG_DIR", "SCHEDULE_IMAGES_DIR"],
+      "security": "SECURITY_CODE = env or '146332'"
+    },
+    "utils/db.py": {
+      "table": "user_records (id PK, user_id, type, reason, moderator, moderator_id, source default 'discord', timestamp) + idx_user_id",
+      "functions": ["init_db()", "add_record(...)", "get_records(user_id)", "get_all_records()", "clear_records(user_id)", "remove_record_by_id(id)", "remove_record_by_index(user_id, index)", "remove_warning_by_index(user_id, index)", "remove_watch_records(user_id)", "has_records(user_id)"]
+    },
+    "utils/safe_json.py": "Thread-safe JSON I/O with shared RLock; auto-.bak backup + recovery for critical files (rosters.json, teams.json, watchlist.json, ticket_log.json, player_reports.json); atomic write via temp+rename; retries up to 5x on Windows PermissionError",
+    "utils/arena_status.py": {
+      "hours_file": "data/arena_hours.json (per-weekday open/close/closed)",
+      "timezone": "America/Chicago",
+      "function": "update_arena_status(bot) — sets presence to 'Arena Open • Closes at HH:MM' / 'Arena Closed • Opens at HH:MM' / 'Arena Closed • Opens {day}'; respects admin custom-activity override"
+    },
+    "utils/automod_sync.py": {
+      "purpose": "Syncs the 3-tier flagged word lists to Discord's native AutoMod via REST API v10",
+      "rule_names": ["LionByte - Bannable Words", "LionByte - Kickable Words", "LionByte - Warning Words"],
+      "function": "sync_automod(bot_token, guild_id, flagged_words) -> {tier: created|updated|error}"
+    },
+    "utils/log_channels.py": "get_or_create_log_channel/ticket_logs_channel/studentworker_logs_channel — auto-creates hidden channels if missing",
+    "utils/ggleap_games.py": {
+      "purpose": "Polls GGLeap /apps/get-enabled-apps-summary, posts an interactive game/app list panel",
+      "functions": ["get_jwt()", "get_enabled_apps()", "split_games_apps(apps)", "format_app_list(apps, max_per_line=4)", "format_app_list_by_letter(apps)"],
+      "view": "RequestGameButtonView ('➕ Request a Game' -> link to request form)"
+    },
+    "utils/ggleap_status.py": {
+      "purpose": "Polls GGLeap /machines/get-all for arena PC status, posts a status panel",
+      "filters": "Excludes Stage1-6 (varsity-only) and VMs (GgRockVm=true)",
+      "status_mapping": {"Available": "ReadyForUser/IdleShuttingDown", "Off": "Off", "Not Available": "UserLoggedIn/UserLoggingIn/AdminMode/Restarting/StartingUp/ShuttingDown"},
+      "functions": ["get_jwt()", "get_pc_status()", "format_pc_name(name) -> 'Island{N}S{M}'", "sort_pc_names(names)"]
+    }
+  },
+  "views": {
+    "views/setup_view.py": {
+      "class": "SetupView",
+      "buttons": ["Student -> AccountSetupModal", "Guest Access -> GuestAccessModal"],
+      "AccountSetupModal_fields": ["first_name", "ign", "purdue_email (@purdue.edu/@pnw.edu, normalized)", "phone (optional, formatted XXX-XXX-XXXX)"],
+      "AccountSetupModal_result": "Sets nickname '{first_name} ({ign})', removes Guest role, adds Student role, sends confirmation + club signup link, logs to lionbyte-logs",
+      "GuestAccessModal_fields": ["first name, email, phone, accept_terms"],
+      "GuestAccessModal_result": "Adds Guest role, starts a 30-day timer via set_guest_timer()",
+      "background_helper": "remove_expired_guests(bot) — DMs + kicks users whose guest_times/*.json has expired"
+    },
+    "views/ticket_view.py": {
+      "panel_channel": "TICKET_PANEL_CHANNEL_ID",
+      "log_file": "data/ticket_log.json",
+      "support_types": ["Discord", "Minecraft", "Clubs", "Arena PCs (Technician Support, pings technician role)", "Varsity", "Other"],
+      "modal": "TicketSupportModal (first_name, purdue_email, explanation)",
+      "creation_checks": ["duplicate open ticket", "email domain", "blacklist"],
+      "channel_naming": "ticket-{next_number}, category 'Tickets'"
+    },
+    "views/varsity_view.py": {
+      "data_files": ["data/teams.json", "data/rosters.json (PII Fernet-encrypted, key data/.roster_encrypt_key)", "data/pending_varsity_registrations.json", "data/esports_games.json"],
+      "player_object_fields": ["id", "name", "ign", "game", "rank", "team_type (varsity|jv|sub_varsity|sub_jv|coach)", "position", "status", "encrypted_pii"],
+      "team_object_fields": ["id", "name", "game", "logo_url", "coach", "members", "created_at"],
+      "flow": ["PlayerTypeSelectView (Varsity/JV/Sub Varsity/Sub JV) -> VarsityRegistrationView (game -> details -> personal info -> confirm)", "PersistentVarsityRegistrationView ('Start Registration', survives restarts via fixed custom_id)", "VarsityApproveView (Approve/Deny/Request Changes — admin)"],
+      "helper_functions": ["load_teams/load_rosters/save_rosters (auto encrypt/decrypt PII)", "add_pending_registration/remove_pending_registration", "encrypt_player_pii/decrypt_player_pii (Fernet)", "add_varsity_notification(...)"]
+    }
+  },
+  "batch_files": {
+    "Start LionServices.bat": "Master launcher: single-instance guard (checks port 5000), runs intro_animation.py, launches all 6 services minimized in order, opens Master Terminal last",
+    "start_bot.bat": "Green ASCII banner, cd to script dir, 'python main.py', pause on exit",
+    "stop_bot.bat": "Kills window titled 'LionByteGG Bot*' + reads data/bot.pid to kill that PID + greps python processes running main.py"
+  },
+  "master_terminal_py": {
+    "framework": "PyQt6 GUI",
+    "services_managed": [
+      {"name": "LionByteGG", "script": "main.py", "runtime": "python"},
+      {"name": "LionShiftGG", "script": "main.py", "runtime": "python"},
+      {"name": "BoilerCraftGG", "script": "bot.py", "runtime": "python"},
+      {"name": "LionBeatsGG", "script": "src/index.js", "runtime": "node"},
+      {"name": "Lavalink", "script": "Lavalink.jar", "runtime": "java"},
+      {"name": "Nova (web)", "script": "run.py", "runtime": "python"}
+    ],
+    "features": ["Colored per-service status cards", "CPU/RAM/disk sidebar", "Central aggregated log viewer", "Ctrl+Alt+Q to exit", "Single-instance guard (port 5000 check)", "Individual or all-at-once start/stop"]
+  },
+  "deployment_checklist": [
+    "Create roles: Student, Guest, Technician, Varsity, JV",
+    "Create channels: #setup, #ticket-panel (auto log channels are self-created)",
+    "Create ticket category: Tickets",
+    "Set GUILD_ID + all role/channel IDs in utils/constants.py",
+    "Create .env with DISCORD_BOT_TOKEN",
+    "Verify: new member joins -> sees Student/Guest setup message"
+  ]
+}

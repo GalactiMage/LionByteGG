@@ -6,7 +6,7 @@ import os
 import json
 import asyncio
 import traceback
-from utils.safe_json import safe_json_dump
+from utils.safe_json import safe_json_dump, safe_json_load
 
 # Absolute path — never depends on CWD
 _SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,17 +20,11 @@ VC_GENERATORS_FILE = os.path.join(_SCRIPT_DIR, "data", "vc-generators.json")
 def _load_json():
     """Load generator config from disk. Always returns a dict with all keys."""
     default = {"normal": [], "tryout": [], "generated": []}
-    try:
-        if os.path.exists(VC_GENERATORS_FILE):
-            with open(VC_GENERATORS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for key in default:
-                if key not in data:
-                    data[key] = default[key]
-            return data
-    except Exception as e:
-        print(f"[VCSystem] WARNING: Could not read {VC_GENERATORS_FILE}: {e}")
-    return default
+    data = safe_json_load(VC_GENERATORS_FILE, default)
+    for key in default:
+        if key not in data:
+            data[key] = default[key]
+    return data
 
 
 def _save_json(data):

@@ -358,6 +358,11 @@
                 <input type="text" class="form-input" id="captain-role" placeholder="Role ID for team captains">
                 <small style="color: var(--text-muted); font-size: 12px;">Players marked as captain will receive this role</small>
             </div>
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label class="form-label">Coach Role ID</label>
+                <input type="text" class="form-input" id="coach-role" placeholder="Role ID for team coaches">
+                <small style="color: var(--text-muted); font-size: 12px;">Players marked as Coach will receive this role</small>
+            </div>
         </div>
         
         <div class="alert alert-warning mt-2 mb-0">
@@ -494,96 +499,114 @@
         {% endif %}
     </div>
     <div class="card-body">
-        <div class="table-container">
-            <table class="table" id="arena-hours-table">
-                <thead>
-                    <tr>
-                        <th>Day</th>
-                        <th>Open Time</th>
-                        <th>Close Time</th>
-                        <th>Closed</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Monday</td>
-                        <td><input type="time" class="form-input" data-day="monday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="monday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="monday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Tuesday</td>
-                        <td><input type="time" class="form-input" data-day="tuesday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="tuesday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="tuesday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Wednesday</td>
-                        <td><input type="time" class="form-input" data-day="wednesday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="wednesday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="wednesday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Thursday</td>
-                        <td><input type="time" class="form-input" data-day="thursday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="thursday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="thursday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Friday</td>
-                        <td><input type="time" class="form-input" data-day="friday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="friday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="friday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Saturday</td>
-                        <td><input type="time" class="form-input" data-day="saturday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="saturday" data-type="close" value="17:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="saturday" data-type="closed" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Sunday</td>
-                        <td><input type="time" class="form-input" data-day="sunday" data-type="open" value="10:00"></td>
-                        <td><input type="time" class="form-input" data-day="sunday" data-type="close" value="14:00"></td>
-                        <td>
-                            <label class="toggle-switch">
-                                <input type="checkbox" data-day="sunday" data-type="closed">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
+            <i class="fas fa-sync-alt" style="color: var(--primary-light); margin-right: 6px;"></i>
+            Changes saved here update the bot's activity status automatically — no restart needed.
+        </p>
+
+        <style>
+            .arena-day-card {
+                background: var(--background-secondary);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 16px;
+                transition: border-color 0.2s;
+            }
+            .arena-day-card:hover { border-color: var(--border-light); }
+            .arena-day-card.is-closed {
+                background: rgba(239, 68, 68, 0.04);
+                border-color: rgba(239, 68, 68, 0.2);
+            }
+            .day-status-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.6px;
+                text-transform: uppercase;
+                cursor: pointer;
+                border: 1px solid transparent;
+                transition: all 0.2s;
+                user-select: none;
+            }
+            .day-status-pill.is-open {
+                background: rgba(16, 185, 129, 0.15);
+                color: #10b981;
+                border-color: rgba(16, 185, 129, 0.35);
+            }
+            .day-status-pill.is-closed-pill {
+                background: rgba(239, 68, 68, 0.12);
+                color: #ef4444;
+                border-color: rgba(239, 68, 68, 0.3);
+            }
+            .day-status-pill:hover { filter: brightness(1.15); }
+            .arena-time-group label {
+                display: block;
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 5px;
+            }
+            .arena-time-group input[type="time"] {
+                width: 100%;
+                transition: opacity 0.2s;
+            }
+            .arena-day-card.is-closed .arena-time-group input[type="time"] {
+                opacity: 0.3;
+                pointer-events: none;
+            }
+            .arena-day-card.is-closed .arena-time-group label {
+                opacity: 0.4;
+            }
+        </style>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px;">
+            {% set days = [
+                ('monday',    'Monday',    false),
+                ('tuesday',   'Tuesday',   false),
+                ('wednesday', 'Wednesday', false),
+                ('thursday',  'Thursday',  false),
+                ('friday',    'Friday',    false),
+                ('saturday',  'Saturday',  true),
+                ('sunday',    'Sunday',    false)
+            ] %}
+            {% for day_id, day_label, default_closed in days %}
+            <div class="arena-day-card{% if default_closed %} is-closed{% endif %}" id="card-{{ day_id }}">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <span style="font-weight: 700; font-size: 14px; letter-spacing: 0.2px;">{{ day_label }}</span>
+                    <label style="cursor: pointer; margin: 0;">
+                        <input type="checkbox" data-day="{{ day_id }}" data-type="closed"
+                               {% if default_closed %}checked{% endif %}
+                               onchange="onDayClosedChange('{{ day_id }}', this.checked)"
+                               style="display: none;">
+                        <span class="day-status-pill {% if default_closed %}is-closed-pill{% else %}is-open{% endif %}"
+                              id="pill-{{ day_id }}">
+                            <i class="fas {% if default_closed %}fa-times-circle{% else %}fa-check-circle{% endif %}" id="pill-icon-{{ day_id }}"></i>
+                            <span id="pill-text-{{ day_id }}">{% if default_closed %}CLOSED{% else %}OPEN{% endif %}</span>
+                        </span>
+                    </label>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="arena-time-group">
+                        <label>Opens</label>
+                        <input type="time" class="form-input" data-day="{{ day_id }}" data-type="open"
+                               value="{{ '10:00' if day_id != 'sunday' else '10:00' }}"
+                               {% if default_closed %}disabled{% endif %}>
+                    </div>
+                    <div class="arena-time-group">
+                        <label>Closes</label>
+                        <input type="time" class="form-input" data-day="{{ day_id }}" data-type="close"
+                               value="{{ '14:00' if day_id == 'sunday' else '17:00' }}"
+                               {% if default_closed %}disabled{% endif %}>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </div>
 </div>
@@ -658,20 +681,46 @@
     const SETTINGS_PERMS = {
         games: {{ has_perm('settings.games')|tojson }}
     };
+    // Arena Hours helpers
+    function onDayClosedChange(day, isClosed) {
+        const card   = document.getElementById(`card-${day}`);
+        const pill   = document.getElementById(`pill-${day}`);
+        const icon   = document.getElementById(`pill-icon-${day}`);
+        const text   = document.getElementById(`pill-text-${day}`);
+        const inputs = card.querySelectorAll('input[type="time"]');
+
+        if (isClosed) {
+            card.classList.add('is-closed');
+            pill.classList.replace('is-open', 'is-closed-pill');
+            icon.className = 'fas fa-times-circle';
+            text.textContent = 'CLOSED';
+            inputs.forEach(i => i.disabled = true);
+        } else {
+            card.classList.remove('is-closed');
+            pill.classList.replace('is-closed-pill', 'is-open');
+            icon.className = 'fas fa-check-circle';
+            text.textContent = 'OPEN';
+            inputs.forEach(i => i.disabled = false);
+        }
+    }
+
     // Load arena hours
     async function loadArenaHours() {
         try {
             const response = await fetch('/api/arena-hours');
             const hours = await response.json();
-            
+
             Object.entries(hours).forEach(([day, data]) => {
-                const openInput = document.querySelector(`input[data-day="${day}"][data-type="open"]`);
-                const closeInput = document.querySelector(`input[data-day="${day}"][data-type="close"]`);
+                const openInput   = document.querySelector(`input[data-day="${day}"][data-type="open"]`);
+                const closeInput  = document.querySelector(`input[data-day="${day}"][data-type="close"]`);
                 const closedInput = document.querySelector(`input[data-day="${day}"][data-type="closed"]`);
-                
-                if (openInput) openInput.value = data.open;
-                if (closeInput) closeInput.value = data.close;
-                if (closedInput) closedInput.checked = data.closed;
+
+                if (openInput)   openInput.value    = data.open;
+                if (closeInput)  closeInput.value   = data.close;
+                if (closedInput) {
+                    closedInput.checked = data.closed;
+                    onDayClosedChange(day, data.closed);
+                }
             });
         } catch (error) {
             console.error('Failed to load arena hours:', error);
@@ -681,19 +730,19 @@
     async function saveArenaHours() {
         const hours = {};
         const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-        
+
         days.forEach(day => {
-            const openInput = document.querySelector(`input[data-day="${day}"][data-type="open"]`);
-            const closeInput = document.querySelector(`input[data-day="${day}"][data-type="close"]`);
+            const openInput   = document.querySelector(`input[data-day="${day}"][data-type="open"]`);
+            const closeInput  = document.querySelector(`input[data-day="${day}"][data-type="close"]`);
             const closedInput = document.querySelector(`input[data-day="${day}"][data-type="closed"]`);
-            
+
             hours[day] = {
-                open: openInput?.value || '10:00',
-                close: closeInput?.value || '17:00',
+                open:   openInput?.value  || '10:00',
+                close:  closeInput?.value || '17:00',
                 closed: closedInput?.checked || false
             };
         });
-        
+
         try {
             const response = await fetch('/api/arena-hours', {
                 method: 'POST',
@@ -701,14 +750,14 @@
                 body: JSON.stringify(hours)
             });
             const data = await response.json();
-            
+
             if (data.success) {
-                alert('Arena hours saved successfully!');
+                showToast('Arena hours saved — bot status will update on next refresh.', 'success');
             } else {
-                alert('Failed to save: ' + data.message);
+                showToast('Failed to save: ' + data.message, 'error');
             }
         } catch (error) {
-            alert('Error: ' + error.message);
+            showToast('Error: ' + error.message, 'error');
         }
     }
 
@@ -875,6 +924,8 @@
             document.getElementById('general-varsity-role').value = data.varsity_role_id || '';
             // Set Captain role
             document.getElementById('captain-role').value = data.captain_role_id || '';
+            // Set Coach role
+            document.getElementById('coach-role').value = data.coach_role_id || '';
             
             renderTeamRoleMapping();
         } catch (error) {
@@ -942,6 +993,7 @@
         
         const generalRosterRole = document.getElementById('general-varsity-role').value.trim();
         const captainRole = document.getElementById('captain-role').value.trim();
+        const coachRole = document.getElementById('coach-role').value.trim();
         
         try {
             const response = await fetch('/api/settings/team-roles', {
@@ -951,6 +1003,7 @@
                     mapping: mapping,
                     varsity_role_id: generalRosterRole || null,
                     captain_role_id: captainRole || null,
+                    coach_role_id: coachRole || null,
                     jv_role_id: null
                 })
             });

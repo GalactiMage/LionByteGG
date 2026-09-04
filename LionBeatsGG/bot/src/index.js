@@ -885,6 +885,38 @@ client.once('ready', async () => {
     httpServer.listen(API_PORT, () => {
         console.log(`🌐 HTTP API server running on port ${API_PORT}`);
     });
+
+    // Set request timeout to prevent hanging connections
+    httpServer.setTimeout(30000);
+});
+
+// ========================= CONNECTION RESILIENCE =========================
+
+client.on('shardDisconnect', (event, shardId) => {
+    console.warn(`[CONNECTION] WARNING: Shard ${shardId} disconnected (code: ${event.code}). Will auto-reconnect.`);
+});
+
+client.on('shardReconnecting', (shardId) => {
+    console.log(`[CONNECTION] Shard ${shardId} reconnecting...`);
+});
+
+client.on('shardResume', (shardId, replayedEvents) => {
+    console.log(`[CONNECTION] Shard ${shardId} resumed. Replayed ${replayedEvents} events.`);
+    // Reload music panels after reconnection to ensure they stay in sync
+    loadMusicPanels();
+});
+
+client.on('shardError', (error, shardId) => {
+    console.error(`[CONNECTION] Shard ${shardId} error:`, error);
+});
+
+// Catch unhandled rejections to prevent crashes
+process.on('unhandledRejection', (error) => {
+    console.error('[PROCESS] Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('[PROCESS] Uncaught exception:', error);
 });
 
 // Helper function to generate dynamic color from video ID
@@ -1258,18 +1290,7 @@ function startInactivityTimer(guildId) {
             player.queue.previous = [];
             await player.destroy();
             
-            const panelData = musicPanels.get(guildId);
-            if (panelData) {
-                try {
-                    const guild = client.guilds.cache.get(guildId);
-                    const channel = guild?.channels.cache.get(panelData.channelId);
-                    if (channel) {
-                        await channel.send('🦁 Left voice channel due to 20 minutes of inactivity.');
-                    }
-                } catch (error) {
-                    console.error('Error sending inactivity message:', error);
-                }
-            }
+
         }
         inactivityTimers.delete(guildId);
     }, INACTIVITY_TIMEOUT);
@@ -1581,17 +1602,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 player.queue.previous = [];
                 await player.destroy();
                 
-                const panelData = musicPanels.get(oldState.guild.id);
-                if (panelData) {
-                    try {
-                        const channel = oldState.guild.channels.cache.get(panelData.channelId);
-                        if (channel) {
-                            await channel.send('🦁 Left voice channel because everyone left.');
-                        }
-                    } catch (error) {
-                        console.error('Error sending alone message:', error);
-                    }
-                }
+
             }
         }
     }

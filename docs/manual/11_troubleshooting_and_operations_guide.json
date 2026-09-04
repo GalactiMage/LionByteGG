@@ -1,0 +1,118 @@
+{
+  "chapter": 11,
+  "title": "Operations Guide — Startup/Shutdown, Common Issues & Fixes, Settings Glossary",
+  "starting_everything": {
+    "recommended": "Double-click 'Start LionServices.bat' (or its desktop shortcut) in c:\\LionByteGG\\LionByteGG\\ — single-instance guarded (checks if port 5000 is already LISTENING and refuses to double-launch), launches all 6 services minimized in order, then opens Master Terminal (PyQt6 GUI) for ongoing monitoring.",
+    "services_launched_in_order": ["LionByteGG bot", "LionShiftGG bot", "BoilerCraftGG bot", "LionBeatsGG bot", "Lavalink (Java audio server)", "Nova web dashboard"],
+    "individual_start_scripts": {
+      "LionByteGG bot": "LionByteGG\\start_bot.bat",
+      "LionShiftGG bot": "LionShiftGG\\start_bot.bat",
+      "BoilerCraftGG bot": "BoilerCraftGG\\start.bat",
+      "LionBeatsGG + Lavalink": "LionBeatsGG\\start-all.bat",
+      "Nova web dashboard": "cd LionByteGG\\web; $env:FLASK_ENV='production'; python run.py --production"
+    },
+    "master_terminal_gui": "LionByteGG\\master_terminal.py (PyQt6) — start/stop/monitor all 6 services from one window, live CPU/RAM/disk + aggregated logs."
+  },
+  "stopping_everything": {
+    "individual_stop_scripts": ["LionByteGG\\stop_bot.bat", "LionShiftGG\\stop_bot.bat", "BoilerCraftGG\\stop_bot.bat", "LionBeatsGG\\stop-all.bat (kills bot + Lavalink)", "LionByteGG\\stop_website.bat / stop_master_terminal.bat"],
+    "web_dashboard_manual_kill": "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object {$_.CommandLine -like '*run.py*'} | ForEach-Object {taskkill /F /PID $_.ProcessId}"
+  },
+  "restarting_after_a_code_change": {
+    "rule": "Nova (Flask) runs in PRODUCTION mode with NO auto-reload — you MUST restart the server after editing app.py or ANY template file. Discord bots similarly need a process restart to pick up cog/util changes (or use their /reload, /restart_service, or dashboard restart-queue features).",
+    "browser_cache": "Templates + static JS/CSS can be cached by the browser — hard-refresh (Ctrl+F5) or cache-bust with a ?t=timestamp query param after a Nova UI change.",
+    "static_js_exception": "Static JS files (e.g. web/static/js/main.js diagnostics console) do NOT need a server restart, only a hard browser refresh."
+  },
+  "known_gotchas_and_fixes": [
+    {
+      "symptom": "Users can't log in / login bounces back to the login page intermittently",
+      "cause": "Two run.py processes fighting over port 5000 (duplicate server)",
+      "fix": "run.py's _ensure_single_instance(port) auto-kills other run.py instances on every launch. Verify only one is running: Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ? {$_.CommandLine -like '*run.py*'} — should return exactly 1."
+    },
+    {
+      "symptom": "A user with custom permissions gets bounced to /login?error=no_dashboard_access, or the bot-switcher dropdown lands them on the wrong section",
+      "cause": "smart_landing() requires the user's group to have that section's specific 'main dashboard' page permission (page.dashboard for LionByte, page.boilercraft, page.shift_dashboard, page.music_dashboard), not just the section.* + individual page perms",
+      "fix": "Grant the missing page.dashboard-equivalent permission to the group in /admin"
+    },
+    {
+      "symptom": "Editing a preset group's permissions in /admin keeps reverting after a server restart",
+      "cause": "(HISTORICAL BUG, fixed) init_db() used to hard-reset preset group permissions on every startup via _enforce_preset_permissions()",
+      "fix": "Replaced with _seed_preset_permissions() — non-destructive, only seeds a group with ZERO permissions or that's entirely missing; existing custom permissions are left alone"
+    },
+    {
+      "symptom": "Saving a new nested config field (e.g. announcement.pulse) from the Nova UI shows/animates correctly in the live preview but silently doesn't persist after 'Save Settings'",
+      "cause": "POST /api/arena/config rebuilds nested config sub-objects from a HARDCODED field whitelist before saving",
+      "fix": "When adding a new nested config field, update BOTH the read-side normalizer (e.g. _arena_announcement()) AND the POST handler's inline whitelist dict"
+    },
+    {
+      "symptom": "A multi-team coach or captain isn't getting Discord roles for every team they're on",
+      "cause": "/api/rosters/sync-roles/preview and /execute historically only read player['team_id'] (first team only), not the full team_ids array",
+      "fix": "Already fixed to loop team_ids; if regression reappears, check that the sync-roles code loops the full array, not just the legacy singular field"
+    },
+    {
+      "symptom": "PC screen locks won't engage even with the toggle flipped on in the UI",
+      "cause": "pc_lock_enabled ended up False in data/arena_kiosk_config.json (e.g. a stale save)",
+      "fix": "Check arena_kiosk_config.json directly, or re-flip the toggle in Nova -> Arena -> Controls -> PC Screen Locks"
+    },
+    {
+      "symptom": "GGLeap API calls start returning 429 / '0 machines' across the whole arena system",
+      "cause": "Daily GGLeap call quota (10,000/day) exhausted — usually from redundant polling loops",
+      "fix": "Check /api/arena/ggleap-usage for today's count; if near the cap, temporarily set config key ggleap_paused=true to stop all calls; verify no new independent polling loop was added outside the shared _ggleap_get_machines() cache"
+    },
+    {
+      "symptom": "New sign-in guard settings block legitimate repeat kiosk check-ins",
+      "cause": "cooldown_minutes / max_per_day set too aggressively (an earlier default of 15/8 caused this)",
+      "fix": "Safe defaults are cooldown_minutes=0, max_per_day=0, max_active_pc=1 — only increase these deliberately and test with a real repeat check-in afterward"
+    },
+    {
+      "symptom": "Large PowerShell-based file edits (e.g. Get-Content | Set-Content) on app.py corrupt special characters",
+      "cause": "Windows PowerShell's default Get-Content/Set-Content encoding is NOT UTF-8-safe; multi-byte UTF-8 characters (em-dash —, en-dash –, ellipsis …, middle-dot ·, × sign) can be silently collapsed into invalid single CP1252 bytes",
+      "fix": "Never pipe a large source file through Get-Content|Set-Content without explicit -Encoding UTF8, or better, do binary-safe edits in Python (open in 'rb'/'wb' mode). Always verify with `python -c \"import app\"` after large PowerShell-based edits to catch UnicodeDecodeError immediately."
+    },
+    {
+      "symptom": "grep_search / other tools report a much higher total line count for app.py than PowerShell's Get-Content | Measure-Object -Line",
+      "cause": "Unresolved tooling discrepancy observed 2026-09-04 — Python's readlines() and ripgrep-based search agree with each other (~12,800 lines) while PowerShell Get-Content under-counts (~11,700) even with -Encoding UTF8 specified",
+      "guidance": "Trust Python/grep-reported line numbers over PowerShell's Measure-Object -Line count when locating code in app.py; this does not indicate file corruption (verified via successful `python -c \"import app\"` and a live server test)."
+    }
+  ],
+  "settings_glossary": {
+    "arena_kiosk_config.json (data dir)": {
+      "arena_name": "Display name shown on kiosks",
+      "welcome_message": "Big welcome text on the kiosk attract screen",
+      "day_hours[7]": "Per-weekday {open,start,end} — replaces legacy single open_hour/close_hour",
+      "announcement": "{enabled,text,color,scroll} — scrolling/static banner on kiosks + Nova preview",
+      "signin_guard": "{enabled,cooldown_minutes,max_per_day,max_active_pc,ban_message} — anti-spam",
+      "pc_lock_enabled": "Master switch for the PC screen-lock automation loop",
+      "pc_hold_minutes": "How long a kiosk reservation holds a PC before it's released/re-locked",
+      "ggleap_paused": "Emergency kill-switch — stops ALL GGLeap API calls when true",
+      "live_cleared_at": "Timestamp used to compute the Live Feed cutoff after a manual 'Clear Live Feed'",
+      "kiosks": "Dict of kiosk_id -> {label, room, type(pc|console)}"
+    },
+    "team_role_settings.json": "Discord role ID mapping for varsity/JV/captain/coach role sync (see chapter 06)",
+    "settings.json (LionShiftGG)": "dm_shift_reminders, dm_late_alerts, reminder_minutes_before, late_alert_minutes, dm_new_schedule, allow_shift_trading, webclock/opening/closing form URLs",
+    "bot_config.json (BoilerCraftGG)": "Ticket panel channel, category name/prefix, staff role, FAQ channel, support_categories",
+    "flagged_words.json (LionByteGG bot + Moderation cog)": "3-tier list: bannable (auto-ban), kickable (auto-kick), warning (DM only) — synced to Discord's native AutoMod via utils/automod_sync.py"
+  },
+  "permission_key_naming_convention": {
+    "section.NAME": "Controls whether a top-level nav section (e.g. Arena Staff) shows in the sidebar at all",
+    "page.NAME": "Controls whether a specific page's nav link renders and whether the route itself is reachable",
+    "NAME.action": "A specific in-page action permission (e.g. arena.manage, moderation.warn, equipment.checkout)",
+    "admin.panel": "Full bypass — grants access to everything, used for the true admin role"
+  },
+  "shared_data_directory_map": {
+    "location": "c:\\LionByteGG\\LionByteGG\\data\\ (DATA_DIR in app.py) — NOT web\\data\\",
+    "bot_to_web_files": ["bot_status.json", "members_cache.json", "channels_cache.json", "vc_live_cache.json", "live_notifications.json"],
+    "web_to_bot_queue_files": ["discord_notification_queue.json (LionByteGG bot)", "lionshift_notification_queue.json (LionShiftGG bot)", "moderation_queue.json (LionByteGG bot)", "bot_control.json (LionByteGG bot restart/stop)"],
+    "boilercraft_own_queue": "BoilerCraftGG\\data\\dashboard_commands.json (separate directory, own bot)",
+    "lionbeats_integration": "NOT file-based — Nova talks to LionBeatsGG over its own REST API on localhost:3847 instead of a shared data directory"
+  },
+  "encryption_and_pii": {
+    "roster_pii": "data/.roster_encrypt_key (Fernet) encrypts rosters.json PII fields (email, phone, PUID, major, GPA, etc.)",
+    "arena_pii": "Uses the SAME Fernet key to encrypt sign-in names/emails, watchlist entries, student notes, and incident report descriptions in arena.db",
+    "principle": "As of the Aug 2026 PII hardening pass, no plaintext personal data (names/emails) should exist in any plain JSON file in this project — it all lives encrypted in SQLite. If you ever find a JSON file with plaintext PII, that's a regression."
+  },
+  "quick_reference_ports": {
+    "Nova web dashboard": "5000 (HTTP, waitress)",
+    "Lavalink audio server": "2333",
+    "LionBeatsGG REST API": "3847"
+  }
+}

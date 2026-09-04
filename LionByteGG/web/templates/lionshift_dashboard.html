@@ -1,0 +1,1152 @@
+﻿{% extends "base.html" %}
+
+{% block title %}LionShiftGG Dashboard{% endblock %}
+{% block page_title %}LionShiftGG Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* â•â•â• LionShift Page Styles â•â•â• */
+    .shift-accent { color: #f59e0b; }
+    .shift-gradient { background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%); }
+
+    /* â”€â”€â”€ Hero Banner â”€â”€â”€ */
+    .shift-hero {
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 50%, #dc2626 100%);
+        border-radius: 20px;
+        padding: 32px 36px;
+        margin-bottom: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+    }
+    .shift-hero::before {
+        content: '';
+        position: absolute;
+        top: -60%;
+        right: -15%;
+        width: 50%;
+        height: 220%;
+        background: rgba(255,255,255,0.07);
+        transform: rotate(25deg);
+        pointer-events: none;
+    }
+    .shift-hero::after {
+        content: '';
+        position: absolute;
+        bottom: -40%;
+        left: -10%;
+        width: 35%;
+        height: 180%;
+        background: rgba(0,0,0,0.06);
+        transform: rotate(-15deg);
+        pointer-events: none;
+    }
+    .shift-hero-text { position: relative; z-index: 1; }
+    .shift-hero h2 {
+        color: #fff;
+        font-size: 26px;
+        font-weight: 800;
+        margin: 0 0 6px;
+        letter-spacing: -0.5px;
+    }
+    .shift-hero p {
+        color: rgba(255,255,255,0.85);
+        font-size: 15px;
+        margin: 0;
+    }
+    .shift-hero-stats {
+        display: flex;
+        gap: 16px;
+        position: relative;
+        z-index: 1;
+        flex-shrink: 0;
+    }
+    .hero-stat-pill {
+        background: rgba(255,255,255,0.18);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 14px;
+        padding: 14px 22px;
+        text-align: center;
+        min-width: 100px;
+    }
+    .hero-stat-pill .value {
+        font-size: 26px;
+        font-weight: 800;
+        color: #fff;
+        line-height: 1;
+    }
+    .hero-stat-pill .label {
+        font-size: 11px;
+        color: rgba(255,255,255,0.8);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+    }
+
+    /* Tab bar */
+    .shift-tabs {
+        display: flex;
+        gap: 4px;
+        background: var(--surface);
+        padding: 6px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+    }
+    .shift-tab {
+        padding: 10px 20px;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 10px;
+        transition: all 0.25s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+    }
+    .shift-tab:hover { color: var(--text-primary); background: rgba(245, 158, 11, 0.08); }
+    .shift-tab.active {
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+    }
+    .shift-tab .count {
+        background: rgba(255,255,255,0.15);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .shift-tab.active .count {
+        background: rgba(255,255,255,0.25);
+    }
+    .tab-content { display: none; animation: fadeIn 0.3s ease; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Stats cards row */
+    .shift-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+    .shift-stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px 20px;
+        text-align: center;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .shift-stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        border-radius: 3px 3px 0 0;
+    }
+    .shift-stat-card:nth-child(1)::before { background: linear-gradient(90deg, #f59e0b, #ea580c); }
+    .shift-stat-card:nth-child(2)::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .shift-stat-card:nth-child(3)::before { background: linear-gradient(90deg, #22c55e, #16a34a); }
+    .shift-stat-card:nth-child(4)::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+    .shift-stat-card:nth-child(5)::before { background: linear-gradient(90deg, #a855f7, #7c3aed); }
+    .shift-stat-card:nth-child(6)::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
+    .shift-stat-card:hover {
+        border-color: rgba(245, 158, 11, 0.3);
+        transform: translateY(-3px);
+        box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+    }
+    .shift-stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 14px;
+        font-size: 20px;
+    }
+    .shift-stat-value {
+        font-size: 30px;
+        font-weight: 800;
+        margin-bottom: 4px;
+        line-height: 1;
+    }
+    .shift-stat-label {
+        font-size: 11px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 600;
+    }
+
+    /* Schedule cards */
+    .schedule-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 20px;
+    }
+    .schedule-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .schedule-card:hover {
+        border-color: #f59e0b;
+        box-shadow: 0 12px 36px rgba(245, 158, 11, 0.15);
+        transform: translateY(-4px);
+    }
+    .schedule-card-header {
+        padding: 22px 24px;
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+        position: relative;
+        overflow: hidden;
+    }
+    .schedule-card-header::before {
+        content: '';
+        position: absolute;
+        top: -50%; right: -50%;
+        width: 100%; height: 200%;
+        background: rgba(255,255,255,0.08);
+        transform: rotate(30deg);
+    }
+    .schedule-card-header h3 {
+        font-size: 17px;
+        font-weight: 700;
+        color: white;
+        margin: 0 0 6px 0;
+        position: relative;
+    }
+    .schedule-card-header .date-range {
+        font-size: 13px;
+        color: rgba(255,255,255,0.85);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+    }
+    .schedule-card-body { padding: 22px 24px; }
+    .schedule-link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        background: var(--background-secondary);
+        border-radius: 12px;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.25s ease;
+        margin-bottom: 14px;
+        font-weight: 500;
+    }
+    .schedule-link:hover { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+    .schedule-link i { color: #f59e0b; font-size: 16px; }
+    .schedule-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+    .schedule-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+    }
+    .schedule-badge.open { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+    .schedule-badge.closed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+    /* Worker cards */
+    .worker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+    }
+    .worker-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.3s ease;
+    }
+    .worker-card:hover {
+        border-color: rgba(245, 158, 11, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    .worker-card.active-worker { border-left: 3px solid #10b981; }
+    .worker-avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid var(--border);
+        flex-shrink: 0;
+    }
+    .worker-info { flex: 1; min-width: 0; }
+    .worker-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .worker-username {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+    .worker-status {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+        letter-spacing: 0.3px;
+    }
+    .worker-status.clocked-in {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+    .worker-status.clocked-out {
+        background: rgba(107, 114, 128, 0.15);
+        color: #6b7280;
+    }
+
+    /* Search / filter bar */
+    .tab-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .tab-search {
+        flex: 1;
+        max-width: 360px;
+        position: relative;
+    }
+    .tab-search input {
+        width: 100%;
+        padding: 10px 14px 10px 40px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .tab-search input:focus { border-color: #f59e0b; }
+    .tab-search i {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 14px;
+    }
+    .tab-result-count {
+        font-size: 13px;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+
+    /* Offer cards */
+    .offer-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 20px;
+    }
+    .offer-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .offer-card:hover {
+        border-color: var(--success);
+        box-shadow: 0 10px 30px rgba(16, 185, 129, 0.12);
+        transform: translateY(-3px);
+    }
+    .offer-card.taken { opacity: 0.55; border-color: var(--text-muted); }
+    .offer-card.taken:hover { transform: none; box-shadow: none; }
+    .offer-card-header {
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .offer-card-header.available { background: rgba(16, 185, 129, 0.06); }
+    .offer-card-header.taken { background: rgba(107, 114, 128, 0.06); }
+    .offer-id {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-muted);
+        background: var(--background-secondary);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-family: monospace;
+    }
+    .offer-status-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .offer-status-badge.available { color: var(--success); }
+    .offer-status-badge.taken { color: var(--text-muted); }
+    .offer-card-body { padding: 22px; }
+    .offer-info-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 14px;
+    }
+    .offer-info-row:last-child { margin-bottom: 0; }
+    .offer-info-icon {
+        width: 36px;
+        height: 36px;
+        background: var(--background-secondary);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f59e0b;
+        font-size: 15px;
+        flex-shrink: 0;
+    }
+    .offer-info-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+        font-weight: 600;
+    }
+    .offer-info-value { font-size: 14px; color: var(--text-primary); font-weight: 500; }
+
+    /* Trade cards */
+    .trade-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 20px;
+    }
+    .trade-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .trade-card:hover {
+        border-color: var(--info);
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.12);
+        transform: translateY(-3px);
+    }
+    .trade-card-header {
+        padding: 16px 22px;
+        background: rgba(59, 130, 246, 0.05);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .trade-status-badge {
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .trade-status-badge.pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+    .trade-status-badge.approved { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .trade-status-badge.declined { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+    .trade-card-body { padding: 22px; }
+    .trade-arrow-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    .trade-user-info {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .trade-arrow {
+        color: var(--info);
+        font-size: 20px;
+        animation: arrowPulse 2s ease-in-out infinite;
+    }
+    @keyframes arrowPulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+    .trade-detail-box {
+        padding: 14px 18px;
+        background: var(--background-secondary);
+        border-radius: 12px;
+        margin-bottom: 12px;
+    }
+    .trade-detail-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .trade-detail-value { font-size: 14px; color: var(--text-primary); font-weight: 500; }
+
+    /* Time-off cards */
+    .timeoff-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 20px;
+    }
+    .timeoff-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .timeoff-card:hover {
+        border-color: #a855f7;
+        box-shadow: 0 10px 30px rgba(168, 85, 247, 0.12);
+        transform: translateY(-3px);
+    }
+    .timeoff-card-header {
+        padding: 16px 22px;
+        background: rgba(168, 85, 247, 0.05);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .timeoff-card-body { padding: 22px; }
+
+    /* Logs table */
+    .log-table-wrapper {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+    }
+    .log-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .log-table th {
+        padding: 14px 20px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-secondary);
+        background: var(--background-secondary);
+        border-bottom: 2px solid var(--border);
+    }
+    .log-table td {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+    }
+    .log-table tr:last-child td { border-bottom: none; }
+    .log-table tr:hover { background: rgba(245, 158, 11, 0.03); }
+    .log-action-badge {
+        display: inline-flex;
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        background: rgba(245,158,11,0.12);
+        color: #f59e0b;
+    }
+
+    /* Empty state */
+    .shift-empty {
+        text-align: center;
+        padding: 72px 20px;
+        color: var(--text-secondary);
+    }
+    .shift-empty-icon {
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        background: var(--background-secondary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+    }
+    .shift-empty-icon i {
+        font-size: 32px;
+        opacity: 0.35;
+    }
+    .shift-empty h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .shift-empty p { margin: 0; font-size: 14px; }
+
+    /* Loading skeleton */
+    .shift-skeleton {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+        gap: 12px;
+        font-size: 15px;
+    }
+    .shift-skeleton i { font-size: 20px; color: #f59e0b; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .shift-hero { flex-direction: column; text-align: center; padding: 24px 20px; }
+        .shift-hero-stats { flex-wrap: wrap; justify-content: center; }
+        .hero-stat-pill { min-width: 80px; padding: 10px 16px; }
+        .hero-stat-pill .value { font-size: 20px; }
+        .shift-stats { grid-template-columns: repeat(3, 1fr); }
+        .schedule-grid { grid-template-columns: 1fr; }
+        .worker-grid { grid-template-columns: 1fr; }
+        .offer-grid { grid-template-columns: 1fr; }
+        .trade-grid { grid-template-columns: 1fr; }
+        .timeoff-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Banner -->
+<div class="shift-hero">
+    <div class="shift-hero-text">
+        <h2><i class="fas fa-clock" style="margin-right: 10px; opacity: 0.9;"></i>Shift Management</h2>
+        <p>Monitor schedules, manage workers, and track shift activity in real time.</p>
+    </div>
+    <div class="shift-hero-stats">
+        <div class="hero-stat-pill">
+            <div class="value" id="hero-workers">--</div>
+            <div class="label">Workers</div>
+        </div>
+        <div class="hero-stat-pill">
+            <div class="value" id="hero-clocked">--</div>
+            <div class="label">Clocked In</div>
+        </div>
+        <div class="hero-stat-pill">
+            <div class="value" id="hero-offers">--</div>
+            <div class="label">Open Offers</div>
+        </div>
+    </div>
+</div>
+
+<!-- Stat Cards -->
+<div class="shift-stats" id="shift-stats">
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">
+            <i class="fas fa-calendar-alt"></i>
+        </div>
+        <div class="shift-stat-value shift-accent" id="stat-schedules">--</div>
+        <div class="shift-stat-label">Schedules</div>
+    </div>
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="shift-stat-value" style="color: #10b981;" id="stat-workers">--</div>
+        <div class="shift-stat-label">Workers</div>
+    </div>
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(34, 197, 94, 0.12); color: #22c55e;">
+            <i class="fas fa-clock"></i>
+        </div>
+        <div class="shift-stat-value" style="color: #22c55e;" id="stat-clocked-in">--</div>
+        <div class="shift-stat-label">Clocked In</div>
+    </div>
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;">
+            <i class="fas fa-hand-paper"></i>
+        </div>
+        <div class="shift-stat-value" style="color: #3b82f6;" id="stat-offers">--</div>
+        <div class="shift-stat-label">Open Offers</div>
+    </div>
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;">
+            <i class="fas fa-exchange-alt"></i>
+        </div>
+        <div class="shift-stat-value" style="color: #a855f7;" id="stat-trades">--</div>
+        <div class="shift-stat-label">Pending Trades</div>
+    </div>
+    <div class="shift-stat-card">
+        <div class="shift-stat-icon" style="background: rgba(239, 68, 68, 0.12); color: #ef4444;">
+            <i class="fas fa-umbrella-beach"></i>
+        </div>
+        <div class="shift-stat-value" style="color: #ef4444;" id="stat-timeoff">--</div>
+        <div class="shift-stat-label">Time Off</div>
+    </div>
+</div>
+
+<!-- Tabs Navigation -->
+<div class="shift-tabs" id="shift-tab-bar">
+    <button class="shift-tab active" data-tab="schedules"><i class="fas fa-calendar-alt"></i> Schedules <span class="count" id="tab-count-schedules">0</span></button>
+    <button class="shift-tab" data-tab="workers"><i class="fas fa-users"></i> Workers <span class="count" id="tab-count-workers">0</span></button>
+    <button class="shift-tab" data-tab="offers"><i class="fas fa-hand-paper"></i> Offers <span class="count" id="tab-count-offers">0</span></button>
+    <button class="shift-tab" data-tab="trades"><i class="fas fa-exchange-alt"></i> Trades <span class="count" id="tab-count-trades">0</span></button>
+    <button class="shift-tab" data-tab="timeoff"><i class="fas fa-umbrella-beach"></i> Time Off <span class="count" id="tab-count-timeoff">0</span></button>
+    <button class="shift-tab" data-tab="logs"><i class="fas fa-scroll"></i> Logs <span class="count" id="tab-count-logs">0</span></button>
+</div>
+
+<!-- â•â•â• Schedules Tab â•â•â• -->
+<div class="tab-content active" id="panel-schedules">
+    <div class="schedule-grid" id="schedule-grid">
+        <div class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading schedules...</div>
+    </div>
+</div>
+
+<!-- â•â•â• Workers Tab â•â•â• -->
+<div class="tab-content" id="panel-workers">
+    <div class="tab-toolbar">
+        <div class="tab-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="worker-search" placeholder="Search workers..." oninput="filterWorkers()">
+        </div>
+        <span class="tab-result-count" id="worker-result-count"></span>
+    </div>
+    <div class="worker-grid" id="worker-grid">
+        <div class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading workers...</div>
+    </div>
+</div>
+
+<!-- â•â•â• Offers Tab â•â•â• -->
+<div class="tab-content" id="panel-offers">
+    <div class="offer-grid" id="offer-grid">
+        <div class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading offers...</div>
+    </div>
+</div>
+
+<!-- â•â•â• Trades Tab â•â•â• -->
+<div class="tab-content" id="panel-trades">
+    <div class="trade-grid" id="trade-grid">
+        <div class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading trades...</div>
+    </div>
+</div>
+
+<!-- â•â•â• Time Off Tab â•â•â• -->
+<div class="tab-content" id="panel-timeoff">
+    <div class="timeoff-grid" id="timeoff-grid">
+        <div class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading time-off requests...</div>
+    </div>
+</div>
+
+<!-- â•â•â• Logs Tab â•â•â• -->
+<div class="tab-content" id="panel-logs">
+    <div class="log-table-wrapper">
+        <table class="log-table" id="log-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Worker</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="log-tbody">
+                <tr><td colspan="4" class="shift-skeleton"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // â”€â”€ Tab switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const tabs = document.querySelectorAll('.shift-tab');
+    const panels = document.querySelectorAll('.tab-content');
+
+    const tabToUrl = {
+        'schedules': '/lionshift/schedules',
+        'workers': '/lionshift/workers',
+        'offers': '/lionshift/offers',
+        'trades': '/lionshift/trades',
+        'timeoff': '/lionshift/timeoff',
+        'logs': '/lionshift/logs'
+    };
+
+    const tabLoaders = {
+        'schedules': loadSchedules,
+        'workers': loadWorkers,
+        'offers': loadOffers,
+        'trades': loadTrades,
+        'timeoff': loadTimeOff,
+        'logs': loadLogs
+    };
+
+    const loadedTabs = new Set();
+
+    function switchTab(target) {
+        tabs.forEach(t => t.classList.remove('active'));
+        panels.forEach(p => p.classList.remove('active'));
+        const tab = document.querySelector(`.shift-tab[data-tab="${target}"]`);
+        if (tab) tab.classList.add('active');
+        const panel = document.getElementById('panel-' + target);
+        if (panel) panel.classList.add('active');
+
+        const url = tabToUrl[target] || '/lionshift/' + target;
+        history.replaceState(null, '', url);
+
+        const sidebarLinks = document.querySelectorAll('#nav-lionshift .nav-link');
+        sidebarLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === url) link.classList.add('active');
+        });
+
+        if (!loadedTabs.has(target) && tabLoaders[target]) {
+            tabLoaders[target]();
+            loadedTabs.add(target);
+        }
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    const activeTab = '{{ active_tab|default("schedules") }}';
+
+    // â”€â”€ API helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function apiFetch(endpoint) {
+        const resp = await fetch(endpoint);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+    }
+
+    // â”€â”€ Load stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadStats() {
+        try {
+            const d = await apiFetch('/api/lionshift/stats');
+            setText('stat-schedules', d.schedule_count);
+            setText('stat-workers', d.worker_count);
+            setText('stat-clocked-in', d.clocked_in);
+            setText('stat-offers', d.open_offers);
+            setText('stat-trades', d.pending_trades);
+            setText('stat-timeoff', d.pending_timeoff);
+            setText('tab-count-schedules', d.schedule_count);
+            setText('tab-count-workers', d.worker_count);
+            setText('tab-count-offers', d.open_offers);
+            setText('tab-count-trades', d.pending_trades);
+            setText('tab-count-timeoff', d.pending_timeoff);
+            setText('tab-count-logs', d.log_count);
+            // Hero stats
+            setText('hero-workers', d.worker_count);
+            setText('hero-clocked', d.clocked_in);
+            setText('hero-offers', d.open_offers);
+        } catch (e) { console.error('Stats load failed:', e); }
+    }
+
+    function setText(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val != null ? val : '--';
+    }
+
+    // â”€â”€ Render schedules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadSchedules() {
+        const grid = document.getElementById('schedule-grid');
+        try {
+            const d = await apiFetch('/api/lionshift/schedules');
+            const items = d.schedules || [];
+            if (!items.length) {
+                grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-calendar-times"></i></div><h3>No Schedules</h3><p>No schedules have been created yet.</p></div>`;
+                return;
+            }
+            grid.innerHTML = items.map(s => {
+                const offersTag = s.allow_offers
+                    ? '<span class="schedule-badge open"><i class="fas fa-check-circle"></i> Offers Open</span>'
+                    : '<span class="schedule-badge closed"><i class="fas fa-times-circle"></i> Offers Closed</span>';
+                const link = s.schedule_link
+                    ? `<a href="${escapeAttr(s.schedule_link)}" target="_blank" rel="noopener noreferrer" class="schedule-link"><i class="fas fa-external-link-alt"></i> View Schedule</a>`
+                    : '<div class="schedule-link" style="opacity:0.4;cursor:default;"><i class="fas fa-ban"></i> No link available</div>';
+                const created = s.created_by ? `Created by ${escapeHtml(s.created_by)}` : '';
+                return `
+                    <div class="schedule-card">
+                        <div class="schedule-card-header">
+                            <h3>${escapeHtml(s.name)}</h3>
+                            <div class="date-range"><i class="fas fa-calendar"></i> ${escapeHtml(s.start_date || '')} &rarr; ${escapeHtml(s.end_date || '')}</div>
+                        </div>
+                        <div class="schedule-card-body">
+                            ${link}
+                            <div class="schedule-meta">
+                                <span>${created}</span>
+                                ${offersTag}
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exclamation-triangle"></i></div><h3>Error</h3><p>Failed to load schedules.</p></div>`;
+        }
+    }
+
+    // â”€â”€ Render workers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    let allWorkers = [];
+    async function loadWorkers() {
+        const grid = document.getElementById('worker-grid');
+        try {
+            const d = await apiFetch('/api/lionshift/workers');
+            allWorkers = d.workers || [];
+            renderWorkers(allWorkers);
+        } catch (e) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exclamation-triangle"></i></div><h3>Error</h3><p>Failed to load workers.</p></div>`;
+        }
+    }
+
+    function renderWorkers(items) {
+        const grid = document.getElementById('worker-grid');
+        const countEl = document.getElementById('worker-result-count');
+        if (countEl) countEl.textContent = `${items.length} worker${items.length !== 1 ? 's' : ''}`;
+        if (!items.length) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-user-slash"></i></div><h3>No Workers</h3><p>No workers match your search.</p></div>`;
+            return;
+        }
+        // Sort: clocked-in first
+        const sorted = [...items].sort((a, b) => (b.clocked_in ? 1 : 0) - (a.clocked_in ? 1 : 0));
+        grid.innerHTML = sorted.map(w => {
+            const statusClass = w.clocked_in ? 'clocked-in' : 'clocked-out';
+            const statusText = w.clocked_in ? 'Clocked In' : 'Off Duty';
+            const activeClass = w.clocked_in ? ' active-worker' : '';
+            const avatar = w.avatar_url || '';
+            const avatarHtml = avatar
+                ? `<img class="worker-avatar" src="${escapeAttr(avatar)}" alt="${escapeAttr(w.name)}" onerror="this.style.display='none'">`
+                : `<div class="worker-avatar" style="background:linear-gradient(135deg,#f59e0b,#ea580c);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;">${escapeHtml((w.name||'?')[0])}</div>`;
+            return `
+                <div class="worker-card${activeClass}">
+                    ${avatarHtml}
+                    <div class="worker-info">
+                        <div class="worker-name">${escapeHtml(w.name || 'Unknown')}</div>
+                        <div class="worker-username">@${escapeHtml(w.username || '')}</div>
+                    </div>
+                    <span class="worker-status ${statusClass}">${statusText}</span>
+                </div>`;
+        }).join('');
+    }
+
+    // Expose filter to the global scope for the oninput handler
+    window.filterWorkers = function() {
+        const q = (document.getElementById('worker-search')?.value || '').toLowerCase();
+        if (!q) return renderWorkers(allWorkers);
+        const filtered = allWorkers.filter(w =>
+            (w.name || '').toLowerCase().includes(q) ||
+            (w.username || '').toLowerCase().includes(q)
+        );
+        renderWorkers(filtered);
+    };
+
+    // â”€â”€ Render offers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadOffers() {
+        const grid = document.getElementById('offer-grid');
+        try {
+            const d = await apiFetch('/api/lionshift/offers');
+            const items = d.offers || [];
+            if (!items.length) {
+                grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-hand-paper"></i></div><h3>No Shift Offers</h3><p>No shifts are currently being offered.</p></div>`;
+                return;
+            }
+            grid.innerHTML = items.map(o => {
+                const taken = !!o.taken_by;
+                const headerClass = taken ? 'taken' : 'available';
+                const statusHtml = taken
+                    ? `<span class="offer-status-badge taken"><i class="fas fa-check"></i> Taken</span>`
+                    : `<span class="offer-status-badge available"><i class="fas fa-circle"></i> Available</span>`;
+                return `
+                    <div class="offer-card ${taken ? 'taken' : ''}">
+                        <div class="offer-card-header ${headerClass}">
+                            <span class="offer-id">#${escapeHtml(o.id)}</span>
+                            ${statusHtml}
+                        </div>
+                        <div class="offer-card-body">
+                            <div class="offer-info-row">
+                                <div class="offer-info-icon"><i class="fas fa-user"></i></div>
+                                <div>
+                                    <div class="offer-info-label">Offered By</div>
+                                    <div class="offer-info-value">${escapeHtml(o.offered_by_name || o.offered_by || 'Unknown')}</div>
+                                </div>
+                            </div>
+                            <div class="offer-info-row">
+                                <div class="offer-info-icon"><i class="fas fa-calendar-day"></i></div>
+                                <div>
+                                    <div class="offer-info-label">Date</div>
+                                    <div class="offer-info-value">${escapeHtml(o.date || 'N/A')}</div>
+                                </div>
+                            </div>
+                            <div class="offer-info-row">
+                                <div class="offer-info-icon"><i class="fas fa-clock"></i></div>
+                                <div>
+                                    <div class="offer-info-label">Time</div>
+                                    <div class="offer-info-value">${escapeHtml(o.time || o.shift_time || 'N/A')}</div>
+                                </div>
+                            </div>
+                            ${o.reason ? `<div class="offer-info-row"><div class="offer-info-icon"><i class="fas fa-comment"></i></div><div><div class="offer-info-label">Reason</div><div class="offer-info-value">${escapeHtml(o.reason)}</div></div></div>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exclamation-triangle"></i></div><h3>Error</h3><p>Failed to load offers.</p></div>`;
+        }
+    }
+
+    // â”€â”€ Render trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadTrades() {
+        const grid = document.getElementById('trade-grid');
+        try {
+            const d = await apiFetch('/api/lionshift/trades');
+            const items = d.trades || [];
+            if (!items.length) {
+                grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exchange-alt"></i></div><h3>No Trade Requests</h3><p>No shift trades have been requested.</p></div>`;
+                return;
+            }
+            grid.innerHTML = items.map(t => {
+                const status = (t.status || 'pending').toLowerCase();
+                return `
+                    <div class="trade-card">
+                        <div class="trade-card-header">
+                            <div class="trade-arrow-row">
+                                <span class="trade-user-info">${escapeHtml(t.requester_name || t.requester || 'Unknown')}</span>
+                                <i class="fas fa-arrows-alt-h trade-arrow"></i>
+                                <span class="trade-user-info">${escapeHtml(t.target_name || t.target || 'Unknown')}</span>
+                            </div>
+                            <span class="trade-status-badge ${status}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                        </div>
+                        <div class="trade-card-body">
+                            <div class="trade-detail-box">
+                                <div class="trade-detail-label">Requester's Shift</div>
+                                <div class="trade-detail-value">${escapeHtml(t.requester_shift || 'N/A')}</div>
+                            </div>
+                            <div class="trade-detail-box">
+                                <div class="trade-detail-label">Target's Shift</div>
+                                <div class="trade-detail-value">${escapeHtml(t.target_shift || 'N/A')}</div>
+                            </div>
+                            ${t.reason ? `<div class="trade-detail-box" style="border-left: 3px solid var(--info);"><div class="trade-detail-label">Reason</div><div class="trade-detail-value">${escapeHtml(t.reason)}</div></div>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exclamation-triangle"></i></div><h3>Error</h3><p>Failed to load trades.</p></div>`;
+        }
+    }
+
+    // â”€â”€ Render time-off â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadTimeOff() {
+        const grid = document.getElementById('timeoff-grid');
+        try {
+            const d = await apiFetch('/api/lionshift/timeoff');
+            const items = d.requests || [];
+            if (!items.length) {
+                grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-umbrella-beach"></i></div><h3>No Time Off Requests</h3><p>No time-off requests have been submitted.</p></div>`;
+                return;
+            }
+            grid.innerHTML = items.map(t => {
+                const status = (t.status || 'pending').toLowerCase();
+                return `
+                    <div class="timeoff-card">
+                        <div class="timeoff-card-header">
+                            <span style="font-weight:700; color: var(--text-primary);">${escapeHtml(t.requester_name || t.requester || 'Unknown')}</span>
+                            <span class="trade-status-badge ${status}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                        </div>
+                        <div class="timeoff-card-body">
+                            <div class="offer-info-row">
+                                <div class="offer-info-icon" style="color:#a855f7;"><i class="fas fa-calendar"></i></div>
+                                <div>
+                                    <div class="offer-info-label">Dates</div>
+                                    <div class="offer-info-value">${escapeHtml(t.start_date || '')} &rarr; ${escapeHtml(t.end_date || '')}</div>
+                                </div>
+                            </div>
+                            ${t.reason ? `<div class="offer-info-row"><div class="offer-info-icon" style="color:#a855f7;"><i class="fas fa-comment"></i></div><div><div class="offer-info-label">Reason</div><div class="offer-info-value">${escapeHtml(t.reason)}</div></div></div>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            grid.innerHTML = `<div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-exclamation-triangle"></i></div><h3>Error</h3><p>Failed to load time-off requests.</p></div>`;
+        }
+    }
+
+    // â”€â”€ Render logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function loadLogs() {
+        const tbody = document.getElementById('log-tbody');
+        try {
+            const d = await apiFetch('/api/lionshift/logs');
+            const items = d.logs || [];
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="4"><div class="shift-empty"><div class="shift-empty-icon"><i class="fas fa-scroll"></i></div><h3>No Logs Yet</h3><p>Shift activity will appear here.</p></div></td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.map(l => `
+                <tr>
+                    <td style="white-space:nowrap; color: var(--text-muted); font-size:13px;">${escapeHtml(l.timestamp || '')}</td>
+                    <td style="font-weight:600;">${escapeHtml(l.worker || l.user || '')}</td>
+                    <td><span class="log-action-badge">${escapeHtml(l.action || l.type || '')}</span></td>
+                    <td style="color:var(--text-secondary);">${escapeHtml(l.details || l.message || '')}</td>
+                </tr>`).join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">Failed to load logs.</td></tr>';
+        }
+    }
+
+    // â”€â”€ Escape helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    function escapeHtml(str) {
+        if (str == null) return '';
+        const div = document.createElement('div');
+        div.textContent = String(str);
+        return div.innerHTML;
+    }
+    function escapeAttr(str) {
+        return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    loadStats();
+
+    if (tabLoaders[activeTab]) {
+        tabLoaders[activeTab]();
+        loadedTabs.add(activeTab);
+    }
+
+    if (activeTab !== 'schedules') {
+        switchTab(activeTab);
+    }
+
+    // Auto-refresh every 30s
+    setInterval(() => {
+        loadStats();
+        const currentTab = document.querySelector('.shift-tab.active')?.dataset.tab;
+        if (currentTab && tabLoaders[currentTab]) {
+            tabLoaders[currentTab]();
+        }
+    }, 30000);
+})();
+</script>
+{% endblock %}

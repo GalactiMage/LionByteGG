@@ -1,0 +1,4 @@
+[
+  { "id": "pc", "name": "PC Room", "emoji": "\ud83d\udda5\ufe0f", "color": "#3b82f6", "order": 0 },
+  { "id": "console", "name": "Console Room", "emoji": "\ud83c\udfae", "color": "#a855f7", "order": 1 }
+]

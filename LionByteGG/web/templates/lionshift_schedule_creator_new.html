@@ -1,0 +1,1696 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule Creator - LionShiftGG{% endblock %}
+{% block page_title %}Schedule Creator{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ═══════════════════════════════════════════════════
+       SCHEDULE CREATOR — Professional Design
+       ═══════════════════════════════════════════════════ */
+
+    /* ─── Animations ─── */
+    @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } 50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.08); } }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    @keyframes dotPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+    /* ─── Hero Banner ─── */
+    .sc-hero {
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 40%, #dc2626 100%);
+        border-radius: 24px;
+        padding: 36px 40px;
+        margin-bottom: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        animation: fadeSlideUp 0.5s ease;
+    }
+    .sc-hero::before {
+        content: '';
+        position: absolute;
+        top: -60%;
+        right: -15%;
+        width: 50%;
+        height: 220%;
+        background: rgba(255,255,255,0.07);
+        transform: rotate(25deg);
+        pointer-events: none;
+    }
+    .sc-hero::after {
+        content: '';
+        position: absolute;
+        bottom: -40%;
+        left: -10%;
+        width: 35%;
+        height: 180%;
+        background: rgba(0,0,0,0.06);
+        transform: rotate(-15deg);
+        pointer-events: none;
+    }
+    /* Dot grid overlay */
+    .sc-hero-dots {
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
+        background-size: 24px 24px;
+        pointer-events: none;
+    }
+    .sc-hero-content { position: relative; z-index: 2; }
+    .sc-hero h2 {
+        color: #fff;
+        font-size: 28px;
+        font-weight: 800;
+        margin: 0 0 6px;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .sc-hero h2 .hero-icon {
+        width: 44px;
+        height: 44px;
+        background: rgba(255,255,255,0.2);
+        backdrop-filter: blur(8px);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+    .sc-hero p {
+        color: rgba(255,255,255,0.85);
+        font-size: 14px;
+        margin: 0;
+        padding-left: 56px;
+    }
+    .sc-hero-pills {
+        display: flex;
+        gap: 12px;
+        position: relative;
+        z-index: 2;
+        flex-shrink: 0;
+    }
+    .hero-pill {
+        background: rgba(255,255,255,0.18);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 16px;
+        padding: 16px 22px;
+        text-align: center;
+        min-width: 90px;
+        transition: transform 0.2s;
+    }
+    .hero-pill:hover { transform: translateY(-2px); }
+    .hero-pill .pill-val {
+        font-size: 28px;
+        font-weight: 800;
+        color: #fff;
+        line-height: 1;
+    }
+    .hero-pill .pill-lbl {
+        font-size: 10px;
+        color: rgba(255,255,255,0.75);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-top: 4px;
+    }
+
+    /* ─── Workflow Steps ─── */
+    .sc-steps {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        margin-bottom: 28px;
+        padding: 0 4px;
+        animation: fadeSlideUp 0.5s ease 0.05s both;
+    }
+    .sc-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.25s;
+        flex: 1;
+        position: relative;
+    }
+    .sc-step:hover { border-color: rgba(245, 158, 11, 0.3); }
+    .sc-step.active {
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.06);
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+    }
+    .sc-step.completed {
+        border-color: rgba(34, 197, 94, 0.3);
+        background: rgba(34, 197, 94, 0.04);
+    }
+    .sc-step-num {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--surface-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-secondary);
+        flex-shrink: 0;
+        transition: all 0.25s;
+    }
+    .sc-step.active .sc-step-num {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .sc-step.completed .sc-step-num {
+        background: #22c55e;
+        color: #fff;
+    }
+    .sc-step-text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+    .sc-step-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .sc-step-desc {
+        font-size: 11px;
+        color: var(--text-secondary);
+    }
+    .sc-step-connector {
+        width: 32px;
+        height: 2px;
+        background: var(--border);
+        flex-shrink: 0;
+        position: relative;
+    }
+    .sc-step-connector.done {
+        background: linear-gradient(90deg, #22c55e, #f59e0b);
+    }
+
+    /* ─── View Toggle ─── */
+    .sc-view-toggle {
+        display: flex;
+        gap: 4px;
+        background: var(--surface);
+        padding: 5px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        margin-bottom: 28px;
+        animation: fadeSlideUp 0.5s ease 0.1s both;
+    }
+    .sc-vtab {
+        padding: 10px 22px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.25s;
+        font-family: 'Inter', sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .sc-vtab.active {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+    }
+    .sc-vtab:hover:not(.active) {
+        color: var(--text-primary);
+        background: var(--surface-light);
+    }
+    .sc-vtab .badge {
+        background: rgba(255,255,255,0.2);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+    }
+    .sc-vtab:not(.active) .badge {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+
+    /* ─── Layout ─── */
+    .sc-layout {
+        display: grid;
+        grid-template-columns: 1fr 400px;
+        gap: 28px;
+        animation: fadeSlideUp 0.5s ease 0.15s both;
+    }
+    @media (max-width: 1200px) { .sc-layout { grid-template-columns: 1fr; } }
+
+    /* ─── Cards ─── */
+    .sc-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        transition: all 0.25s;
+        position: relative;
+    }
+    .sc-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #f59e0b, #ea580c);
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+    .sc-card:hover::before { opacity: 1; }
+    .sc-card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+    }
+    .sc-card-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        flex-shrink: 0;
+    }
+    .sc-card-icon.amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+    .sc-card-icon.blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+    .sc-card-icon.purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+    .sc-card-icon.green { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
+    .sc-card-icon.indigo { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
+    .sc-card-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .sc-card-subtitle {
+        font-size: 11px;
+        color: var(--text-secondary);
+    }
+    .sc-card-body { padding: 24px; }
+
+    /* ─── Form ─── */
+    .sc-form-group { margin-bottom: 20px; }
+    .sc-form-group:last-child { margin-bottom: 0; }
+    .sc-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+    }
+    .sc-label i {
+        font-size: 11px;
+        opacity: 0.6;
+    }
+    .sc-label .optional {
+        font-weight: 400;
+        text-transform: none;
+        letter-spacing: 0;
+        opacity: 0.6;
+        font-size: 11px;
+    }
+    .sc-input, .sc-select, .sc-textarea {
+        width: 100%;
+        padding: 11px 16px;
+        background: var(--background);
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 14px;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.2s;
+    }
+    .sc-input:focus, .sc-select:focus, .sc-textarea:focus {
+        outline: none;
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+    }
+    .sc-input::placeholder, .sc-textarea::placeholder {
+        color: var(--text-muted, #52525b);
+    }
+    .sc-textarea { resize: vertical; min-height: 80px; }
+    .sc-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    .sc-hint {
+        font-size: 11px;
+        color: var(--text-muted, #71717a);
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .sc-hint i { font-size: 10px; }
+
+    /* ─── Toggle Row ─── */
+    .sc-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .sc-toggle-row:last-child { border-bottom: none; }
+    .sc-toggle-info { display: flex; flex-direction: column; gap: 2px; }
+    .sc-toggle-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .sc-toggle-desc { font-size: 12px; color: var(--text-secondary); }
+    .sc-toggle {
+        position: relative;
+        width: 48px;
+        height: 26px;
+        flex-shrink: 0;
+    }
+    .sc-toggle input { opacity: 0; width: 0; height: 0; }
+    .sc-toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: var(--border);
+        border-radius: 26px;
+        transition: 0.25s;
+    }
+    .sc-toggle-slider::before {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        left: 3px;
+        bottom: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.25s;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    }
+    .sc-toggle input:checked + .sc-toggle-slider {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+    }
+    .sc-toggle input:checked + .sc-toggle-slider::before {
+        transform: translateX(22px);
+    }
+
+    /* ─── Day Tabs ─── */
+    .sc-day-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .sc-days {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        flex: 1;
+    }
+    .sc-day {
+        padding: 8px 0;
+        width: 60px;
+        border: 1.5px solid var(--border);
+        background: var(--background);
+        color: var(--text-secondary);
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 700;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.2s;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        position: relative;
+    }
+    .sc-day .day-name {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        opacity: 0.6;
+    }
+    .sc-day .day-num {
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1;
+    }
+    .sc-day .day-count {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #f59e0b;
+        color: #000;
+        font-size: 10px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
+    }
+    .sc-day.active {
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.08);
+        color: #f59e0b;
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+    }
+    .sc-day.active .day-name { opacity: 1; }
+    .sc-day:hover:not(.active) {
+        border-color: rgba(245, 158, 11, 0.2);
+        background: var(--surface-light);
+        color: var(--text-primary);
+    }
+
+    .sc-add-shift {
+        padding: 9px 20px;
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        border: none;
+        color: #fff;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 700;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.25s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);
+    }
+    .sc-add-shift:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+    }
+
+    /* ─── Shift Cards ─── */
+    .sc-shifts { display: flex; flex-direction: column; gap: 10px; min-height: 80px; }
+    .sc-shift {
+        background: var(--background);
+        border: 1.5px solid var(--border);
+        border-radius: 14px;
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.2s;
+        animation: fadeSlideUp 0.3s ease;
+    }
+    .sc-shift:hover {
+        border-color: rgba(245, 158, 11, 0.25);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .sc-shift-type {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        min-width: 70px;
+        text-align: center;
+    }
+    .sc-shift-type.opener { background: rgba(34, 197, 94, 0.12); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.15); }
+    .sc-shift-type.mid { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.15); }
+    .sc-shift-type.closer { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.15); }
+    .sc-shift-body { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .sc-shift-time {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sc-shift-time i { font-size: 12px; color: #f59e0b; }
+    .sc-shift-worker {
+        font-size: 12px;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .sc-shift-worker-avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+    }
+    .sc-shift-worker-avatar img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .sc-shift-note {
+        font-size: 11px;
+        color: var(--text-muted, #71717a);
+        font-style: italic;
+    }
+    .sc-shift-del {
+        width: 34px;
+        height: 34px;
+        border: 1.5px solid var(--border);
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .sc-shift-del:hover {
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.4);
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    .sc-empty {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-secondary);
+    }
+    .sc-empty-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--surface-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 12px;
+        font-size: 22px;
+        opacity: 0.5;
+    }
+    .sc-empty p { margin: 0; font-size: 14px; }
+    .sc-empty .sub { font-size: 12px; color: var(--text-muted, #71717a); margin-top: 4px; }
+
+    /* ─── Publish Panel ─── */
+    .sc-publish { position: sticky; top: 24px; }
+    .sc-publish-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 16px;
+    }
+
+    /* ─── Discord Preview ─── */
+    .sc-preview {
+        background: #313338;
+        border-radius: 12px;
+        padding: 16px;
+        position: relative;
+        overflow: hidden;
+    }
+    .sc-preview::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 4px;
+        background: #00d166;
+        border-radius: 4px 0 0 4px;
+    }
+    .sc-preview-inner { padding-left: 12px; }
+    .sc-preview-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f2f3f5;
+        margin-bottom: 12px;
+    }
+    .sc-preview-field { margin-bottom: 10px; }
+    .sc-preview-field-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: #f2f3f5;
+        margin-bottom: 3px;
+    }
+    .sc-preview-field-val {
+        font-size: 14px;
+        color: #dbdee1;
+    }
+    .sc-preview-footer {
+        font-size: 11px;
+        color: #949ba4;
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sc-preview-footer img {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+    }
+
+    /* ─── Buttons ─── */
+    .sc-btn {
+        padding: 10px 20px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.25s;
+        border: 1.5px solid transparent;
+        font-family: 'Inter', sans-serif;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .sc-btn-primary {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);
+    }
+    .sc-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35); }
+    .sc-btn-success {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(34, 197, 94, 0.25);
+    }
+    .sc-btn-success:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(34, 197, 94, 0.35); }
+    .sc-btn-secondary {
+        background: var(--surface-light);
+        color: var(--text-primary);
+        border-color: var(--border);
+    }
+    .sc-btn-secondary:hover { border-color: var(--text-secondary); transform: translateY(-1px); }
+    .sc-btn-danger {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+    .sc-btn-danger:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
+    .sc-btn-ghost {
+        background: transparent;
+        color: var(--text-secondary);
+        border: none;
+    }
+    .sc-btn-ghost:hover { color: var(--text-primary); background: var(--surface-light); }
+    .sc-btn-sm { padding: 7px 14px; font-size: 12px; border-radius: 10px; }
+    .sc-btn-block { width: 100%; }
+
+    /* ─── Schedules List ─── */
+    .sc-sched-list { display: flex; flex-direction: column; gap: 14px; animation: fadeSlideUp 0.4s ease; }
+    .sc-sched-card {
+        background: var(--surface);
+        border: 1.5px solid var(--border);
+        border-radius: 16px;
+        padding: 22px 26px;
+        cursor: pointer;
+        transition: all 0.25s;
+        position: relative;
+        overflow: hidden;
+    }
+    .sc-sched-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #f59e0b, #ea580c);
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+    .sc-sched-card:hover { border-color: rgba(245, 158, 11, 0.3); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .sc-sched-card:hover::before { opacity: 1; }
+    .sc-sched-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+    .sc-sched-name { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+    .sc-sched-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .sc-sched-badge.draft { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+    .sc-sched-badge.published { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
+    .sc-sched-dates {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sc-sched-meta {
+        display: flex;
+        gap: 16px;
+        font-size: 11px;
+        color: var(--text-muted, #71717a);
+    }
+    .sc-sched-meta span { display: flex; align-items: center; gap: 5px; }
+    .sc-sched-actions {
+        position: absolute;
+        top: 18px;
+        right: 20px;
+        display: flex;
+        gap: 8px;
+    }
+
+    /* ─── Modal ─── */
+    .sc-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        backdrop-filter: blur(6px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .sc-overlay.active { display: flex; }
+    .sc-modal {
+        background: var(--surface);
+        border: 1.5px solid var(--border);
+        border-radius: 20px;
+        width: 480px;
+        max-width: 95vw;
+        overflow: hidden;
+        animation: modalIn 0.25s ease;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.3);
+    }
+    .sc-modal-head {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .sc-modal-head h3 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .sc-modal-head h3 .modal-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: rgba(245, 158, 11, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f59e0b;
+        font-size: 14px;
+    }
+    .sc-modal-close {
+        width: 34px;
+        height: 34px;
+        border: 1.5px solid var(--border);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-radius: 10px;
+        font-size: 18px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .sc-modal-close:hover { background: var(--surface-light); color: var(--text-primary); }
+    .sc-modal-body { padding: 24px; }
+    .sc-modal-foot {
+        padding: 18px 24px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        background: var(--background);
+    }
+
+    /* ─── Worker Picker ─── */
+    .sc-wpicker { position: relative; }
+    .sc-wpicker-drop {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--surface);
+        border: 1.5px solid var(--border);
+        border-radius: 14px;
+        margin-top: 6px;
+        max-height: 220px;
+        overflow-y: auto;
+        z-index: 200;
+        display: none;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .sc-wpicker-drop.show { display: block; }
+    .sc-wopt {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 16px;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .sc-wopt:first-child { border-radius: 12px 12px 0 0; }
+    .sc-wopt:last-child { border-radius: 0 0 12px 12px; }
+    .sc-wopt:hover { background: rgba(245, 158, 11, 0.06); }
+    .sc-wopt-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+    .sc-wopt-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .sc-wopt-initial {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+    }
+    .sc-wopt-name { font-size: 14px; color: var(--text-primary); font-weight: 600; }
+
+    /* ─── Editing Banner ─── */
+    .sc-editing-bar {
+        display: none;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        background: rgba(59, 130, 246, 0.08);
+        border: 1.5px solid rgba(59, 130, 246, 0.2);
+        border-radius: 14px;
+        margin-bottom: 20px;
+        animation: fadeSlideUp 0.3s ease;
+    }
+    .sc-editing-bar.show { display: flex; }
+    .sc-editing-bar i { color: #3b82f6; font-size: 16px; }
+    .sc-editing-bar span { flex: 1; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 768px) {
+        .sc-hero { flex-direction: column; padding: 24px 20px; text-align: center; }
+        .sc-hero h2 { justify-content: center; }
+        .sc-hero p { padding-left: 0; }
+        .sc-hero-pills { justify-content: center; }
+        .sc-steps { flex-direction: column; }
+        .sc-step-connector { width: 2px; height: 16px; }
+        .sc-row { grid-template-columns: 1fr; }
+        .sc-day-bar { flex-direction: column; }
+        .sc-days { justify-content: center; }
+        .sc-sched-actions { position: static; margin-top: 12px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="sc-hero">
+    <div class="sc-hero-dots"></div>
+    <div class="sc-hero-content">
+        <h2><span class="hero-icon"><i class="fas fa-calendar-plus"></i></span> Schedule Creator</h2>
+        <p>Build professional shift schedules, assign your team, and publish when ready</p>
+    </div>
+    <div class="sc-hero-pills">
+        <div class="hero-pill">
+            <div class="pill-val" id="heroTotalSchedules">0</div>
+            <div class="pill-lbl">Schedules</div>
+        </div>
+        <div class="hero-pill">
+            <div class="pill-val" id="heroDrafts">0</div>
+            <div class="pill-lbl">Drafts</div>
+        </div>
+        <div class="hero-pill">
+            <div class="pill-val" id="heroWorkers">0</div>
+            <div class="pill-lbl">Workers</div>
+        </div>
+    </div>
+</div>
+
+<!-- Workflow Steps -->
+<div class="sc-steps">
+    <div class="sc-step active" id="step1" onclick="scrollToSection('detailsCard')">
+        <div class="sc-step-num">1</div>
+        <div class="sc-step-text">
+            <div class="sc-step-title">Details</div>
+            <div class="sc-step-desc">Name, dates, & link</div>
+        </div>
+    </div>
+    <div class="sc-step-connector" id="conn1"></div>
+    <div class="sc-step" id="step2" onclick="scrollToSection('builderCard')">
+        <div class="sc-step-num">2</div>
+        <div class="sc-step-text">
+            <div class="sc-step-title">Build Shifts</div>
+            <div class="sc-step-desc">Assign workers to times</div>
+        </div>
+    </div>
+    <div class="sc-step-connector" id="conn2"></div>
+    <div class="sc-step" id="step3" onclick="scrollToSection('publishCard')">
+        <div class="sc-step-num">3</div>
+        <div class="sc-step-text">
+            <div class="sc-step-title">Publish</div>
+            <div class="sc-step-desc">Announce to Discord</div>
+        </div>
+    </div>
+</div>
+
+<!-- View Toggle -->
+<div class="sc-view-toggle">
+    <button class="sc-vtab active" data-view="creator" onclick="switchView('creator')">
+        <i class="fas fa-plus-circle"></i> Create New
+    </button>
+    <button class="sc-vtab" data-view="existing" onclick="switchView('existing')">
+        <i class="fas fa-folder-open"></i> Existing Schedules <span class="badge" id="scheduleCountBadge">0</span>
+    </button>
+</div>
+
+<!-- ═══ Creator View ═══ -->
+<div id="creatorView">
+    <!-- Editing Banner -->
+    <div class="sc-editing-bar" id="editingBar">
+        <i class="fas fa-edit"></i>
+        <span id="editingLabel">Editing schedule</span>
+        <button class="sc-btn sc-btn-ghost sc-btn-sm" onclick="resetForm()"><i class="fas fa-times"></i> Cancel</button>
+    </div>
+
+    <div class="sc-layout">
+        <!-- Left Column -->
+        <div>
+            <!-- Schedule Details -->
+            <div class="sc-card" id="detailsCard" style="margin-bottom: 24px;">
+                <div class="sc-card-head">
+                    <div class="sc-card-icon amber"><i class="fas fa-info-circle"></i></div>
+                    <div>
+                        <div class="sc-card-title">Schedule Details</div>
+                        <div class="sc-card-subtitle">Basic info about this schedule</div>
+                    </div>
+                </div>
+                <div class="sc-card-body">
+                    <div class="sc-form-group">
+                        <label class="sc-label"><i class="fas fa-tag"></i> Schedule Name</label>
+                        <input type="text" class="sc-input" id="scheduleName" placeholder="e.g. Apr 14th – Apr 20th">
+                    </div>
+                    <div class="sc-row">
+                        <div class="sc-form-group">
+                            <label class="sc-label"><i class="fas fa-play"></i> Start Date</label>
+                            <input type="date" class="sc-input" id="startDate">
+                        </div>
+                        <div class="sc-form-group">
+                            <label class="sc-label"><i class="fas fa-stop"></i> End Date</label>
+                            <input type="date" class="sc-input" id="endDate">
+                        </div>
+                    </div>
+                    <div class="sc-form-group">
+                        <label class="sc-label"><i class="fas fa-link"></i> Schedule Link <span class="optional">(optional)</span></label>
+                        <input type="url" class="sc-input" id="scheduleLink" placeholder="https://docs.google.com/spreadsheets/...">
+                        <div class="sc-hint"><i class="fas fa-info-circle"></i> External link to full schedule in Google Sheets, SharePoint, etc.</div>
+                    </div>
+                    <div class="sc-toggle-row">
+                        <div class="sc-toggle-info">
+                            <span class="sc-toggle-title"><i class="fas fa-exchange-alt" style="color: #22c55e; margin-right: 6px; font-size: 12px;"></i>Allow Shift Trading</span>
+                            <span class="sc-toggle-desc">Workers can offer and trade shifts for this schedule</span>
+                        </div>
+                        <label class="sc-toggle">
+                            <input type="checkbox" id="allowOffers" checked>
+                            <span class="sc-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Shift Builder -->
+            <div class="sc-card" id="builderCard">
+                <div class="sc-card-head">
+                    <div class="sc-card-icon blue"><i class="fas fa-th-large"></i></div>
+                    <div>
+                        <div class="sc-card-title">Shift Builder</div>
+                        <div class="sc-card-subtitle">Add shifts for each day and assign workers</div>
+                    </div>
+                </div>
+                <div class="sc-card-body">
+                    <div class="sc-day-bar">
+                        <div class="sc-days" id="dayTabs">
+                            <!-- Generated dynamically -->
+                        </div>
+                        <button class="sc-add-shift" onclick="openAddShiftModal()">
+                            <i class="fas fa-plus"></i> Add Shift
+                        </button>
+                    </div>
+                    <div class="sc-shifts" id="shiftsContainer">
+                        <div class="sc-empty">
+                            <div class="sc-empty-icon"><i class="fas fa-calendar-day"></i></div>
+                            <p>Set a date range to start building</p>
+                            <div class="sub">Choose start and end dates above, then add shifts for each day</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div>
+            <!-- Publish -->
+            <div class="sc-card sc-publish" id="publishCard" style="margin-bottom: 24px;">
+                <div class="sc-card-head">
+                    <div class="sc-card-icon green"><i class="fas fa-paper-plane"></i></div>
+                    <div>
+                        <div class="sc-card-title">Publish & Announce</div>
+                        <div class="sc-card-subtitle">Save draft or publish live</div>
+                    </div>
+                </div>
+                <div class="sc-card-body">
+                    <div class="sc-form-group">
+                        <label class="sc-label"><i class="fas fa-flag"></i> Status</label>
+                        <select class="sc-select" id="scheduleStatus">
+                            <option value="draft">📝 Draft — Not visible to workers</option>
+                            <option value="published">✅ Published — Live & available</option>
+                        </select>
+                    </div>
+                    <div class="sc-toggle-row">
+                        <div class="sc-toggle-info">
+                            <span class="sc-toggle-title"><i class="fas fa-bell" style="color: #f59e0b; margin-right: 6px; font-size: 12px;"></i>DM Workers</span>
+                            <span class="sc-toggle-desc">Send Discord DM to all workers</span>
+                        </div>
+                        <label class="sc-toggle">
+                            <input type="checkbox" id="notifyWorkers">
+                            <span class="sc-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="sc-form-group" style="margin-top: 16px;">
+                        <label class="sc-label"><i class="fas fa-clock"></i> Scheduled Announcement <span class="optional">(optional)</span></label>
+                        <input type="datetime-local" class="sc-input" id="announceAt">
+                        <div class="sc-hint"><i class="fas fa-info-circle"></i> Leave empty to announce immediately on publish</div>
+                    </div>
+                    <div class="sc-form-group">
+                        <label class="sc-label"><i class="fas fa-comment-dots"></i> Custom Message <span class="optional">(optional)</span></label>
+                        <textarea class="sc-textarea" id="customMessage" placeholder="Hey team, here's the new schedule!"></textarea>
+                    </div>
+                    <div class="sc-publish-actions">
+                        <button class="sc-btn sc-btn-primary sc-btn-block" onclick="saveSchedule('draft')">
+                            <i class="fas fa-save"></i> Save as Draft
+                        </button>
+                        <button class="sc-btn sc-btn-success sc-btn-block" onclick="saveSchedule('published')">
+                            <i class="fas fa-paper-plane"></i> Publish & Announce
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Discord Preview -->
+            <div class="sc-card">
+                <div class="sc-card-head">
+                    <div class="sc-card-icon indigo"><i class="fab fa-discord"></i></div>
+                    <div>
+                        <div class="sc-card-title">Discord Preview</div>
+                        <div class="sc-card-subtitle">How the announcement will look</div>
+                    </div>
+                </div>
+                <div class="sc-card-body" style="padding: 20px;">
+                    <div class="sc-preview" id="discordPreview">
+                        <div class="sc-preview-inner">
+                            <div class="sc-preview-title" id="previewTitle">📅 New Schedule Posted!</div>
+                            <div class="sc-preview-field">
+                                <div class="sc-preview-field-name">Schedule Name</div>
+                                <div class="sc-preview-field-val" id="previewName">—</div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div class="sc-preview-field">
+                                    <div class="sc-preview-field-name">📆 Date Range</div>
+                                    <div class="sc-preview-field-val" id="previewDates">— to —</div>
+                                </div>
+                                <div class="sc-preview-field">
+                                    <div class="sc-preview-field-name">🔄 Shift Trading</div>
+                                    <div class="sc-preview-field-val" id="previewOffers">✅ Allowed</div>
+                                </div>
+                            </div>
+                            <div class="sc-preview-footer">
+                                <img src="{{ url_for('static', filename='images/LionShiftGGLogo.png') }}" alt="">
+                                <span id="previewFooter">Posted by Dashboard Admin</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Existing Schedules View ═══ -->
+<div id="existingView" style="display: none;">
+    <div class="sc-sched-list" id="schedulesList">
+        <div class="sc-empty">
+            <div class="sc-empty-icon"><i class="fas fa-spinner fa-spin"></i></div>
+            <p>Loading schedules...</p>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Add Shift Modal ═══ -->
+<div class="sc-overlay" id="addShiftModal">
+    <div class="sc-modal">
+        <div class="sc-modal-head">
+            <h3><span class="modal-icon"><i class="fas fa-plus"></i></span> Add Shift</h3>
+            <button class="sc-modal-close" onclick="closeAddShiftModal()">&times;</button>
+        </div>
+        <div class="sc-modal-body">
+            <div class="sc-form-group">
+                <label class="sc-label"><i class="fas fa-layer-group"></i> Shift Type</label>
+                <select class="sc-select" id="shiftType">
+                    <option value="opener">🌅 Opener</option>
+                    <option value="mid">☀️ Mid-Shift</option>
+                    <option value="closer">🌙 Closer</option>
+                </select>
+            </div>
+            <div class="sc-row">
+                <div class="sc-form-group">
+                    <label class="sc-label"><i class="fas fa-hourglass-start"></i> Start Time</label>
+                    <input type="time" class="sc-input" id="shiftStart" value="09:00">
+                </div>
+                <div class="sc-form-group">
+                    <label class="sc-label"><i class="fas fa-hourglass-end"></i> End Time</label>
+                    <input type="time" class="sc-input" id="shiftEnd" value="13:00">
+                </div>
+            </div>
+            <div class="sc-form-group">
+                <label class="sc-label"><i class="fas fa-user-plus"></i> Assigned Worker</label>
+                <div class="sc-wpicker">
+                    <input type="text" class="sc-input" id="workerSearch" placeholder="Search workers..." autocomplete="off" onfocus="showWorkerPicker()" oninput="filterWorkers()">
+                    <input type="hidden" id="workerIdField">
+                    <div class="sc-wpicker-drop" id="workerDropdown"></div>
+                </div>
+            </div>
+            <div class="sc-form-group">
+                <label class="sc-label"><i class="fas fa-sticky-note"></i> Notes <span class="optional">(optional)</span></label>
+                <input type="text" class="sc-input" id="shiftNotes" placeholder="e.g. Cover for Katie">
+            </div>
+        </div>
+        <div class="sc-modal-foot">
+            <button class="sc-btn sc-btn-secondary" onclick="closeAddShiftModal()">Cancel</button>
+            <button class="sc-btn sc-btn-primary" onclick="addShift()"><i class="fas fa-plus"></i> Add Shift</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ═══ State ═══ */
+let workers = [];
+let scheduleShifts = {};
+let selectedDay = null;
+let allSchedules = [];
+let editingIndex = null;
+
+/* ═══ Init ═══ */
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadWorkers();
+    loadExistingSchedules();
+
+    document.getElementById('startDate').addEventListener('change', onDateChange);
+    document.getElementById('endDate').addEventListener('change', onDateChange);
+
+    ['scheduleName', 'startDate', 'endDate', 'allowOffers', 'customMessage'].forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('input', updatePreview);
+        el.addEventListener('change', updatePreview);
+    });
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.sc-wpicker')) {
+            document.getElementById('workerDropdown').classList.remove('show');
+        }
+    });
+
+    document.getElementById('scheduleName').addEventListener('input', function() {
+        this.dataset.userEdited = 'true';
+    });
+
+    updatePreview();
+    updateSteps();
+});
+
+/* ═══ Workers ═══ */
+async function loadWorkers() {
+    try {
+        const res = await fetch('/api/lionshift/workers');
+        const data = await res.json();
+        workers = data.workers || [];
+        document.getElementById('heroWorkers').textContent = workers.length;
+    } catch (e) {
+        console.error('Failed to load workers:', e);
+    }
+}
+
+function showWorkerPicker() {
+    renderWorkerOptions(workers);
+    document.getElementById('workerDropdown').classList.add('show');
+}
+
+function filterWorkers() {
+    const q = document.getElementById('workerSearch').value.toLowerCase();
+    renderWorkerOptions(workers.filter(w => (w.name || w.username || '').toLowerCase().includes(q)));
+    document.getElementById('workerDropdown').classList.add('show');
+}
+
+function renderWorkerOptions(list) {
+    const drop = document.getElementById('workerDropdown');
+    if (!list.length) {
+        drop.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:13px;">No workers found</div>';
+        return;
+    }
+    drop.innerHTML = list.map(w => `
+        <div class="sc-wopt" onclick="selectWorker('${w.id || w.discord_id}', '${escapeHtml(w.name || w.username)}', '${w.avatar_url || ''}')">
+            ${w.avatar_url
+                ? `<div class="sc-wopt-avatar"><img src="${w.avatar_url}" alt=""></div>`
+                : `<div class="sc-wopt-initial">${(w.name || w.username || '?').charAt(0).toUpperCase()}</div>`
+            }
+            <span class="sc-wopt-name">${escapeHtml(w.name || w.username)}</span>
+        </div>
+    `).join('');
+}
+
+function selectWorker(id, name) {
+    document.getElementById('workerSearch').value = name;
+    document.getElementById('workerIdField').value = id;
+    document.getElementById('workerDropdown').classList.remove('show');
+}
+
+/* ═══ Date Change ═══ */
+function onDateChange() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    if (start && end && !document.getElementById('scheduleName').dataset.userEdited) {
+        const s = new Date(start + 'T00:00:00');
+        const e = new Date(end + 'T00:00:00');
+        const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        document.getElementById('scheduleName').value = `${fmt(s)} – ${fmt(e)}`;
+    }
+    if (start && end) buildDayTabs(start, end);
+    updatePreview();
+    updateSteps();
+}
+
+function buildDayTabs(startStr, endStr) {
+    const tabs = document.getElementById('dayTabs');
+    const start = new Date(startStr + 'T00:00:00');
+    const end = new Date(endStr + 'T00:00:00');
+    if (end < start) return;
+
+    const diffDays = Math.round((end - start) / 86400000) + 1;
+    if (diffDays > 14) {
+        tabs.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;padding:6px;">Max 14 days per schedule</span>';
+        return;
+    }
+
+    const days = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+
+    tabs.innerHTML = days.map(d => {
+        const key = dateKey(d);
+        if (!scheduleShifts[key]) scheduleShifts[key] = [];
+        const count = scheduleShifts[key].length;
+        return `<button class="sc-day ${selectedDay === key ? 'active' : ''}" onclick="selectDay('${key}')">
+            <span class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+            <span class="day-num">${d.getDate()}</span>
+            ${count > 0 ? `<span class="day-count">${count}</span>` : ''}
+        </button>`;
+    }).join('');
+
+    if (!selectedDay || !scheduleShifts[selectedDay]) selectDay(dateKey(days[0]));
+    else renderShifts();
+}
+
+function dateKey(d) { return d.toISOString().split('T')[0]; }
+
+function selectDay(key) {
+    selectedDay = key;
+    document.querySelectorAll('.sc-day').forEach(t => {
+        t.classList.toggle('active', t.getAttribute('onclick')?.includes(key));
+    });
+    renderShifts();
+}
+
+/* ═══ Render Shifts ═══ */
+function renderShifts() {
+    const container = document.getElementById('shiftsContainer');
+    if (!selectedDay || !scheduleShifts[selectedDay]) {
+        container.innerHTML = `<div class="sc-empty"><div class="sc-empty-icon"><i class="fas fa-calendar-day"></i></div><p>Select a day to view shifts</p></div>`;
+        return;
+    }
+    const shifts = scheduleShifts[selectedDay];
+    if (!shifts.length) {
+        const d = new Date(selectedDay + 'T00:00:00');
+        const lbl = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        container.innerHTML = `<div class="sc-empty"><div class="sc-empty-icon"><i class="fas fa-plus-circle"></i></div><p>No shifts for ${lbl}</p><div class="sub">Click "Add Shift" to get started</div></div>`;
+        return;
+    }
+    shifts.sort((a, b) => a.start.localeCompare(b.start));
+    container.innerHTML = shifts.map((s, i) => {
+        const worker = workers.find(w => (w.id || w.discord_id) === s.worker_id);
+        const avatarUrl = worker?.avatar_url || '';
+        return `
+        <div class="sc-shift">
+            <div class="sc-shift-type ${s.type}">${s.type}</div>
+            <div class="sc-shift-body">
+                <div class="sc-shift-time"><i class="fas fa-clock"></i> ${formatTime(s.start)} – ${formatTime(s.end)}</div>
+                <div class="sc-shift-worker">
+                    ${s.worker_name
+                        ? `<div class="sc-shift-worker-avatar">${avatarUrl ? `<img src="${avatarUrl}" alt="">` : (s.worker_name.charAt(0).toUpperCase())}</div>${escapeHtml(s.worker_name)}`
+                        : '<span style="opacity:0.4;"><i class="fas fa-user-slash" style="margin-right:4px;"></i>Unassigned</span>'
+                    }
+                </div>
+                ${s.notes ? `<div class="sc-shift-note">${escapeHtml(s.notes)}</div>` : ''}
+            </div>
+            <button class="sc-shift-del" title="Remove shift" onclick="removeShift('${selectedDay}',${i})">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        </div>`;
+    }).join('');
+    updateSteps();
+}
+
+function formatTime(t) {
+    const [h, m] = t.split(':').map(Number);
+    return `${h % 12 || 12}:${m.toString().padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+/* ═══ Add / Remove ═══ */
+function openAddShiftModal() {
+    if (!selectedDay) {
+        if (typeof showToast === 'function') showToast('Select a date range first', 'warning');
+        return;
+    }
+    document.getElementById('shiftType').value = 'opener';
+    document.getElementById('shiftStart').value = '09:00';
+    document.getElementById('shiftEnd').value = '13:00';
+    document.getElementById('workerSearch').value = '';
+    document.getElementById('workerIdField').value = '';
+    document.getElementById('shiftNotes').value = '';
+    document.getElementById('addShiftModal').classList.add('active');
+}
+function closeAddShiftModal() { document.getElementById('addShiftModal').classList.remove('active'); }
+
+function addShift() {
+    const type = document.getElementById('shiftType').value;
+    const start = document.getElementById('shiftStart').value;
+    const end = document.getElementById('shiftEnd').value;
+    const workerId = document.getElementById('workerIdField').value;
+    const workerName = document.getElementById('workerSearch').value;
+    const notes = document.getElementById('shiftNotes').value.trim();
+    if (!start || !end) { if (typeof showToast === 'function') showToast('Start and end time required', 'warning'); return; }
+    if (!scheduleShifts[selectedDay]) scheduleShifts[selectedDay] = [];
+    scheduleShifts[selectedDay].push({ type, start, end, worker_id: workerId || null, worker_name: workerName || null, notes: notes || null });
+    closeAddShiftModal();
+    rebuildDayTabs();
+    renderShifts();
+    if (typeof showToast === 'function') showToast('Shift added', 'success');
+}
+
+function removeShift(day, i) {
+    if (scheduleShifts[day]) { scheduleShifts[day].splice(i, 1); rebuildDayTabs(); renderShifts(); }
+}
+
+function rebuildDayTabs() {
+    const s = document.getElementById('startDate').value;
+    const e = document.getElementById('endDate').value;
+    if (s && e) buildDayTabs(s, e);
+}
+
+/* ═══ Workflow Steps ═══ */
+function updateSteps() {
+    const name = document.getElementById('scheduleName').value.trim();
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    const totalShifts = Object.values(scheduleShifts).reduce((a, b) => a + b.length, 0);
+    const detailsDone = name && start && end;
+    const shiftsDone = totalShifts > 0;
+
+    const s1 = document.getElementById('step1');
+    const s2 = document.getElementById('step2');
+    const s3 = document.getElementById('step3');
+    const c1 = document.getElementById('conn1');
+    const c2 = document.getElementById('conn2');
+
+    s1.className = `sc-step ${detailsDone ? 'completed' : 'active'}`;
+    c1.className = `sc-step-connector ${detailsDone ? 'done' : ''}`;
+    s2.className = `sc-step ${shiftsDone ? 'completed' : detailsDone ? 'active' : ''}`;
+    c2.className = `sc-step-connector ${shiftsDone ? 'done' : ''}`;
+    s3.className = `sc-step ${shiftsDone ? 'active' : ''}`;
+}
+
+function scrollToSection(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ═══ Save ═══ */
+async function saveSchedule(status) {
+    const name = document.getElementById('scheduleName').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    if (!name || !startDate || !endDate) { if (typeof showToast === 'function') showToast('Name, start date, and end date are required', 'warning'); return; }
+
+    const shifts = [];
+    for (const [day, dayShifts] of Object.entries(scheduleShifts)) {
+        for (const s of dayShifts) shifts.push({ ...s, date: day });
+    }
+
+    const payload = {
+        name, start_date: startDate, end_date: endDate,
+        schedule_link: document.getElementById('scheduleLink').value.trim(),
+        allow_offers: document.getElementById('allowOffers').checked,
+        status: status || 'draft', shifts,
+        announce_at: document.getElementById('announceAt').value || null,
+        custom_message: document.getElementById('customMessage').value.trim(),
+        notify_workers: document.getElementById('notifyWorkers').checked,
+    };
+
+    try {
+        const url = editingIndex !== null ? `/api/lionshift/schedules/${editingIndex}` : '/api/lionshift/schedules';
+        const method = editingIndex !== null ? 'PUT' : 'POST';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (data.success) {
+            if (typeof showToast === 'function') showToast(data.message, 'success');
+            if (editingIndex === null) resetForm();
+            loadExistingSchedules();
+        } else {
+            if (typeof showToast === 'function') showToast(data.message || 'Failed to save', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        if (typeof showToast === 'function') showToast('Failed to save schedule', 'error');
+    }
+}
+
+function resetForm() {
+    editingIndex = null;
+    document.getElementById('editingBar').classList.remove('show');
+    document.getElementById('scheduleName').value = '';
+    document.getElementById('scheduleName').dataset.userEdited = '';
+    document.getElementById('startDate').value = '';
+    document.getElementById('endDate').value = '';
+    document.getElementById('scheduleLink').value = '';
+    document.getElementById('allowOffers').checked = true;
+    document.getElementById('scheduleStatus').value = 'draft';
+    document.getElementById('notifyWorkers').checked = false;
+    document.getElementById('announceAt').value = '';
+    document.getElementById('customMessage').value = '';
+    scheduleShifts = {};
+    selectedDay = null;
+    document.getElementById('dayTabs').innerHTML = '';
+    document.getElementById('shiftsContainer').innerHTML = `<div class="sc-empty"><div class="sc-empty-icon"><i class="fas fa-calendar-day"></i></div><p>Set a date range to start building</p><div class="sub">Choose start and end dates above, then add shifts for each day</div></div>`;
+    updatePreview();
+    updateSteps();
+}
+
+/* ═══ Existing Schedules ═══ */
+async function loadExistingSchedules() {
+    try {
+        const res = await fetch('/api/lionshift/schedules');
+        const data = await res.json();
+        allSchedules = data.schedules || [];
+        document.getElementById('scheduleCountBadge').textContent = allSchedules.length;
+        document.getElementById('heroTotalSchedules').textContent = allSchedules.length;
+        document.getElementById('heroDrafts').textContent = allSchedules.filter(s => s.status === 'draft').length;
+        renderSchedulesList();
+    } catch (e) { console.error(e); }
+}
+
+function renderSchedulesList() {
+    const container = document.getElementById('schedulesList');
+    if (!allSchedules.length) {
+        container.innerHTML = `<div class="sc-empty"><div class="sc-empty-icon"><i class="fas fa-folder-open"></i></div><p>No schedules yet</p><div class="sub">Create your first schedule using the creator</div></div>`;
+        return;
+    }
+    const sorted = allSchedules.map((s, i) => ({ ...s, _i: i })).reverse();
+    container.innerHTML = sorted.map(s => {
+        const st = s.status || 'published';
+        const sc = (s.shifts || []).length;
+        const created = s.created_at ? new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        return `
+        <div class="sc-sched-card" onclick="loadScheduleForEditing(${s._i})">
+            <div class="sc-sched-top">
+                <span class="sc-sched-name">${escapeHtml(s.name || 'Untitled')}</span>
+                <span class="sc-sched-badge ${st}">${st}</span>
+            </div>
+            <div class="sc-sched-dates"><i class="fas fa-calendar-alt" style="opacity:.5"></i> ${s.start_date || '?'} → ${s.end_date || '?'}</div>
+            <div class="sc-sched-meta">
+                <span><i class="fas fa-clock"></i> ${sc} shift${sc !== 1 ? 's' : ''}</span>
+                <span><i class="fas fa-user"></i> ${escapeHtml(s.created_by || '?')}</span>
+                ${created ? `<span><i class="fas fa-calendar-check"></i> ${created}</span>` : ''}
+                ${s.allow_offers ? '<span style="color:#22c55e"><i class="fas fa-exchange-alt"></i> Trading</span>' : ''}
+            </div>
+            <div class="sc-sched-actions">
+                ${st === 'draft'
+                    ? `<button class="sc-btn sc-btn-success sc-btn-sm" onclick="event.stopPropagation();publishSchedule(${s._i})"><i class="fas fa-paper-plane"></i> Publish</button>`
+                    : `<button class="sc-btn sc-btn-secondary sc-btn-sm" onclick="event.stopPropagation();announceSchedule(${s._i})"><i class="fas fa-bullhorn"></i> Announce</button>`
+                }
+                <button class="sc-btn sc-btn-danger sc-btn-sm" onclick="event.stopPropagation();deleteSchedule(${s._i})"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function loadScheduleForEditing(index) {
+    const s = allSchedules[index];
+    if (!s) return;
+    editingIndex = index;
+    document.getElementById('editingBar').classList.add('show');
+    document.getElementById('editingLabel').textContent = `Editing: ${s.name || 'Untitled'}`;
+    document.getElementById('scheduleName').value = s.name || '';
+    document.getElementById('scheduleName').dataset.userEdited = 'true';
+    document.getElementById('startDate').value = s.start_date || '';
+    document.getElementById('endDate').value = s.end_date || '';
+    document.getElementById('scheduleLink').value = s.schedule_link || '';
+    document.getElementById('allowOffers').checked = s.allow_offers !== false;
+    document.getElementById('scheduleStatus').value = s.status || 'draft';
+    document.getElementById('notifyWorkers').checked = s.notify_workers || false;
+    document.getElementById('announceAt').value = s.announce_at || '';
+    document.getElementById('customMessage').value = s.custom_message || '';
+
+    scheduleShifts = {};
+    if (s.shifts?.length) {
+        for (const shift of s.shifts) {
+            const day = shift.date;
+            if (!scheduleShifts[day]) scheduleShifts[day] = [];
+            scheduleShifts[day].push({ type: shift.type, start: shift.start, end: shift.end, worker_id: shift.worker_id, worker_name: shift.worker_name, notes: shift.notes });
+        }
+    }
+    selectedDay = null;
+    if (s.start_date && s.end_date) buildDayTabs(s.start_date, s.end_date);
+    switchView('creator');
+    updatePreview();
+    updateSteps();
+    if (typeof showToast === 'function') showToast(`Editing: ${s.name}`, 'info');
+}
+
+/* ═══ Publish / Announce / Delete ═══ */
+async function publishSchedule(i) {
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${i}/publish`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ notify_workers: true }) });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+        loadExistingSchedules();
+    } catch (e) { if (typeof showToast === 'function') showToast('Failed to publish', 'error'); }
+}
+
+async function announceSchedule(i) {
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${i}/announce`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ notify_workers: true }) });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+    } catch (e) { if (typeof showToast === 'function') showToast('Failed to announce', 'error'); }
+}
+
+async function deleteSchedule(i) {
+    if (!confirm('Delete this schedule? This cannot be undone.')) return;
+    try {
+        const res = await fetch(`/api/lionshift/schedules/${i}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (typeof showToast === 'function') showToast(data.message, data.success ? 'success' : 'error');
+        loadExistingSchedules();
+        if (editingIndex === i) resetForm();
+    } catch (e) { if (typeof showToast === 'function') showToast('Failed to delete', 'error'); }
+}
+
+/* ═══ View Switching ═══ */
+function switchView(view) {
+    document.getElementById('creatorView').style.display = view === 'creator' ? '' : 'none';
+    document.getElementById('existingView').style.display = view === 'existing' ? '' : 'none';
+    document.querySelectorAll('.sc-vtab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    if (view === 'existing') loadExistingSchedules();
+}
+
+/* ═══ Preview ═══ */
+function updatePreview() {
+    const name = document.getElementById('scheduleName').value || '—';
+    const start = document.getElementById('startDate').value || '—';
+    const end = document.getElementById('endDate').value || '—';
+    const offers = document.getElementById('allowOffers').checked;
+    const msg = document.getElementById('customMessage').value;
+
+    document.getElementById('previewName').textContent = name;
+    document.getElementById('previewDates').textContent = `${start} to ${end}`;
+    document.getElementById('previewOffers').textContent = offers ? '✅ Allowed' : '❌ Not Allowed';
+    document.getElementById('previewTitle').textContent = msg || '📅 New Schedule Posted!';
+}
+
+/* ═══ Utility ═══ */
+function escapeHtml(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+</script>
+{% endblock %}

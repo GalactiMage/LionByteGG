@@ -12,31 +12,19 @@ from safe_json import safe_json_dump
 # Import shared variables/functions from main
 from main import (
     shift_board, shift_counter,
-    load_schedules, save_schedules, save_shift_board
+    load_schedules, save_schedules, save_shift_board,
+    load_trades, save_trades, _next_trade_id,
 )
 
-# Trade tracking file
+# ── Trade helpers ─────────────────────────────────────────────────────
+# load_trades / save_trades / _next_trade_id live in main.py so both cogs
+# share one authoritative copy. They are imported above.
 TRADES_FILE = "trades.json"
-
-def load_trades():
-    """Load trades from file"""
-    try:
-        with open(TRADES_FILE, "r") as f:
-            return json.load(f)
-    except Exception:
-        return []
-
-def save_trades(trades):
-    """Save trades to file"""
-    try:
-        safe_json_dump(trades, TRADES_FILE, indent=2)
-    except Exception:
-        pass
 
 def add_trade(requester_id, requester_name, target_id, target_name, your_shift, wanted_shift, reason, schedule, status="awaiting"):
     """Add a new trade to the tracking file"""
     trades = load_trades()
-    trade_id = str(len(trades) + 1)
+    trade_id = _next_trade_id("T")
     
     trade = {
         "id": trade_id,
@@ -130,10 +118,13 @@ class OfferShiftModal(Modal, title="Offer Your Shift"):
             "date": self.date.value,
             "time": self.time.value,
             "reason": self.reason.value,
-            "schedule": self.schedule
+            "schedule": self.schedule,
+            "status": "open",
+            "created_at": datetime.now().isoformat(),
+            "source": "discord_bot"
         }
         shift_board[shift_id] = shift_info
-        # Notify all student workers
+        save_shift_board()
         from datetime import datetime
         now_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         schedule_str = (
@@ -220,58 +211,87 @@ class TakeShiftButton(Button):
         if shift["user_id"] == interaction.user.id:
             await interaction.response.send_message("You cannot take your own shift.", ephemeral=True)
             return
+        # Acknowledge the interaction first (must be within 3 seconds)
+        await interaction.response.send_message(f"You have taken shift ID {self.shift_id}.", ephemeral=True)
+        # Save taken record for web dashboard then remove from active board
+        taken_record = dict(shift)
+        taken_record["status"] = "taken"
+        taken_record["taken_by"] = interaction.user.id
+        taken_record["taken_by_name"] = interaction.user.display_name
+        taken_record["taken_at"] = datetime.now().isoformat()
+        # Append to taken_shifts history in the shift_board file
+        try:
+            with open("shift_board.json", "r") as f:
+                board_data = json.load(f)
+            board_data.setdefault("taken_shifts", []).append({"id": self.shift_id, **taken_record})
+            # Keep last 100 taken shifts
+            board_data["taken_shifts"] = board_data["taken_shifts"][-100:]
+            safe_json_dump(board_data, "shift_board.json", indent=2)
+        except Exception:
+            pass
+        del shift_board[self.shift_id]
+        save_shift_board()
         # Get bot instance from cog
         bot = interaction.client
-        user = await bot.fetch_user(shift["user_id"])
-        # Notify original offerer with an embed
         from datetime import datetime
         now_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        embed_dm = Embed(
-            title="✅ Your Shift Was Taken!",
-            description=f"Your shift (ID: {self.shift_id}) was taken by {interaction.user.mention}.",
-            color=0x2ecc71
-        )
-        embed_dm.add_field(name="📅 Date", value=shift["date"], inline=True)
-        embed_dm.add_field(name="⏰ Time", value=shift["time"], inline=True)
-        embed_dm.add_field(name="📝 Reason", value=shift["reason"], inline=False)
-        embed_dm.set_footer(text=f"Taken: {now_str}")
+        # Notify original offerer with an embed
         try:
+            user = await bot.fetch_user(shift["user_id"])
+            embed_dm = Embed(
+                title="✅ Your Shift Was Taken!",
+                description=f"Your shift (ID: {self.shift_id}) was taken by {interaction.user.mention}.",
+                color=0x2ecc71
+            )
+            embed_dm.add_field(name="📅 Date", value=shift["date"], inline=True)
+            embed_dm.add_field(name="⏰ Time", value=shift["time"], inline=True)
+            embed_dm.add_field(name="📝 Reason", value=shift["reason"], inline=False)
+            embed_dm.set_footer(text=f"Taken: {now_str}")
             await user.send(embed=embed_dm)
         except Exception:
             pass
         # DM the director about the shift being taken
-        director = await bot.fetch_user(DIRECTOR_ID)
-        embed_director = Embed(
-            title="🔄 Schedule Change",
-            description=(
-                f"**🆔 Shift ID:** {self.shift_id}\n"
-                f"**👤 Offered By:** <@{shift['user_id']}>\n"
-                f"**🙋 Taken By:** {interaction.user.mention}\n"
-                f"**👤 Name:** {shift['name']}\n"
-                f"**📅 Date:** {shift['date']}\n"
-                f"**⏰ Time:** {shift['time']}\n"
-                f"**📝 Reason:** {shift['reason']}"
-            ),
-            color=0xe67e22
-        )
-        embed_director.set_footer(text=f"Changed: {now_str}")
         try:
+            director = await bot.fetch_user(DIRECTOR_ID)
+            embed_director = Embed(
+                title="🔄 Schedule Change",
+                description=(
+                    f"**🆔 Shift ID:** {self.shift_id}\n"
+                    f"**👤 Offered By:** <@{shift['user_id']}>\n"
+                    f"**🙋 Taken By:** {interaction.user.mention}\n"
+                    f"**👤 Name:** {shift['name']}\n"
+                    f"**📅 Date:** {shift['date']}\n"
+                    f"**⏰ Time:** {shift['time']}\n"
+                    f"**📝 Reason:** {shift['reason']}"
+                ),
+                color=0xe67e22
+            )
+            embed_director.set_footer(text=f"Changed: {now_str}")
             await director.send(embed=embed_director)
         except Exception:
             pass
-        # Update the original message to show taken and delete after delay
+        # Update the original message to show taken, then delete after delay
         if interaction.message:
-            taken_embed = interaction.message.embeds[0].copy()
-            taken_embed.color = 0x95a5a6
-            taken_embed.title = "❌ Shift Taken!"
-            taken_embed.description += f"\n\n**🙋 Taken by:** {interaction.user.mention}"
-            taken_embed.set_footer(text=f"Taken: {now_str}")
-            view = View()
-            await interaction.message.edit(embed=taken_embed, view=view)
-            # Delete the message after 15 seconds
-            await interaction.message.delete(delay=15)
-        del shift_board[self.shift_id]
-        await interaction.response.send_message(f"You have taken shift ID {self.shift_id}.", ephemeral=True)
+            try:
+                taken_embed = interaction.message.embeds[0].copy()
+                taken_embed.color = 0x95a5a6
+                taken_embed.title = "❌ Shift Taken!"
+                taken_embed.description += f"\n\n**🙋 Taken by:** {interaction.user.mention}"
+                taken_embed.set_footer(text=f"Taken: {now_str}")
+                empty_view = View()
+                await interaction.message.edit(embed=taken_embed, view=empty_view)
+            except Exception:
+                pass
+            # Delete the message after 15 seconds using a background task
+            import asyncio
+            msg = interaction.message
+            async def _delete_after_delay():
+                await asyncio.sleep(15)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_delete_after_delay())
 
 # --- Slash Command to Setup Offer Shift Board ---
 @app_commands.command(name="setup_offershift", description="Setup the Offer Shift board for students.")
@@ -445,8 +465,9 @@ class TradeShiftDetailsModal(Modal, title="Trade Shift - Step 2"):
             pass
         
         # Log the trade to the tracking file for web dashboard
+        trade_id = None
         try:
-            add_trade(
+            trade_id = add_trade(
                 requester_id=interaction.user.id,
                 requester_name=interaction.user.display_name,
                 target_id=user.id,
@@ -461,19 +482,28 @@ class TradeShiftDetailsModal(Modal, title="Trade Shift - Step 2"):
             pass
         
         try:
+            view = TradeAcceptDeclineView(
+                requester_id=interaction.user.id,
+                target_id=user.id,
+                schedule=self.schedule,
+                your_shift=self.your_shift.value,
+                wanted_shift=self.wanted_shift.value,
+                trade_id=trade_id
+            )
             await user.send(embed=embed, view=view)
             await interaction.response.send_message("Trade offer sent! The student will receive a DM to accept or decline.", ephemeral=True)
         except Exception:
             await interaction.response.send_message("Could not DM the user. They may have DMs disabled.", ephemeral=True)
 
 class TradeAcceptDeclineView(View):
-    def __init__(self, requester_id, target_id, schedule, your_shift, wanted_shift):
+    def __init__(self, requester_id, target_id, schedule, your_shift, wanted_shift, trade_id=None):
         super().__init__(timeout=3600)
         self.requester_id = requester_id
         self.target_id = target_id
         self.schedule = schedule
         self.your_shift = your_shift
         self.wanted_shift = wanted_shift
+        self.trade_id = trade_id
         self.add_item(TradeAcceptButton())
         self.add_item(TradeDeclineButton())
 
@@ -515,7 +545,8 @@ class TradeAcceptButton(Button):
             target_id=view.target_id,
             schedule=view.schedule,
             your_shift=view.your_shift,
-            wanted_shift=view.wanted_shift
+            wanted_shift=view.wanted_shift,
+            trade_id=view.trade_id
         )
         try:
             await director.send(embed=embed_director, view=approval_view)
@@ -557,6 +588,11 @@ class StudentDeclineReasonModal(Modal, title="Reason for Declining Trade"):
     async def on_submit(self, interaction: Interaction):
         bot = interaction.client
         requester = await bot.fetch_user(self.trade_view.requester_id)
+        
+        # Update trade status in tracking file
+        if self.trade_view.trade_id:
+            update_trade_status(self.trade_view.trade_id, "declined", updated_by=interaction.user.display_name, reason=self.reason.value)
+        
         embed = Embed(
             title="❌ Trade Declined",
             description=(
@@ -577,13 +613,14 @@ class StudentDeclineReasonModal(Modal, title="Reason for Declining Trade"):
         self.trade_view.stop()
 
 class DirectorApprovalView(View):
-    def __init__(self, requester_id, target_id, schedule, your_shift, wanted_shift):
+    def __init__(self, requester_id, target_id, schedule, your_shift, wanted_shift, trade_id=None):
         super().__init__(timeout=3600)
         self.requester_id = requester_id
         self.target_id = target_id
         self.schedule = schedule
         self.your_shift = your_shift
         self.wanted_shift = wanted_shift
+        self.trade_id = trade_id
         self.add_item(DirectorApproveButton())
         self.add_item(DirectorDeclineButton())
 
@@ -605,6 +642,11 @@ class DirectorApproveButton(Button):
             pass
         bot = interaction.client
         view: DirectorApprovalView = self.view
+        
+        # Update trade status in tracking file
+        if view.trade_id:
+            update_trade_status(view.trade_id, "approved", updated_by="Director")
+        
         requester = await bot.fetch_user(view.requester_id)
         target = await bot.fetch_user(view.target_id)
         embed = Embed(
@@ -656,6 +698,11 @@ class DirectorDeclineReasonModal(Modal, title="Reason for Declining Trade"):
 
     async def on_submit(self, interaction: Interaction):
         bot = interaction.client
+        
+        # Update trade status in tracking file
+        if self.director_view.trade_id:
+            update_trade_status(self.director_view.trade_id, "declined", updated_by="Director", reason=self.reason.value)
+        
         requester = await bot.fetch_user(self.director_view.requester_id)
         target = await bot.fetch_user(self.director_view.target_id)
         embed = Embed(

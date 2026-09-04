@@ -7,7 +7,8 @@ import os
 import json
 from utils.constants import STUDENT_ROLE_ID, SECURITY_CODE, USER_RECORDS_DIR, GUEST_TIMES_DIR, VARSITY_REG_DIR, SCHEDULE_IMAGES_DIR, LOG_CHANNEL_NAME
 from views.setup_view import load_guest_times  # Ensure this import is present
-from utils.safe_json import safe_json_dump
+from utils.safe_json import safe_json_dump, safe_json_load
+from utils import db as user_db
 
 # GUEST_TIMES_DIR is provided by utils.constants
 
@@ -81,6 +82,9 @@ class ActionReasonModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         reason = self.reason_input.value.strip()
         user = interaction.guild.get_member(int(self.user_id))
+        if not user:
+            await interaction.response.send_message("❌ User not found — they may have already left or been removed.", ephemeral=True)
+            return
         admin_name = interaction.user.display_name
         # Call moderation cog's action functions for consistency
         if self.moderation_cog:
@@ -258,20 +262,7 @@ class UserInfo(commands.Cog):
                 vpath = os.path.join(VARSITY_REG_DIR, f"{user_id}_varsity.json")
                 data = None
                 if os.path.exists(vpath):
-                    try:
-                        with open(vpath, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                    except Exception:
-                        data = None
-                # Fallback to legacy user records
-                if data is None:
-                    record_path = os.path.join(USER_RECORDS_DIR, f"{user_id}_record.json")
-                    if os.path.exists(record_path):
-                        try:
-                            with open(record_path, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                        except Exception:
-                            data = None
+                    data = safe_json_load(vpath, None)
 
                 if not data:
                     await interaction.response.send_message("❌ No registration on file.", ephemeral=True)
@@ -331,15 +322,9 @@ class UserInfo(commands.Cog):
                 await interaction.response.send_message("❌ Only admins can clear records.", ephemeral=True)
                 return
             # Clear the record from memory and save
-            cleared = False
-            if self.user_id in self.moderation_cog.user_records:
-                del self.moderation_cog.user_records[self.user_id]
-                self.moderation_cog.save_user_records()
-                cleared = True
-            # Delete the user's record JSON file
-            record_path = os.path.join(USER_RECORDS_DIR, f"{self.user_id}_record.json")
-            if os.path.exists(record_path):
-                os.remove(record_path)
+            user_db.clear_records(self.user_id)
+            cleared = True
+            # (JSON file no longer used)
             # Update embed
             self.embed.clear_fields()
             user = interaction.guild.get_member(int(self.user_id))
@@ -382,7 +367,7 @@ class UserInfo(commands.Cog):
 
     async def _show_userinfo(self, interaction: discord.Interaction, user: discord.Member, skip_loading: bool = False):
         moderation_cog = interaction.client.get_cog("Moderation")
-        warning_count = 0
+        violation_count = 0
         kick_count = 0
         ban_count = 0
         automod_count = 0
@@ -393,31 +378,17 @@ class UserInfo(commands.Cog):
         student_email = None
         student_phone = None
         
-        # Try to get student info from user_records (read from disk if available)
-        record_data = []
-        record_path = os.path.join(USER_RECORDS_DIR, f"{str(user.id)}_record.json")
-        
-        # First try to read from disk
-        if os.path.exists(record_path):
-            try:
-                with open(record_path, "r", encoding="utf-8") as f:
-                    record_data = json.load(f)
-            except Exception:
-                # Fall back to in-memory if disk read fails
-                if moderation_cog and hasattr(moderation_cog, "user_records"):
-                    record_data = moderation_cog.user_records.get(str(user.id), [])
-        elif moderation_cog and hasattr(moderation_cog, "user_records"):
-            # Try in-memory as fallback
-            record_data = moderation_cog.user_records.get(str(user.id), [])
+        # Get record data from DB
+        record_data = user_db.get_records(str(user.id))
         
         if isinstance(record_data, list) and record_data:
             has_record = True
-            warning_count = sum(1 for r in record_data if r.get("type") == "Warning")
+            violation_count = sum(1 for r in record_data if r.get("type") in ("Warning", "Violation"))
             kick_count = sum(1 for r in record_data if r.get("type") == "Kick")
             ban_count = sum(1 for r in record_data if r.get("type") == "Ban")
             automod_count = sum(1 for r in record_data if r.get("type") == "AutoMod")
             record_summary = (
-                f"Warnings: {warning_count}, Kicks: {kick_count}, Bans: {ban_count}, AutoMod Actions: {automod_count}"
+                f"Violations: {violation_count}, Kicks: {kick_count}, Bans: {ban_count}, AutoMod Actions: {automod_count}"
             )
             lines = []
             for entry in record_data:
@@ -465,7 +436,7 @@ class UserInfo(commands.Cog):
                 name="Record Summary",
                 value=(
                     f"📄 **User Has Record Actions on File**\n"
-                    f"Warnings: `{warning_count}` | Kicks: `{kick_count}` | Bans: `{ban_count}`"
+                    f"Violations: `{violation_count}` | Kicks: `{kick_count}` | Bans: `{ban_count}`"
                 ),
                 inline=False
             )
@@ -531,8 +502,7 @@ class UserInfo(commands.Cog):
                 # Fallback check for legacy records
                 record_path = os.path.join(USER_RECORDS_DIR, f"{str(user.id)}_record.json")
                 if os.path.exists(record_path):
-                    with open(record_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+                    data = safe_json_load(record_path, [])
                     # Check if any VarsityRegistration entries exist
                     varsity_entries = [e for e in data if str(e.get("type", "")).lower().startswith("varsityregistration")]
                     has_varsity_record = bool(varsity_entries)
@@ -581,8 +551,7 @@ class UserInfo(commands.Cog):
                 user_id = fname.split("_varsity.json")[0]
                 path = os.path.join(VARSITY_REG_DIR, fname)
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        entries = json.load(f)
+                    entries = safe_json_load(path, [])
                 except Exception:
                     continue
                 if not isinstance(entries, list):
@@ -693,8 +662,7 @@ class UserInfo(commands.Cog):
                     try:
                         # First, delete any associated schedule images
                         try:
-                            with open(p, 'r', encoding='utf-8') as f:
-                                data = json.load(f)
+                            data = safe_json_load(p, [])
                             if isinstance(data, list):
                                 for entry in data:
                                     attachments = entry.get('data', {}).get('attachments', [])

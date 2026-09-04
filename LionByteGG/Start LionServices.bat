@@ -1,73 +1,104 @@
 @echo off
-title LionByteGG Suite Launcher
-color 0E
-echo ============================================
-echo      LionByteGG Full Suite Launcher
-echo ============================================
-echo.
-echo  This will start:
-echo    1. Master Terminal (System Monitor)
-echo    2. LionByteGG Discord Bot
-echo    3. LionShiftGG Discord Bot
-echo    4. LionBeatsGG Music Bot (Lavalink + Bot)
-echo    5. BoilerCraftGG Minecraft Bot
-echo    6. Web Dashboard
-echo.
-echo ============================================
-echo.
-cd /d "%~dp0"
+setlocal
 
-:: Start the Master Terminal FIRST (fullscreen, always on top)
-echo [1/6] Starting Master Terminal...
-start "LIONBYTE Master Terminal" cmd /k "cd /d "%~dp0" && python master_terminal.py"
+REM ===== Single-instance guard: don't launch the suite twice =====
+REM If the Web Dashboard (port 5000) is already listening, the services are up.
+netstat -an | findstr /R /C:":5000 .*LISTENING" >nul 2>&1
+if %errorlevel% equ 0 (
+    mode con cols=74 lines=14 >nul 2>&1
+    color 0E
+    cls
+    echo.
+    echo   ==================================================================
+    echo.
+    echo      LionByte services are ALREADY RUNNING.
+    echo.
+    echo      This launcher will not start them a second time.
+    echo      To restart, close the existing service windows
+    echo      ^(or the Master Terminal^) first, then run this again.
+    echo.
+    echo   ==================================================================
+    echo.
+    timeout /t 6 >nul
+    exit /b 1
+)
 
-:: Wait a moment for terminal to initialize
+if not "%~1"=="--max" (
+    start "LionByte" /max cmd /c ""%~f0" --max"
+    exit /b
+)
+
+mode con cols=110 lines=48 >nul 2>&1
+color 0F
+title  LionByte  --  Booting
+cls
+
+python "%~dp0intro_animation.py"
+
+cls
+color 0F
+title  LionByte  --  Service Launcher
+
+echo.
+echo  +======================================================================+
+echo  ^|                                                                      ^|
+echo  ^|   LIONBYTE MASTER SUITE                             LionByteGG      ^|
+echo  ^|   Service Launcher                                   v2026           ^|
+echo  ^|                                                                      ^|
+echo  +======================================================================+
+echo.
+echo   Each service starts minimized. Master Terminal opens last.
+echo.
+echo  +----------------------------------------------------------------------+
+echo.
+
+echo   [1/6]  LionByteGG Bot              (Main Discord Bot)
+start "LionByteGG Bot"    /D "%~dp0"                        /min cmd /k "color 0A && python main.py"
 timeout /t 2 /nobreak >nul
-
-:: Start LionByteGG bot in a new window
-echo [2/6] Starting LionByteGG Bot...
-start "LionByteGG Bot" cmd /k "cd /d "%~dp0" && color 0A && echo LionByteGG Bot Starting... && python "%~dp0main.py""
-
-:: Wait a moment
-timeout /t 2 /nobreak >nul
-
-:: Start LionShiftGG bot in a new window
-echo [3/6] Starting LionShiftGG Bot...
-start "LionShiftGG Bot" cmd /k "cd /d "%~dp0..\LionShiftGG" && set LIONSHIFT_BOT=1 && color 0D && echo LionShiftGG Bot Starting... && python "%~dp0..\LionShiftGG\main.py""
-
-:: Wait a moment for bots to initialize
-timeout /t 2 /nobreak >nul
-
-:: Start LionBeatsGG bot (Lavalink + Bot)
-echo [4/6] Starting LionBeatsGG Music Bot...
-start "LionBeatsGG Launcher" cmd /k "cd /d "%~dp0..\LionBeatsGG" && call start-all.bat"
-
-:: Wait a moment for music bot to initialize
-timeout /t 2 /nobreak >nul
-
-:: Start BoilerCraftGG bot in a new window
-echo [5/6] Starting BoilerCraftGG Bot...
-start "BoilerCraftGG Bot" cmd /k "cd /d "%~dp0..\BoilerCraftGG" && color 0C && echo BoilerCraftGG Bot Starting... && python "%~dp0..\BoilerCraftGG\bot.py""
-
-:: Wait a moment for bot to initialize
-timeout /t 2 /nobreak >nul
-
-:: Start the website in a new window
-echo [6/6] Starting Web Dashboard...
-start "LionByteGG Dashboard" cmd /k "cd /d "%~dp0web" && color 0B && echo Web Dashboard Starting... && python "%~dp0web\run.py""
-
+echo          [ STARTED ]  minimized
 echo.
-echo ============================================
-echo  All services are starting in separate windows!
-echo ============================================
+
+echo   [2/6]  LionShiftGG Bot             (Shift Management)
+start "LionShiftGG Bot"   /D "%~dp0..\LionShiftGG"          /min cmd /k "color 0D && python main.py"
+timeout /t 2 /nobreak >nul
+echo          [ STARTED ]  minimized
 echo.
-echo  - Master Terminal (System Monitor - Fullscreen)
-echo  - LionByteGG Bot (Green window)
-echo  - LionShiftGG Bot (Purple window)
-echo  - LionBeatsGG Bot (Lavalink + Music Bot)
-echo  - BoilerCraftGG Bot (Red window)
-echo  - Web Dashboard (Cyan window)
+
+echo   [3/6]  BoilerCraftGG Bot           (Minecraft Community)
+start "BoilerCraftGG Bot" /D "%~dp0..\BoilerCraftGG"         /min cmd /k "color 04 && python bot.py"
+timeout /t 2 /nobreak >nul
+echo          [ STARTED ]  minimized
 echo.
-echo You can close this launcher window.
+
+echo   [4/6]  Lavalink Server             (Audio Backend)
+start "Lavalink"          /D "%~dp0..\LionBeatsGG\lavalink"  /min cmd /k "color 07 && java -jar Lavalink.jar"
+echo          [ STARTED ]  initializing  --  waiting 7 seconds...
+timeout /t 7 /nobreak >nul
+echo          [ READY   ]  Lavalink is up
 echo.
-timeout /t 5
+
+echo   [5/6]  LionBeatsGG Bot             (Music Bot)
+start "LionBeatsGG Bot"   /D "%~dp0..\LionBeatsGG\bot"       /min cmd /k "color 0B && node src/index.js"
+timeout /t 2 /nobreak >nul
+echo          [ STARTED ]  minimized
+echo.
+
+echo   [6/6]  Web Dashboard               (Admin Panel)
+start "Web Dashboard"     /D "%~dp0web"                       /min cmd /k "color 09 && python run.py --production"
+timeout /t 2 /nobreak >nul
+echo          [ STARTED ]  minimized
+echo.
+
+echo  +----------------------------------------------------------------------+
+echo.
+echo   All 6 services are running.
+echo.
+echo   Opening Master Terminal in 3 seconds...
+echo.
+echo  +======================================================================+
+echo.
+timeout /t 3 /nobreak >nul
+
+start "" /d "%~dp0" pythonw master_terminal.py
+timeout /t 2 /nobreak >nul
+exit

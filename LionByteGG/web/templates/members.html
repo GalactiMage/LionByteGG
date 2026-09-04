@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Server Members{% endblock %}
+{% block page_title %}Server Members{% endblock %}
 
 {% block content %}
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -160,6 +161,7 @@
     </div>
     <div class="context-menu-divider"></div>
     {% endif %}
+    {% if has_perm('moderation.watchlist') or has_perm('members.warn') or has_perm('members.timeout') or has_perm('members.kick') or has_perm('members.ban') %}
     <div class="context-menu-section">
         <div class="context-menu-label">Moderation</div>
         {% if has_perm('moderation.watchlist') %}
@@ -171,7 +173,7 @@
         {% if has_perm('members.warn') %}
         <button class="context-menu-item warn" onclick="contextMenuAction('warn')">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>Warn User</span>
+            <span>Issue Violation</span>
         </button>
         {% endif %}
         {% if has_perm('members.timeout') %}
@@ -193,6 +195,7 @@
         </button>
         {% endif %}
     </div>
+    {% endif %}
 </div>
 
 <!-- Member Detail Modal -->
@@ -2679,6 +2682,18 @@ let allMembers = [];
 let filteredMembers = [];
 let memberRefreshInterval;
 
+// Permission flags used to gate member action buttons in the UI.
+// Captains only get send_varsity; all moderation flags are false for them.
+const MEMBER_PERMS = {
+    warn: {{ has_perm('members.warn')|tojson }},
+    timeout: {{ has_perm('members.timeout')|tojson }},
+    kick: {{ has_perm('members.kick')|tojson }},
+    ban: {{ has_perm('members.ban')|tojson }},
+    watch: {{ has_perm('moderation.watchlist')|tojson }},
+    dm: {{ has_perm('members.send_dm')|tojson }},
+    send_varsity: {{ has_perm('varsity.send_registration')|tojson }}
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     loadMembers();
     
@@ -2883,7 +2898,7 @@ async function openMemberModal(userId) {
         ` : '';
         
         // Watchlist button HTML
-        const watchlistButtonHtml = watchlist ? `
+        const watchlistButtonHtml = !MEMBER_PERMS.watch ? '' : (watchlist ? `
             <button class="member-action-btn unwatch" onclick="removeFromWatchlist('${member.id}')">
                 <div class="action-icon"><i class="fas fa-eye-slash"></i></div>
                 <span class="action-label">Unwatch</span>
@@ -2893,7 +2908,7 @@ async function openMemberModal(userId) {
                 <div class="action-icon"><i class="fas fa-eye"></i></div>
                 <span class="action-label">Watch</span>
             </button>
-        `;
+        `);
         
         // Watchlist info card if user is watched
         const watchlistInfoHtml = watchlist ? `
@@ -3068,26 +3083,36 @@ async function openMemberModal(userId) {
                                 <span class="action-label">View Profile</span>
                             </button>
                             ${watchlistButtonHtml}
+                            ${MEMBER_PERMS.send_varsity ? `
                             <button class="member-action-btn varsity" onclick="openVarsityModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', '${member.avatar || ''}')">
                                 <div class="action-icon"><i class="fas fa-trophy"></i></div>
                                 <span class="action-label">Register Varsity</span>
                             </button>
+                            ` : ''}
+                            ${MEMBER_PERMS.warn ? `
                             <button class="member-action-btn warn" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'warn')">
                                 <div class="action-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                                <span class="action-label">Warn</span>
+                                <span class="action-label">Issue Violation</span>
                             </button>
+                            ` : ''}
+                            ${MEMBER_PERMS.timeout ? `
                             <button class="member-action-btn timeout" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'timeout')">
                                 <div class="action-icon"><i class="fas fa-clock"></i></div>
                                 <span class="action-label">Timeout</span>
                             </button>
+                            ` : ''}
+                            ${MEMBER_PERMS.kick ? `
                             <button class="member-action-btn kick" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'kick')">
                                 <div class="action-icon"><i class="fas fa-user-minus"></i></div>
                                 <span class="action-label">Kick</span>
                             </button>
+                            ` : ''}
+                            ${MEMBER_PERMS.ban ? `
                             <button class="member-action-btn ban" onclick="openActionModal('${member.id}', '${escapeHtml(member.display_name || member.name)}', 'ban')">
                                 <div class="action-icon"><i class="fas fa-ban"></i></div>
                                 <span class="action-label">Ban</span>
                             </button>
+                            ` : ''}
                         </div>
                     </div>
                     ` : `
@@ -3131,13 +3156,13 @@ function openActionModal(userId, userName, action) {
     const actionConfig = {
         warn: {
             icon: 'fa-exclamation-triangle',
-            title: 'Warn User',
-            subtitle: 'Issue an official warning',
+            title: 'Issue Violation',
+            subtitle: 'Issue an official violation notice',
             badgeIcon: 'fa-exclamation-triangle',
-            badgeText: 'Warning',
-            warningTitle: 'Warning Notice',
-            warningText: 'The user will receive an official warning that will be added to their record. A DM will be sent to notify them.',
-            buttonText: 'Issue Warning',
+            badgeText: 'Violation',
+            warningTitle: 'Violation Notice',
+            warningText: 'The user will receive an official violation notice that will be added to their record. A DM will be sent to notify them.',
+            buttonText: 'Issue Violation',
             showDuration: false
         },
         timeout: {

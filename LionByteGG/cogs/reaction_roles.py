@@ -3,7 +3,7 @@ from discord.ext import commands
 import json
 import os
 import asyncio
-from utils.safe_json import safe_json_dump
+from utils.safe_json import safe_json_dump, safe_json_load
 
 DATA_DIR = "data"
 REACTION_ROLE_FILE = os.path.join(DATA_DIR, "reaction_roles.json")
@@ -18,11 +18,9 @@ class ReactionRoles(commands.Cog):
     def load_reaction_roles(self):
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
-        if os.path.exists(REACTION_ROLE_FILE):
-            with open(REACTION_ROLE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # Convert keys back to int for message IDs
-                return {int(mid): {emoji: rid for emoji, rid in emojis.items()} for mid, emojis in data.items()}
+        data = safe_json_load(REACTION_ROLE_FILE, {})
+        if data:
+            return {int(mid): {emoji: rid for emoji, rid in emojis.items()} for mid, emojis in data.items()}
         return {}
 
     def save_reaction_roles(self):

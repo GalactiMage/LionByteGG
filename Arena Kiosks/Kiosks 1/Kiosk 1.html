@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>PNW Esports Arena — Kiosk 1 · Main Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Runs before the page paints. Decides lockout state up front so a refresh
+  // can never show the sign-in form for even a frame — no bypass window.
+  (function(){
+    try{
+      var KIOSK_ID = 'kiosk-1';
+      var MAX_ATTEMPTS = 5;
+      function cookieGet(name){
+        var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+        return m ? decodeURIComponent(m[1]) : null;
+      }
+      var lsAttempts = parseInt(localStorage.getItem('arena_failed_attempts_' + KIOSK_ID) || '0', 10);
+      var ckAttempts = parseInt(cookieGet('arena_failed_attempts_' + KIOSK_ID) || '0', 10);
+      var lsLock = localStorage.getItem('arena_lockout_active_' + KIOSK_ID) === 'true';
+      var ckLock = cookieGet('arena_lockout_active_' + KIOSK_ID) === 'true';
+      var locked = lsLock || ckLock || lsAttempts >= MAX_ATTEMPTS || ckAttempts >= MAX_ATTEMPTS;
+      if (locked) document.documentElement.classList.add('kiosk-lockout-boot');
+    }catch(e){}
+  })();
+</script>
+<style>
+  :root{
+    --void:#05060A;
+    --void-2:#0B0E17;
+    --navy:#0E1730;
+    --navy-2:#131D3D;
+    --surface:#101526;
+    --surface-raised:#161D33;
+    --border:#26304F;
+    --border-soft:#1D2540;
+    --border-strong:#33406A;
+    --gold:#CFB991;
+    --gold-bright:#E8D5A8;
+    --gold-dim:#8A7B5C;
+    --text-primary:#F5F3EE;
+    --text-secondary:#A0A4B8;
+    --text-muted:#5F637A;
+    --success:#34D399;
+    --success-dim:#0F3B2E;
+    --danger:#E8776B;
+    --danger-dim:#3A1815;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+
+  html,body{
+    height:100%;
+    margin:0;
+    overflow:hidden;
+    background:
+      radial-gradient(ellipse 120% 80% at 50% -10%, var(--navy-2) 0%, transparent 55%),
+      linear-gradient(160deg, var(--navy) 0%, var(--void-2) 45%, var(--void) 100%);
+    font-family:'Inter',sans-serif;
+    color:var(--text-primary);
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-touch-callout:none;
+    touch-action:manipulation;
+    overscroll-behavior:none;
+  }
+
+  img{ -webkit-user-drag:none; user-drag:none; pointer-events:none; }
+
+  .stage{
+    position:relative;
+    height:100dvh;
+    width:100vw;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:4vh 4vw;
+    overflow:hidden;
+    transition:padding-bottom .25s ease;
+  }
+  
+  .stage.kb-open{ padding-bottom:min(55vh, 420px); }
+
+  /* Perfectly Smooth Screen Glow Overlay */
+  .screen-glow {
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    opacity:0;
+    z-index:90;
+    border:1px solid rgba(52,211,153,0.1);
+    box-shadow: inset 0 0 50px rgba(52,211,153,0.08), 0 0 50px rgba(52,211,153,0.08);
+    will-change:opacity, box-shadow;
+    /* Smooth, gentle fade in/out */
+    transition:opacity 1.1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .7s ease, border-color .7s ease;
+  }
+  .stage.success-mode .screen-glow {
+    opacity:1;
+    animation:successFrameGlow 3.2s ease-in-out .15s infinite alternate;
+  }
+  @keyframes successFrameGlow {
+    0% {
+      border-color: rgba(52,211,153,0.16);
+      box-shadow: inset 0 0 60px rgba(52,211,153,0.14), inset 0 0 16px rgba(52,211,153,0.18), 0 0 50px rgba(52,211,153,0.14);
+    }
+    100% {
+      border-color: rgba(52,211,153,0.5);
+      box-shadow: inset 0 0 150px rgba(52,211,153,0.55), inset 0 0 44px rgba(52,211,153,0.85), 0 0 90px rgba(52,211,153,0.32);
+    }
+  }
+
+  .stage::before{
+    content:'';
+    position:absolute;
+    inset:-20%;
+    background:
+      radial-gradient(circle at 50% 15%, rgba(76,110,220,0.16), transparent 45%),
+      radial-gradient(circle at 88% 82%, rgba(52,211,153,0.05), transparent 40%),
+      radial-gradient(circle at 8% 88%, rgba(207,185,145,0.06), transparent 38%);
+    animation:drift 18s ease-in-out infinite alternate;
+    pointer-events:none;
+  }
+  @keyframes drift{
+    0%{ transform:translate(0,0) scale(1); }
+    100%{ transform:translate(-2%,2%) scale(1.05); }
+  }
+
+  /* ---------- top status bar ---------- */
+  .topbar{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:22px 26px 0;
+    z-index:10;
+  }
+  .kiosk-id{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+    letter-spacing:0.06em;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .kiosk-id .clock{ color:var(--text-secondary); font-size:13px; }
+
+  .admin-btn{
+    width:46px; height:46px;
+    border-radius:14px;
+    border:1.5px solid var(--border-strong);
+    background:linear-gradient(155deg, var(--surface-raised), var(--navy-2));
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    transition:border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .admin-btn:hover{ border-color:var(--gold); background:var(--navy-2); transform:scale(1.03); }
+  .admin-btn svg{ width:22px; height:22px; stroke:var(--gold-bright); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+
+  .card-wrap{ position:relative; width:100%; max-width:640px; }
+
+  /* ---------- shared panel shell ---------- */
+  .panel{
+    position:relative;
+    background:linear-gradient(165deg, var(--navy-2) 0%, var(--surface) 40%, var(--void-2) 100%);
+    border:2px solid var(--success);
+    border-radius:28px;
+    padding:clamp(26px,4vh,44px) clamp(24px,4vw,48px);
+    box-shadow:
+      0 0 25px rgba(52,211,153,0.35),
+      0 0 60px rgba(52,211,153,0.15),
+      inset 0 0 15px rgba(52,211,153,0.1),
+      0 40px 90px -20px rgba(0,0,0,0.75);
+    overflow:hidden;
+    transition:box-shadow .3s ease, border-color .3s ease;
+  }
+  .panel::before{
+    content:'';
+    position:absolute; top:0; left:12%; right:12%; height:2px;
+    background:linear-gradient(90deg, transparent, var(--success), var(--gold-bright), var(--success), transparent);
+    opacity:0.8;
+  }
+
+  .entry-badge{
+    width:50px; height:50px;
+    margin:0 auto 14px;
+    border-radius:16px;
+    background:linear-gradient(155deg, rgba(52,211,153,0.18), rgba(207,185,145,0.14));
+    border:1.5px solid rgba(52,211,153,0.3);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 30px -8px rgba(52,211,153,0.4);
+  }
+  .entry-badge svg{ width:23px; height:23px; stroke:var(--gold-bright); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+
+  .eyebrow{
+    text-align:center;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin-bottom:12px;
+    text-shadow:0 0 20px rgba(207,185,145,0.35);
+  }
+
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:clamp(22px,3.2vw,30px);
+    text-align:center;
+    margin:0 0 6px;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    text-align:center;
+    color:var(--text-secondary);
+    font-size:14.5px;
+    margin:0 0 clamp(16px,2.6vh,26px);
+  }
+
+  form{ display:flex; flex-direction:column; gap:12px; }
+
+  .field{ display:flex; flex-direction:column; gap:6px; text-align:left; }
+  .field label{ font-size:12.5px; color:var(--text-muted); font-weight:500; letter-spacing:0.02em; padding-left:2px; }
+  .inputwrap{ position:relative; display:flex; align-items:center; cursor:text; }
+  .inputwrap svg{
+    position:absolute; left:18px; width:18px; height:18px;
+    stroke:var(--text-muted); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+    transition:stroke .15s ease; pointer-events:none;
+  }
+  .inputwrap.active svg{ stroke:var(--gold); }
+  .field input[type="text"]{
+    width:100%;
+    height:58px;
+    background:var(--surface-raised);
+    border:1.5px solid var(--border);
+    border-radius:16px;
+    padding:0 18px 0 50px;
+    font-size:17px;
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    outline:none;
+    caret-color:transparent;
+    transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .field input::placeholder{ color:var(--text-muted); }
+  .inputwrap.active input{
+    border-color:var(--gold);
+    background:var(--navy-2);
+    box-shadow:0 0 0 4px rgba(207,185,145,0.14);
+  }
+  .field.err input{ border-color:var(--danger); box-shadow:0 0 0 4px rgba(232,119,107,0.12); }
+  .field-hint{ font-size:11.5px; color:var(--text-muted); padding-left:2px; }
+  .errmsg{ font-size:12.5px; color:var(--danger); min-height:16px; padding-left:2px; }
+  .errmsg:empty{ display:none; }
+
+  .agree{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    background:var(--surface-raised);
+    border:1.5px solid var(--border);
+    border-radius:16px;
+    padding:14px 16px;
+    margin-bottom:2px;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .agree:hover{ background:var(--navy-2); }
+  .agree.err{ border-color:var(--danger); }
+  .agree input{ display:none; }
+  .checkbox{
+    width:24px; height:24px; flex-shrink:0; margin-top:1px;
+    border-radius:7px;
+    border:1.5px solid var(--border);
+    background:var(--void-2);
+    display:flex; align-items:center; justify-content:center;
+    transition:all .15s ease;
+  }
+  .agree input:checked + .checkbox{
+    background:linear-gradient(155deg, var(--gold-bright), var(--gold));
+    border-color:var(--gold);
+    box-shadow:0 0 0 4px rgba(207,185,145,0.16);
+  }
+  .agree input:checked + .checkbox svg{ opacity:1; transform:scale(1); }
+  .checkbox svg{ opacity:0; transform:scale(0.6); transition:all .15s ease; width:14px; height:14px; }
+  .agree .agreetext{ font-size:13.5px; color:var(--text-secondary); line-height:1.4; }
+
+  .submit{
+    height:60px;
+    margin-top:6px;
+    border:none;
+    border-radius:18px;
+    background:linear-gradient(155deg, var(--gold-bright), var(--gold));
+    color:#1B1706;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:16.5px;
+    letter-spacing:0.03em;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease, filter .12s ease;
+    box-shadow:0 12px 28px -8px rgba(207,185,145,0.55), 0 0 40px -12px rgba(76,110,220,0.3);
+  }
+  .submit:hover{ filter:brightness(1.05); }
+  .submit:active{ transform:scale(0.98); }
+  .submit:disabled{ opacity:0.75; cursor:default; filter:none; }
+  .submit svg{ width:19px; height:19px; stroke:#1B1706; fill:none; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+
+  .spinner{
+    width:20px; height:20px;
+    border:2.5px solid rgba(27,23,6,0.25);
+    border-top-color:#1B1706;
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  @keyframes shake{
+    0%,100%{ transform:translateX(0); }
+    20%{ transform:translateX(-6px); }
+    40%{ transform:translateX(6px); }
+    60%{ transform:translateX(-4px); }
+    80%{ transform:translateX(4px); }
+  }
+  .panel.shake{ animation:shake .4s ease; }
+
+  @keyframes panelEnter{
+    0%{ opacity:0; transform:translateY(10px) scale(.985); }
+    100%{ opacity:1; transform:translateY(0) scale(1); }
+  }
+  .panel.panel-enter{ animation:panelEnter .5s cubic-bezier(.16,.8,.3,1); }
+
+  .banner{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(232,119,107,0.12);
+    border:1.5px solid rgba(232,119,107,0.4);
+    color:#F4B8B1;
+    font-size:13.5px; font-weight:500;
+    border-radius:14px;
+    padding:11px 15px;
+    margin-bottom:14px;
+    opacity:0; max-height:0; overflow:hidden;
+    transition:opacity .2s ease, max-height .2s ease, margin .2s ease;
+  }
+  .banner.show{ opacity:1; max-height:60px; margin-bottom:14px; }
+  .banner svg{ width:17px; height:17px; flex-shrink:0; stroke:#F4B8B1; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* ---------- overlays ---------- */
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center;
+    opacity:0; pointer-events:none;
+    transition:opacity .4s ease;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+  .overlay.show .reveal{ animation:fadeUp .6s cubic-bezier(.16,.8,.3,1) both; }
+  .overlay:not(.show) .reveal{ opacity:0; }
+  @keyframes fadeUp{
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  .icon-ring{
+    width:100px; height:100px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:20px;
+  }
+  .icon-ring.success{ background:radial-gradient(circle at 50% 40%, rgba(52,211,153,0.22), rgba(52,211,153,0.02) 70%); }
+  .icon-ring.danger{ background:radial-gradient(circle at 50% 40%, rgba(232,119,107,0.2), rgba(232,119,107,0.02) 70%); }
+  .icon-ring.neutral{ background:radial-gradient(circle at 50% 40%, rgba(207,185,145,0.2), rgba(207,185,145,0.02) 70%); }
+  .overlay.show .icon-ring.success{ animation:fadeUp .6s cubic-bezier(.16,.8,.3,1) both, ringPulse 2.4s ease-in-out .6s infinite; }
+  @keyframes ringPulse{
+    0%,100%{ box-shadow:0 0 0 0 rgba(52,211,153,0.22); }
+    50%{ box-shadow:0 0 0 14px rgba(52,211,153,0); }
+  }
+  .icon-circle{
+    width:74px; height:74px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-circle.success{ background:var(--success-dim); border:1.5px solid rgba(52,211,153,0.45); }
+  .icon-circle.danger{ background:var(--danger-dim); border:1.5px solid rgba(232,119,107,0.4); }
+  .icon-circle.neutral{ background:var(--surface-raised); border:1.5px solid var(--border-strong); }
+  .icon-circle svg{ width:34px; height:34px; }
+  .icon-circle.success path{
+    fill:none; stroke:var(--success); stroke-width:4; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:48; stroke-dashoffset:48;
+  }
+  .overlay.show .icon-circle.success path{ animation:draw .5s .35s cubic-bezier(.65,0,.35,1) forwards; }
+  @keyframes draw{ to{ stroke-dashoffset:0; } }
+  .icon-circle.danger svg, .icon-circle.neutral svg{ stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .icon-circle.danger{ color:var(--danger); }
+  .icon-circle.neutral{ color:var(--gold-bright); }
+
+  .status-badge{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:11.5px; font-weight:600;
+    letter-spacing:0.1em; text-transform:uppercase;
+    border-radius:999px;
+    padding:6px 14px 6px 10px;
+    margin-bottom:20px;
+  }
+  .status-badge.success{ color:var(--success); background:var(--success-dim); border:1px solid rgba(52,211,153,0.35); }
+  .status-badge svg{ width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+
+  .welcome-label{ font-size:14.5px; color:var(--text-secondary); letter-spacing:0.04em; margin:0 0 2px; }
+  .overlay h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:clamp(34px,5.6vw,50px);
+    font-weight:600;
+    margin:0;
+    letter-spacing:-0.02em;
+    line-height:1.05;
+  }
+  .overlay h2 .accent{
+    background:linear-gradient(120deg, var(--gold-bright) 20%, var(--gold) 80%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .overlay h2.danger-text{ color:var(--danger); font-size:clamp(20px,2.8vw,26px); max-width:440px; }
+  .arena-line{ font-size:15px; color:var(--text-secondary); margin:8px 0 0; letter-spacing:0.01em; }
+
+  .divider{
+    width:56px; height:1px;
+    background:linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    margin:22px 0 20px;
+  }
+
+  .enterline{
+    color:var(--text-secondary);
+    font-size:14.5px; font-weight:500;
+    margin:0 0 22px;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+  }
+
+  .arrows{ display:flex; flex-direction:column-reverse; align-items:center; gap:0; overflow:visible; }
+  .arrows svg{
+    width:38px; height:22px; opacity:0;
+    overflow:visible; /* prevents the drop-shadow glow from being clipped into a hard box */
+    margin-top:-7px;
+  }
+  .arrows svg:last-child{ margin-top:0; }
+  .overlay.show .arrows svg:nth-child(1){ animation:fadeUp .6s cubic-bezier(.16,.8,.3,1) .92s both, arrowUp 1.8s ease-in-out 1.5s infinite; }
+  .overlay.show .arrows svg:nth-child(2){ animation:fadeUp .6s cubic-bezier(.16,.8,.3,1) .92s both, arrowUp 1.8s ease-in-out 1.7s infinite; }
+  .overlay.show .arrows svg:nth-child(3){ animation:fadeUp .6s cubic-bezier(.16,.8,.3,1) .92s both, arrowUp 1.8s ease-in-out 1.9s infinite; }
+  @keyframes arrowUp{
+    0%{ opacity:0; transform:translateY(10px) scale(0.92); }
+    35%{ opacity:1; transform:translateY(3px) scale(1); }
+    75%{ opacity:0.7; transform:translateY(-9px) scale(1); }
+    100%{ opacity:0; transform:translateY(-16px) scale(0.96); }
+  }
+  .arrows path{
+    fill:none; stroke:var(--gold-bright); stroke-width:3; stroke-linecap:round; stroke-linejoin:round;
+    filter:drop-shadow(0 0 5px rgba(232,213,168,0.55)) drop-shadow(0 0 12px rgba(232,213,168,0.25));
+  }
+
+  .lockout-sub, .closed-sub{ color:var(--danger); font-size:15.5px; font-weight:500; opacity:0.9; margin:0 0 28px; }
+  .closed-sub{ color:var(--text-secondary); opacity:1; }
+
+  .ghost-btn{
+    height:50px;
+    padding:0 26px;
+    border-radius:14px;
+    border:1.5px solid var(--border);
+    background:var(--surface-raised);
+    color:var(--text-primary);
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:14.5px;
+    letter-spacing:0.02em;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .ghost-btn:hover{ border-color:var(--gold); background:var(--navy-2); }
+
+  .pin-dots{ display:flex; gap:14px; margin-bottom:22px; }
+  .pin-dot{
+    width:18px; height:18px; border-radius:50%;
+    border:1.5px solid var(--border-strong);
+    background:var(--void-2);
+    transition:all .12s ease;
+  }
+  .pin-dot.filled{ background:var(--gold); border-color:var(--gold); box-shadow:0 0 12px -2px rgba(207,185,145,0.6); }
+  .pin-dot.err{ border-color:var(--danger); background:var(--danger-dim); }
+
+  .admin-panel-body{ width:100%; max-width:380px; text-align:left; }
+  .admin-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface-raised);
+    border:1.5px solid var(--border);
+    border-radius:16px;
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .admin-row .label{ font-size:14px; font-weight:500; color:var(--text-primary); }
+  .admin-row .desc{ font-size:12px; color:var(--text-muted); margin-top:2px; }
+  .toggle{
+    width:48px; height:28px; border-radius:999px;
+    background:var(--border); position:relative; cursor:pointer;
+    transition:background .15s ease; flex-shrink:0;
+  }
+  .toggle.on{ background:var(--gold); }
+  .toggle::after{
+    content:''; position:absolute; top:3px; left:3px;
+    width:22px; height:22px; border-radius:50%;
+    background:var(--text-primary);
+    transition:transform .15s ease;
+  }
+  .toggle.on::after{ transform:translateX(20px); background:#1B1706; }
+  .admin-status-line{ font-size:12.5px; color:var(--text-muted); text-align:center; margin:14px 0 18px; }
+  .admin-actions{ display:flex; gap:10px; }
+  .admin-actions .ghost-btn{ flex:1; }
+
+  /* ---------- TACTILE TABLET KEYBOARDS ---------- */
+  .keyboard{
+    position:fixed; left:0; right:0; bottom:0;
+    background:linear-gradient(180deg, rgba(22, 29, 51, 0.98) 0%, rgba(16, 21, 38, 0.98) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top:1px solid rgba(255, 255, 255, 0.08);
+    padding:14px clamp(12px,3vw,24px) calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(110%);
+    transition:transform .25s cubic-bezier(.2,.8,.3,1);
+    z-index:60;
+    box-shadow:0 -24px 70px -20px rgba(0,0,0,0.8);
+  }
+  .keyboard.show{ transform:translateY(0); }
+
+  .kb-suggestions{
+    display:flex; justify-content:center; gap:10px;
+    margin-bottom:12px;
+    max-height:0; overflow:hidden; opacity:0;
+    transition:max-height .18s ease, opacity .18s ease, margin .18s ease;
+  }
+  .kb-suggestions.show{ max-height:50px; opacity:1; }
+  .kb-suggestion{
+    height:42px; padding:0 20px;
+    border-radius:12px;
+    background:var(--navy-2);
+    border:1px solid var(--border-strong);
+    color:var(--gold-bright);
+    font-family:'JetBrains Mono',monospace;
+    font-size:14px; font-weight:500;
+    display:flex; align-items:center;
+    cursor:pointer;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    transition:background .1s ease, transform .05s ease;
+  }
+  .kb-suggestion:active{ transform:scale(0.95); background:var(--surface); }
+
+  .kb-row{ display:flex; justify-content:center; gap:8px; margin-bottom:8px; }
+  .kb-row:last-child{ margin-bottom:0; }
+  
+  .kb-key{
+    flex:1;
+    height:min(60px, 7.5vh);
+    border-radius:12px;
+    border:1px solid rgba(255, 255, 255, 0.05);
+    background:linear-gradient(180deg, #2D3759 0%, #1F2742 100%);
+    box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1);
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    font-size:22px;
+    font-weight:500;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    user-select:none;
+    transition:transform .05s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  
+  .kb-key:active, .kb-key.pressed{
+    background:linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
+    color:#1B1706;
+    transform:translateY(4px) scale(0.96);
+    box-shadow:0 0 0 rgba(0,0,0,0), inset 0 2px 4px rgba(0,0,0,0.3);
+  }
+  
+  .kb-row-numbers .kb-key{ color:var(--text-secondary); font-family:'JetBrains Mono',monospace; font-size:18px; }
+  .kb-row-home{ padding:0 14px; gap:10px; }
+  .kb-key.wide{ flex:1.5; font-size: 18px; }
+  .kb-key.space{ flex:6; letter-spacing:0.04em; color:var(--text-muted); font-size:14px; text-transform:uppercase; font-weight:600; }
+  .kb-key.accent{
+    background:linear-gradient(155deg, var(--gold-bright), var(--gold));
+    color:#1B1706; font-weight:700; font-size:16px;
+    box-shadow:0 4px 0 rgba(138, 123, 92, 0.8), inset 0 1px 1px rgba(255,255,255,0.4);
+  }
+  .kb-key.accent:active{ 
+    background:linear-gradient(155deg, var(--gold-bright), var(--gold)); 
+    transform:translateY(4px) scale(0.96); 
+    box-shadow:0 0 0 rgba(0,0,0,0), inset 0 2px 4px rgba(0,0,0,0.3); 
+  }
+  .kb-key.symbol{ color:var(--gold-bright); font-family:'JetBrains Mono',monospace; font-size: 20px;}
+  .kb-key svg{ width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* TACTILE KEYPAD */
+  .keypad{
+    position:fixed; left:0; right:0; bottom:0;
+    background:linear-gradient(180deg, rgba(22, 29, 51, 0.98) 0%, rgba(16, 21, 38, 0.98) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top:1px solid rgba(255, 255, 255, 0.08);
+    padding:20px clamp(16px,6vw,60px) calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(110%);
+    transition:transform .25s cubic-bezier(.2,.8,.3,1);
+    z-index:60;
+    box-shadow:0 -20px 60px -20px rgba(0,0,0,0.8);
+  }
+  .keypad.show{ transform:translateY(0); }
+  .keypad-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+    max-width:340px; margin:0 auto;
+  }
+  .keypad-key{
+    height:70px;
+    border-radius:16px;
+    border:1px solid rgba(255, 255, 255, 0.05);
+    background:linear-gradient(180deg, #2D3759 0%, #1F2742 100%);
+    box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1);
+    color:var(--text-primary);
+    font-family:'Space Grotesk',sans-serif;
+    font-size:26px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none;
+    transition:transform .05s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  .keypad-key:active, .keypad-key.pressed{ 
+    background:linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 100%);
+    color:#1B1706;
+    transform:translateY(4px) scale(0.96); 
+    box-shadow:0 0 0 rgba(0,0,0,0), inset 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .keypad-key.ghost{ 
+    background:transparent; border:none; box-shadow:none;
+    color:var(--text-muted); font-size:15px; font-family:'Inter',sans-serif; font-weight:600; 
+  }
+  .keypad-key.ghost:active{ background:rgba(255,255,255,0.05); transform:scale(0.94) translateY(0); color:var(--text-primary); }
+  .keypad-key svg{ width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+
+  .kiosk-tag{
+    position:absolute; bottom:16px; left:0; right:0;
+    text-align:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    letter-spacing:0.08em;
+  }
+
+  @media (max-width:520px){
+    .panel{ border-radius:22px; }
+  }
+
+  /* ---------- boot-time lockout guard (no flash, no bypass via refresh) ---------- */
+  html.kiosk-lockout-boot #formPanel{ display:none !important; }
+  html.kiosk-lockout-boot .screen-glow{ display:none !important; }
+  html.kiosk-lockout-boot #lockoutPanel{ opacity:1 !important; pointer-events:auto !important; }
+  html.kiosk-lockout-boot #lockoutPanel .reveal{ opacity:1 !important; animation:none !important; transform:none !important; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  
+  <!-- Dediciated glow layer added here -->
+  <div class="screen-glow"></div>
+
+  <div class="topbar">
+    <div class="kiosk-id">
+      <span id="kioskLabel">ESPORTS ARENA</span>
+      <span class="clock" id="clockDisplay">--:--</span>
+    </div>
+    <div class="admin-btn" id="adminBtn" aria-label="Admin Access">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="10" r="2.5"/><path d="M12 12.5v4.5"/></svg>
+    </div>
+  </div>
+
+  <div class="card-wrap">
+
+    <!-- SIGN-IN FORM -->
+    <div class="panel" id="formPanel">
+      <div class="entry-badge">
+        <svg viewBox="0 0 24 24"><path d="M15 3h3a2 2 0 012 2v14a2 2 0 01-2 2h-3M10 17l5-5-5-5M15 12H3"/></svg>
+      </div>
+      <div class="eyebrow">PNW Esports Arena</div>
+      <h1>Welcome to the Esports Arena</h1>
+      <p class="sub">Sign in below before entering.</p>
+
+      <div class="banner" id="errorBanner">
+        <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9L2.7 17a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <span id="errorBannerText"></span>
+      </div>
+
+      <form id="checkinForm" novalidate>
+        <div class="field" id="nameWrap">
+          <label for="fullName">Full name</label>
+          <div class="inputwrap" id="nameInputWrap" data-target="fullName">
+            <svg viewBox="0 0 24 24"><path d="M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zM4.5 20.5a7.5 7.5 0 0115 0"/></svg>
+            <input type="text" id="fullName" placeholder="Alex Rivera" readonly />
+          </div>
+          <div class="errmsg" id="nameErr"></div>
+        </div>
+
+        <div class="field" id="emailWrap">
+          <label for="email">Purdue email</label>
+          <div class="inputwrap" id="emailInputWrap" data-target="email">
+            <svg viewBox="0 0 24 24"><path d="M3 6.5h18v11H3v-11zM3 6.5l9 7 9-7"/></svg>
+            <input type="text" id="email" placeholder="rivera24@purdue.edu" readonly />
+          </div>
+          <div class="field-hint">@purdue.edu or @pnw.edu</div>
+          <div class="errmsg" id="emailErr"></div>
+        </div>
+
+        <label class="agree" id="agreeWrap">
+          <input type="checkbox" id="rules" />
+          <span class="checkbox">
+            <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" fill="none" stroke="#1B1706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="agreetext">I agree to follow all Arena Rules and Regulations.</span>
+        </label>
+        <div class="errmsg" id="rulesErr" style="text-align:center;"></div>
+
+        <button type="submit" class="submit" id="submitBtn">
+          <span id="btnLabel" style="display:flex;align-items:center;gap:10px;">
+            SIGN IN
+            <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </span>
+        </button>
+      </form>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="overlay" id="successPanel">
+      <div class="icon-ring success reveal" style="animation-delay:0s">
+        <div class="icon-circle success">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+      </div>
+      <div class="status-badge success reveal" style="animation-delay:.25s">
+        <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        Signed in
+      </div>
+      <p class="welcome-label reveal" style="animation-delay:.38s">Welcome</p>
+      <h2 class="reveal" style="animation-delay:.5s"><span id="successName" class="accent">Jay</span></h2>
+      <p class="arena-line reveal" style="animation-delay:.58s">to the PNW Esports Arena</p>
+      <div class="divider reveal" style="animation-delay:.68s"></div>
+      <p class="enterline reveal" style="animation-delay:.8s">You may now enter</p>
+      <div class="arrows reveal" style="animation-delay:.92s">
+        <svg viewBox="0 0 34 20"><path d="M4 16 L17 4 L30 16"/></svg>
+        <svg viewBox="0 0 34 20"><path d="M4 16 L17 4 L30 16"/></svg>
+        <svg viewBox="0 0 34 20"><path d="M4 16 L17 4 L30 16"/></svg>
+      </div>
+    </div>
+
+    <!-- LOCKOUT -->
+    <div class="overlay" id="lockoutPanel">
+      <div class="icon-ring danger">
+        <div class="icon-circle danger">
+          <svg viewBox="0 0 24 24"><path d="M6 11V8a6 6 0 1112 0v3M5 11h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1z"/></svg>
+        </div>
+      </div>
+      <h2 class="danger-text">You have too many failed attempts</h2>
+      <p class="lockout-sub">Please speak to the Student Worker.</p>
+      <div id="lockoutIdle">
+        <button type="button" class="ghost-btn" id="passcodeToggleBtn">Enter passcode</button>
+      </div>
+      <div id="lockoutPasscode" style="display:none;">
+        <div class="pin-dots" id="lockoutPinDots">
+          <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+        </div>
+        <div class="errmsg" id="lockoutPinErr"></div>
+      </div>
+    </div>
+
+    <!-- ARENA CLOSED -->
+    <div class="overlay" id="closedPanel">
+      <div class="icon-ring neutral">
+        <div class="icon-circle neutral">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        </div>
+      </div>
+      <h2 style="font-size:clamp(24px,3.4vw,32px);">Arena Closed</h2>
+      <p class="closed-sub" id="closedMessage">Please check back during arena hours.</p>
+      <div class="divider"></div>
+      <p class="field-hint" style="font-size:13px;">Sun–Fri 9:00 AM – 5:00 PM · Closed Saturdays</p>
+    </div>
+
+    <!-- ADMIN GATE (passcode) -->
+    <div class="overlay" id="adminGatePanel">
+      <div class="icon-ring neutral">
+        <div class="icon-circle neutral">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="10" r="2.5"/><path d="M12 12.5v4.5"/></svg>
+        </div>
+      </div>
+      <h2 style="font-size:clamp(22px,3vw,28px);">Staff Access</h2>
+      <p class="closed-sub" style="margin-bottom:24px;">Enter the admin passcode to continue.</p>
+      <div class="pin-dots" id="adminPinDots">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div class="errmsg" id="adminPinErr"></div>
+      <button type="button" class="ghost-btn" id="adminGateCancel" style="margin-top:22px;">Cancel</button>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    <div class="overlay" id="adminPanel">
+      <div class="icon-ring neutral" style="margin-bottom:12px; width:70px; height:70px;">
+        <div class="icon-circle neutral" style="width:52px; height:52px;">
+          <svg viewBox="0 0 24 24" style="width:24px; height:24px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="10" r="2.5"/><path d="M12 12.5v4.5"/></svg>
+        </div>
+      </div>
+      <h2 style="font-size:clamp(22px,3vw,26px); margin-bottom:4px;">Admin Panel</h2>
+      <p class="closed-sub" style="margin-bottom:22px;" id="adminRoomLine">Kiosk 1 · Main Room</p>
+
+      <div class="admin-panel-body">
+        <div class="admin-row">
+          <div>
+            <div class="label">Bypass arena hours</div>
+            <div class="desc">Force the kiosk open right now</div>
+          </div>
+          <div class="toggle" id="bypassToggle"></div>
+        </div>
+        <div class="admin-row">
+          <div>
+            <div class="label">Clear failed attempts</div>
+            <div class="desc">Resets the sign-in lockout counter</div>
+          </div>
+          <button type="button" class="ghost-btn" id="clearAttemptsBtn" style="height:38px; padding:0 16px; font-size:13px;">Clear</button>
+        </div>
+      </div>
+
+      <p class="admin-status-line" id="adminStatusLine">Arena status: —</p>
+      <div class="admin-actions">
+        <button type="button" class="ghost-btn" id="adminExitBtn">Done</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="kiosk-tag" id="kioskTag">ESPORTS ARENA</div>
+
+  <!-- UPGRADED TACTILE ALPHA/EMAIL KEYBOARD -->
+  <div class="keyboard" id="alphaKeyboard">
+    <div class="kb-suggestions" id="kbSuggestions">
+      <div class="kb-suggestion" data-domain="@purdue.edu">@purdue.edu</div>
+      <div class="kb-suggestion" data-domain="@pnw.edu">@pnw.edu</div>
+    </div>
+    <div class="kb-row kb-row-numbers" id="kbRowNumbers"></div>
+    <div class="kb-row" id="kbRow1"></div>
+    <div class="kb-row" id="kbRow2"></div>
+    <div class="kb-row" id="kbRow3"></div>
+    <div class="kb-row kb-row-home" id="kbRow4">
+      <div class="kb-key wide symbol" data-char="@">@</div>
+      <div class="kb-key space" data-action="space">space</div>
+      <div class="kb-key wide symbol" data-char=".">.</div>
+      <div class="kb-key wide accent" data-action="done">Done</div>
+    </div>
+  </div>
+
+  <!-- UPGRADED TACTILE NUMERIC KEYPAD -->
+  <div class="keypad" id="numKeypad">
+    <div class="keypad-grid" id="keypadGrid"></div>
+  </div>
+
+</div>
+
+<script>
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('touchmove', e => { if (e.scale !== 1) e.preventDefault(); }, { passive:false });
+  let lastTouch = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    if (now - lastTouch <= 300) e.preventDefault();
+    lastTouch = now;
+  }, false);
+  window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; });
+
+  const KIOSK_CONFIG = { id: 'kiosk-1', label: 'Kiosk 1', room: 'Main Room (PCs)' };
+
+  // ---- Shared audio engine for key clicks (created lazily on first touch, iOS requires a gesture) ----
+  let sharedAudioCtx = null;
+  function getAudioCtx(){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!sharedAudioCtx) sharedAudioCtx = new AC();
+      if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
+      return sharedAudioCtx;
+    }catch(e){ return null; }
+  }
+  function playKeySound(kind){
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try{
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const freq = kind === 'accent' ? 880 : kind === 'delete' ? 340 : kind === 'space' ? 200 : 640;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.85, now + 0.045);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.06);
+    }catch(e){}
+  }
+  // Instant, timer-based press feedback so the key visibly reacts on touch-down
+  // regardless of whether a synthetic :active state fires during fast typing.
+  function pulsePress(el){
+    el.classList.add('pressed');
+    clearTimeout(el._pressTimer);
+    el._pressTimer = setTimeout(() => el.classList.remove('pressed'), 110);
+  }
+
+  document.getElementById('kioskLabel').textContent = KIOSK_CONFIG.label;
+  document.getElementById('kioskTag').textContent = 'ESPORTS ARENA';
+  document.getElementById('adminRoomLine').textContent = KIOSK_CONFIG.label + ' · ' + KIOSK_CONFIG.room;
+
+  function tickClock(){
+    const now = new Date();
+    document.getElementById('clockDisplay').textContent = now.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  }
+  tickClock();
+  setInterval(tickClock, 15000);
+
+  const stage = document.getElementById('stage');
+  const form = document.getElementById('checkinForm');
+  const fullName = document.getElementById('fullName');
+  const email = document.getElementById('email');
+  const rules = document.getElementById('rules');
+  const submitBtn = document.getElementById('submitBtn');
+  const formPanel = document.getElementById('formPanel');
+  const successPanel = document.getElementById('successPanel');
+  const successName = document.getElementById('successName');
+  const errorBanner = document.getElementById('errorBanner');
+  const errorBannerText = document.getElementById('errorBannerText');
+  const lockoutPanel = document.getElementById('lockoutPanel');
+  const lockoutIdle = document.getElementById('lockoutIdle');
+  const lockoutPasscode = document.getElementById('lockoutPasscode');
+  const passcodeToggleBtn = document.getElementById('passcodeToggleBtn');
+  const closedPanel = document.getElementById('closedPanel');
+  const adminBtn = document.getElementById('adminBtn');
+  const adminGatePanel = document.getElementById('adminGatePanel');
+  const adminGateCancel = document.getElementById('adminGateCancel');
+  const adminPanel = document.getElementById('adminPanel');
+  const bypassToggle = document.getElementById('bypassToggle');
+  const clearAttemptsBtn = document.getElementById('clearAttemptsBtn');
+  const adminExitBtn = document.getElementById('adminExitBtn');
+  const adminStatusLine = document.getElementById('adminStatusLine');
+
+  function showBanner(msg){ errorBannerText.textContent = msg; errorBanner.classList.add('show'); }
+  function hideBanner(){ errorBanner.classList.remove('show'); }
+
+  // ================= TACTILE ALPHA KEYBOARD =================
+  const alphaKeyboard = document.getElementById('alphaKeyboard');
+  const kbRowNumbers = document.getElementById('kbRowNumbers');
+  const kbRow1 = document.getElementById('kbRow1');
+  const kbRow2 = document.getElementById('kbRow2');
+  const kbRow3 = document.getElementById('kbRow3');
+  const kbSuggestions = document.getElementById('kbSuggestions');
+  let activeField = null;
+
+  const NUMBER_ROW = ['1','2','3','4','5','6','7','8','9','0'];
+  const LETTER_ROWS = [
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l'],
+    ['z','x','c','v','b','n','m']
+  ];
+
+  function makeKey(label, extraClass, action, svg){
+    const el = document.createElement('div');
+    el.className = 'kb-key' + (extraClass ? ' ' + extraClass : '');
+    if (svg) el.innerHTML = svg; else el.textContent = label;
+    if (action) el.dataset.action = action;
+    else el.dataset.char = label;
+    return el;
+  }
+
+  function renderKeyboard(){
+    kbRowNumbers.innerHTML = ''; kbRow1.innerHTML = ''; kbRow2.innerHTML = ''; kbRow3.innerHTML = '';
+    NUMBER_ROW.forEach(ch => kbRowNumbers.appendChild(makeKey(ch)));
+    LETTER_ROWS[0].forEach(ch => kbRow1.appendChild(makeKey(ch)));
+    LETTER_ROWS[1].forEach(ch => kbRow2.appendChild(makeKey(ch)));
+    LETTER_ROWS[2].forEach(ch => kbRow3.appendChild(makeKey(ch)));
+    const back = makeKey('', null, 'backspace', '<svg viewBox="0 0 24 24"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2zM18 9l-6 6M12 9l6 6"/></svg>');
+    kbRow3.appendChild(back);
+  }
+  renderKeyboard();
+
+  function setActiveField(inputEl, wrapEl){
+    document.querySelectorAll('.inputwrap.active').forEach(w => w.classList.remove('active'));
+    activeField = inputEl;
+    if (wrapEl) wrapEl.classList.add('active');
+    kbSuggestions.classList.toggle('show', inputEl === email);
+    openKeyboard();
+  }
+
+  function openKeyboard(){
+    alphaKeyboard.classList.add('show');
+    stage.classList.add('kb-open');
+  }
+  function closeKeyboard(){
+    alphaKeyboard.classList.remove('show');
+    stage.classList.remove('kb-open');
+    document.querySelectorAll('.inputwrap.active').forEach(w => w.classList.remove('active'));
+    activeField = null;
+  }
+
+  document.getElementById('nameInputWrap').addEventListener('click', function(){ setActiveField(fullName, this); });
+  document.getElementById('emailInputWrap').addEventListener('click', function(){ setActiveField(email, this); });
+
+  alphaKeyboard.addEventListener('pointerdown', (e) => {
+    // pointerdown fires the instant a finger touches down — unlike 'click', it
+    // isn't cancelled by the small finger drift that happens with fast typing,
+    // so keys never silently get missed.
+    const suggestion = e.target.closest('.kb-suggestion');
+    if (suggestion && activeField === email){
+      e.preventDefault();
+      pulsePress(suggestion);
+      playKeySound('accent');
+      const localPart = email.value.split('@')[0];
+      email.value = localPart + suggestion.dataset.domain;
+      return;
+    }
+
+    const key = e.target.closest('.kb-key');
+    if (!key || !activeField) return;
+    e.preventDefault();
+    pulsePress(key);
+
+    if (key.dataset.action === 'space'){
+      playKeySound('space');
+      if (activeField === fullName) activeField.value += ' ';
+      return;
+    }
+    if (key.dataset.action === 'backspace'){
+      playKeySound('delete');
+      activeField.value = activeField.value.slice(0, -1);
+      return;
+    }
+    if (key.dataset.action === 'done'){ playKeySound('accent'); closeKeyboard(); return; }
+
+    let ch = key.dataset.char;
+    if (ch === undefined) return;
+    playKeySound('default');
+
+    if (activeField === email){
+      ch = ch.toLowerCase();
+    } else if (activeField === fullName){
+      const v = activeField.value;
+      const atWordStart = v.length === 0 || v.endsWith(' ');
+      ch = atWordStart ? ch.toUpperCase() : ch.toLowerCase();
+    }
+    activeField.value += ch;
+  });
+
+  // ================= TACTILE NUMERIC KEYPAD =================
+  const numKeypad = document.getElementById('numKeypad');
+  const keypadGrid = document.getElementById('keypadGrid');
+  let pinTarget = null;
+  let pinValue = '';
+  const STAFF_PASSCODE = '1234';
+
+  function renderKeypad(){
+    keypadGrid.innerHTML = '';
+    const layout = ['1','2','3','4','5','6','7','8','9','clear','0','back'];
+    layout.forEach(k => {
+      const el = document.createElement('div');
+      if (k === 'clear'){
+        el.className = 'keypad-key ghost';
+        el.textContent = 'Clear';
+        el.dataset.action = 'clear';
+      } else if (k === 'back'){
+        el.className = 'keypad-key ghost';
+        el.innerHTML = '<svg viewBox="0 0 24 24"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2zM18 9l-6 6M12 9l6 6"/></svg>';
+        el.dataset.action = 'back';
+      } else {
+        el.className = 'keypad-key';
+        el.textContent = k;
+        el.dataset.digit = k;
+      }
+      keypadGrid.appendChild(el);
+    });
+  }
+  renderKeypad();
+
+  function pinDotsEl(){ return pinTarget === 'admin' ? document.getElementById('adminPinDots') : document.getElementById('lockoutPinDots'); }
+  function pinErrEl(){ return pinTarget === 'admin' ? document.getElementById('adminPinErr') : document.getElementById('lockoutPinErr'); }
+
+  function updatePinDots(errState){
+    const dots = pinDotsEl().querySelectorAll('.pin-dot');
+    dots.forEach((d, i) => {
+      d.classList.toggle('filled', i < pinValue.length && !errState);
+      d.classList.toggle('err', !!errState);
+    });
+  }
+
+  function openKeypad(target){
+    pinTarget = target;
+    pinValue = '';
+    pinErrEl().textContent = '';
+    updatePinDots(false);
+    numKeypad.classList.add('show');
+    stage.classList.add('kb-open');
+  }
+  function closeKeypad(){
+    numKeypad.classList.remove('show');
+    stage.classList.remove('kb-open');
+    pinTarget = null;
+  }
+
+  numKeypad.addEventListener('pointerdown', (e) => {
+    const key = e.target.closest('.keypad-key');
+    if (!key || !pinTarget) return;
+    e.preventDefault();
+    pulsePress(key);
+
+    if (key.dataset.action === 'clear'){
+      playKeySound('delete');
+      pinValue = ''; pinErrEl().textContent = ''; updatePinDots(false);
+      return;
+    }
+    if (key.dataset.action === 'back'){
+      playKeySound('delete');
+      pinValue = pinValue.slice(0, -1); pinErrEl().textContent = ''; updatePinDots(false);
+      return;
+    }
+    if (key.dataset.digit && pinValue.length < 4){
+      playKeySound('default');
+      pinValue += key.dataset.digit;
+      updatePinDots(false);
+      if (pinValue.length === 4){ setTimeout(() => submitPin(), 120); }
+    }
+  });
+
+  function submitPin(){
+    if (pinValue === STAFF_PASSCODE){
+      if (pinTarget === 'admin'){
+        closeKeypad();
+        adminGatePanel.classList.remove('show');
+        openAdminPanel();
+      } else {
+        closeKeypad();
+        clearLockout();
+      }
+    } else {
+      pinErrEl().textContent = 'Incorrect passcode. Try again.';
+      updatePinDots(true);
+      setTimeout(() => { pinValue = ''; updatePinDots(false); }, 500);
+    }
+  }
+
+  passcodeToggleBtn.addEventListener('click', () => {
+    lockoutIdle.style.display = 'none';
+    lockoutPasscode.style.display = 'block';
+    openKeypad('lockout');
+  });
+
+  const MAX_ATTEMPTS = 5;
+  const ATTEMPTS_KEY = 'arena_failed_attempts_' + KIOSK_CONFIG.id;
+  const LOCKOUT_KEY = 'arena_lockout_active_' + KIOSK_CONFIG.id;
+
+  // Cookies back up localStorage so a plain page refresh — or a kiosk browser
+  // that clears one storage type on reload — can't be used to dodge lockout.
+  function setCookie(name, value){
+    try{
+      const d = new Date();
+      d.setTime(d.getTime() + 365*24*60*60*1000);
+      document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/';
+    }catch(e){}
+  }
+  function getCookie(name){
+    try{
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }catch(e){ return null; }
+  }
+
+  function getAttempts(){
+    const ls = parseInt(localStorage.getItem(ATTEMPTS_KEY) || '0', 10);
+    const ck = parseInt(getCookie(ATTEMPTS_KEY) || '0', 10);
+    const n = Math.max(ls, ck);
+    if (n !== ls || n !== ck) setAttempts(n); // self-heal if one storage fell out of sync
+    return n;
+  }
+  function setAttempts(n){
+    localStorage.setItem(ATTEMPTS_KEY, String(n));
+    setCookie(ATTEMPTS_KEY, String(n));
+  }
+  function isLockoutActive(){
+    return localStorage.getItem(LOCKOUT_KEY) === 'true' || getCookie(LOCKOUT_KEY) === 'true';
+  }
+  function setLockoutActive(v){
+    localStorage.setItem(LOCKOUT_KEY, v ? 'true' : 'false');
+    setCookie(LOCKOUT_KEY, v ? 'true' : 'false');
+  }
+
+  function showLockout(){
+    setLockoutActive(true);
+    lockoutPasscode.style.display = 'none';
+    lockoutIdle.style.display = 'block';
+    closeKeypad();
+    setPanelVisibility('lockout');
+  }
+  function clearLockout(){
+    setAttempts(0);
+    setLockoutActive(false);
+    hideBanner();
+    form.reset();
+    setPanelVisibility('form');
+  }
+
+  const OPEN_HOUR = 9;
+  const CLOSE_HOUR = 17;
+  const CLOSED_WEEKDAY = 6;
+  const BYPASS_KEY = 'arena_admin_bypass_' + KIOSK_CONFIG.id;
+
+  function isBypassActive(){ return localStorage.getItem(BYPASS_KEY) === 'true'; }
+  function setBypass(v){ localStorage.setItem(BYPASS_KEY, v ? 'true' : 'false'); }
+
+  function isArenaOpenNow(){
+    const now = new Date();
+    if (now.getDay() === CLOSED_WEEKDAY) return false;
+    const h = now.getHours() + now.getMinutes() / 60;
+    return h >= OPEN_HOUR && h < CLOSE_HOUR;
+  }
+
+  function scheduleMessage(){
+    if (new Date().getDay() === CLOSED_WEEKDAY) return 'The arena is closed on Saturdays.';
+    return "The arena opens at 9:00 AM.";
+  }
+
+  let currentState = 'form';
+  function setPanelVisibility(state){
+    // Tear down any on-screen keyboard first so it can never linger over the
+    // wrong panel if a state change (auto-close, lockout, success) fires while
+    // someone is mid-typing. Callers that need a keypad (admin gate / lockout
+    // passcode) re-open it immediately after this returns.
+    closeKeyboard();
+    closeKeypad();
+    const wasHidden = formPanel.style.display === 'none';
+    currentState = state;
+    stage.classList.toggle('success-mode', state === 'success'); 
+    if (state === 'form'){
+      // Strip any leftover shake class first so it can never replay when the
+      // panel is unhidden (display:none -> visible restarts CSS animations).
+      formPanel.classList.remove('shake', 'panel-enter');
+      formPanel.style.display = '';
+      if (wasHidden){
+        void formPanel.offsetWidth; // force reflow so the enter animation restarts cleanly
+        formPanel.classList.add('panel-enter');
+      }
+    } else {
+      formPanel.style.display = 'none';
+    }
+    successPanel.classList.toggle('show', state === 'success');
+    lockoutPanel.classList.toggle('show', state === 'lockout');
+    closedPanel.classList.toggle('show', state === 'closed');
+    adminGatePanel.classList.toggle('show', state === 'adminGate');
+    adminPanel.classList.toggle('show', state === 'admin');
+  }
+  // Belt-and-suspenders: also strip 'shake' the moment its animation finishes,
+  // so it can never be sitting on the element when the panel is hidden/reshown.
+  formPanel.addEventListener('animationend', (e) => {
+    if (e.animationName === 'shake') formPanel.classList.remove('shake');
+    if (e.animationName === 'panelEnter') formPanel.classList.remove('panel-enter');
+  });
+
+  function evaluateKioskState(){
+    if (currentState === 'success' || currentState === 'adminGate' || currentState === 'admin') return;
+    if (isLockoutActive() || getAttempts() >= MAX_ATTEMPTS){
+      if (currentState !== 'lockout') showLockout();
+      return;
+    }
+    if (!isArenaOpenNow() && !isBypassActive()){
+      document.getElementById('closedMessage').textContent = scheduleMessage();
+      if (currentState !== 'closed') setPanelVisibility('closed');
+      return;
+    }
+    if (currentState !== 'form') setPanelVisibility('form');
+  }
+
+  evaluateKioskState();
+  document.documentElement.classList.remove('kiosk-lockout-boot');
+  setInterval(evaluateKioskState, 30000);
+  // Catch iOS Safari's back-forward cache restoring the page without a full
+  // reload, and tab refocus — both are ways someone could otherwise dodge lockout.
+  window.addEventListener('pageshow', (e) => { if (e.persisted) evaluateKioskState(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) evaluateKioskState(); });
+
+  adminBtn.addEventListener('click', () => {
+    setPanelVisibility('adminGate');
+    openKeypad('admin');
+  });
+  adminGateCancel.addEventListener('click', () => {
+    closeKeypad();
+    currentState = null;
+    evaluateKioskState();
+  });
+
+  function openAdminPanel(){
+    setPanelVisibility('admin');
+    bypassToggle.classList.toggle('on', isBypassActive());
+    refreshAdminStatus();
+  }
+  function refreshAdminStatus(){
+    const open = isArenaOpenNow();
+    const bypass = isBypassActive();
+    let status = open ? 'Arena is currently OPEN.' : 'Arena is currently CLOSED.';
+    if (bypass) status += ' Bypass is ON — kiosk stays open.';
+    adminStatusLine.textContent = 'Arena status: ' + status;
+  }
+
+  bypassToggle.addEventListener('click', () => {
+    const next = !isBypassActive();
+    setBypass(next);
+    bypassToggle.classList.toggle('on', next);
+    refreshAdminStatus();
+  });
+  clearAttemptsBtn.addEventListener('click', () => { setAttempts(0); setLockoutActive(false); });
+  adminExitBtn.addEventListener('click', () => {
+    currentState = null;
+    evaluateKioskState();
+  });
+
+  function playWelcomeSound() {
+    // Reuse the shared audio engine instead of spawning a fresh AudioContext
+    // each sign-in. Browsers cap concurrent contexts (~6), so on an all-day
+    // kiosk a per-call context would leak until audio stops working entirely.
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      const now = ctx.currentTime;
+
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+
+        const startTime = now + i * 0.09;
+        // Ramp up from near-zero rather than jumping straight to 0.15, which
+        // avoids the audible click a hard setValueAtTime start produces.
+        gain.gain.setValueAtTime(0.0001, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.15, startTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(startTime + 0.4);
+      });
+    } catch(e) {
+      console.log('Welcome sound blocked or not supported:', e);
+    }
+  }
+
+  function setError(fieldWrap, errEl, msg){
+    fieldWrap.classList.toggle('err', !!msg);
+    errEl.textContent = msg || '';
+  }
+
+  function splitName(full){
+    const parts = full.trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return null;
+    const last = parts.pop();
+    const first = parts.join(' ');
+    return { firstName: first, lastName: last };
+  }
+
+  function validate(){
+    let ok = true;
+    let nameParts = null;
+
+    const nameVal = fullName.value.trim();
+    if (!nameVal){
+      setError(document.getElementById('nameWrap'), document.getElementById('nameErr'), 'Required');
+      ok = false;
+    } else {
+      nameParts = splitName(nameVal);
+      if (!nameParts){
+        setError(document.getElementById('nameWrap'), document.getElementById('nameErr'), 'Enter first and last name');
+        ok = false;
+      } else setError(document.getElementById('nameWrap'), document.getElementById('nameErr'), '');
+    }
+
+    const emailVal = email.value.trim().toLowerCase();
+    const emailOk = /^[a-z0-9._%+-]+@(purdue|pnw)\.edu$/.test(emailVal);
+    if (!emailVal){
+      setError(document.getElementById('emailWrap'), document.getElementById('emailErr'), 'Required');
+      ok = false;
+    } else if (!emailOk){
+      setError(document.getElementById('emailWrap'), document.getElementById('emailErr'), 'Use your @purdue.edu or @pnw.edu email');
+      ok = false;
+    } else setError(document.getElementById('emailWrap'), document.getElementById('emailErr'), '');
+
+    const rulesErr = document.getElementById('rulesErr');
+    const agreeWrap = document.getElementById('agreeWrap');
+    if (!rules.checked){
+      agreeWrap.classList.add('err');
+      rulesErr.textContent = 'You must accept the Arena Rules to continue.';
+      ok = false;
+    } else {
+      agreeWrap.classList.remove('err');
+      rulesErr.textContent = '';
+    }
+
+    return { ok, nameParts, emailVal };
+  }
+
+  function submitCheckin(payload){
+    return new Promise(resolve => {
+      console.log('sign-in payload (mock)', payload);
+      setTimeout(() => resolve({ ok:true }), 900);
+    });
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    closeKeyboard();
+    const result = validate();
+
+    if (!result.ok){
+      const nameErr = document.getElementById('nameErr').textContent;
+      const emailErr = document.getElementById('emailErr').textContent;
+      const rulesErr = document.getElementById('rulesErr').textContent;
+
+      let msg = 'Please fix the highlighted fields below.';
+      if (emailErr) msg = emailErr + '.';
+      else if (rulesErr) msg = rulesErr;
+      else if (nameErr) msg = nameErr === 'Required' ? 'Enter your full name.' : nameErr + '.';
+
+      const attempts = getAttempts() + 1;
+      setAttempts(attempts);
+
+      if (attempts >= MAX_ATTEMPTS){
+        showLockout();
+        return;
+      }
+
+      const remaining = MAX_ATTEMPTS - attempts;
+      msg += ' (' + remaining + ' attempt' + (remaining === 1 ? '' : 's') + ' remaining)';
+      showBanner(msg);
+
+      formPanel.classList.remove('shake');
+      void formPanel.offsetWidth;
+      formPanel.classList.add('shake');
+      return;
+    }
+
+    setAttempts(0);
+    hideBanner();
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>';
+
+    const payload = {
+      firstName: result.nameParts.firstName,
+      lastName: result.nameParts.lastName,
+      email: result.emailVal,
+      acceptedRules: true,
+      kioskId: KIOSK_CONFIG.id,
+      room: KIOSK_CONFIG.room,
+      timestamp: new Date().toISOString()
+    };
+
+    await submitCheckin(payload);
+
+    successName.textContent = payload.firstName;
+    setPanelVisibility('success');
+
+    playWelcomeSound();
+
+    setTimeout(() => {
+      setAttempts(0);
+      form.reset();
+      currentState = null;
+      evaluateKioskState();
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<span style="display:flex;align-items:center;gap:10px;">SIGN IN<svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:#1B1706;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>';
+    }, 5000);
+  });
+</script>
+
+</body>
+</html>
