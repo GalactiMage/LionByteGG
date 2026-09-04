@@ -107,6 +107,16 @@ ENV/
 *.tmp
 
 # ========================
+# Backups & throwaway dev scratch files
+# ========================
+*.bak
+*_old.py
+*_old[0-9].py
+_srv_err.log
+_srv_out.log
+_clean.py
+
+# ========================
 # IDE
 # ========================
 .vscode/

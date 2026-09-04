@@ -21,7 +21,18 @@
 
 ---
 
-A complete esports management system built for **Purdue University Northwest (PNW)** — four Discord bots and a full web dashboard that handle student onboarding, moderation, shift management, music, Minecraft server integration, and more.
+A complete esports management system built for **Purdue University Northwest (PNW)** — four Discord bots and a full web dashboard that handle student onboarding, moderation, shift management, music, Minecraft server integration, arena kiosk sign-ins, and more.
+
+---
+
+## 📖 Full Documentation
+
+This README is the quick-start. For everything else, read the docs:
+
+| Document | What's in it |
+|---|---|
+| **[docs/NOVA_COMPLETE_GUIDE.md](docs/NOVA_COMPLETE_GUIDE.md)** | The complete human-readable guide: every dashboard page explained, the full permissions model, hard rules (do this / never do that), a troubleshooting quick-reference, and what makes the UI polished |
+| **[docs/manual/](docs/manual/00_index.json)** | A 12-chapter machine-readable reference — every bot, cog, command, Flask route, permission key, and settings file in the system, in JSON |
 
 ---
 
@@ -139,26 +150,33 @@ LionBeatsGG\start-all.bat
 
 ## 🔄 Updating the System
 
-### Quick Update (recommended)
-
-Use the included batch scripts to pull the latest code **without touching any student data, databases, or `.env` files**:
+### Pulling the Latest Code
 
 ```bash
-# Pull latest code only
-update_code.bat
-
-# Pull latest code AND restart all bots
-update_and_restart.bat
-```
-
-### Manual Update
-
-```bash
-cd G:\LionByteGG
+cd C:\LionByteGG
 git pull origin main
 ```
 
-Then restart the bots that were changed.
+`.gitignore` keeps this safe — student data, databases, `.env` files, and caches are never tracked, so a pull never touches or overwrites them.
+
+### Restarting After a Pull
+
+Restart only the services that changed:
+
+```bash
+# Stop then start a bot
+LionByteGG\stop_bot.bat        &&  LionByteGG\start_bot.bat
+LionShiftGG\stop_bot.bat       &&  LionShiftGG\start_bot.bat
+BoilerCraftGG\stop_bot.bat     &&  BoilerCraftGG\start.bat
+LionBeatsGG\stop-all.bat       &&  LionBeatsGG\start-all.bat
+
+# Stop then start the web dashboard
+LionByteGG\stop_website.bat    &&  LionByteGG\start_website_production.bat
+```
+
+Or just re-run `LionByteGG\Start LionServices.bat` to restart everything at once — it's single-instance guarded, so it won't double-launch anything already running.
+
+> **Nova (the web dashboard) runs in production mode with no hot-reload.** Any edit to `web/app.py` or a template in `web/templates/` requires a restart to take effect, and a browser hard-refresh (Ctrl+F5) to clear cached assets.
 
 ### Pushing Your Own Changes
 
@@ -447,9 +465,11 @@ npm update
 
 ---
 
-## 🌐 Web Dashboard
+## 🌐 Web Dashboard ("Nova")
 
-The web dashboard provides a browser-based control panel for managing the entire system. Access requires Discord OAuth2 login with appropriate permissions.
+The web dashboard ("Nova") provides a browser-based control panel for managing the entire
+system — every bot above is administered from this one login. Full walkthrough of every page:
+**[docs/NOVA_COMPLETE_GUIDE.md](docs/NOVA_COMPLETE_GUIDE.md)**.
 
 ### Pages
 
@@ -460,15 +480,20 @@ The web dashboard provides a browser-based control panel for managing the entire
 | **Moderation** | Moderation templates, flagged word management |
 | **Tickets** | View open/closed tickets, manage blacklist |
 | **Varsity** | Review and approve/deny varsity registrations |
-| **Rosters** | Team rosters, send announcements and DMs to teams |
+| **Rosters** | Team rosters (multi-team support), Discord role sync, match stats, CSV import/export |
 | **Analytics** | Server statistics and charts |
-| **Settings** | Bot configuration |
+| **Settings** | Arena hours, esports games list, team→role mapping, flagged words |
 | **Logs** | Activity and moderation logs |
 | **Reaction Roles** | Manage reaction role assignments |
 | **VC System** | View/manage voice channel generators |
-| **GGLeap** | Arena PC status and game management |
-| **On-Duty Dashboard** | Student worker on-duty panel |
-| **On-Duty Equipment** | Equipment tracking for staff |
+| **Arena Staff — Live Feed** | Real-time kiosk sign-ins |
+| **Arena Staff — Sessions** | Live PC room map with lock/unlock controls |
+| **Arena Staff — Kiosk Manager** | Kiosk hours, announcement banner, sign-in guard, PC screen-lock automation |
+| **Arena Staff — Activity** | Traffic analytics: heatmaps, busiest hours, top visitors |
+| **Arena Staff — Students** | Per-guest visit history, staff notes, ban/watch status |
+| **Arena Staff — Incident Reports** | File and track behavioral incidents |
+| **Arena Staff — Inventory** | Equipment checkout/checkin with QR-code self-service |
+| **LionShift Dashboard** | Shift calendar, schedule creator, worker roster, offers/trades/time-off approvals |
 | **Music Dashboard** | LionBeatsGG controls, now playing, history |
 | **Music Settings** | Music bot configuration |
 | **Music Features** | Quiz songs, panels, stats management |
@@ -479,6 +504,37 @@ The web dashboard provides a browser-based control panel for managing the entire
 | **BoilerCraft Members** | Member management (kick/ban/timeout/DM) |
 | **BoilerCraft Analytics** | Player count analytics |
 | **Admin** | Dashboard user/group/permission management |
+
+### Permissions System
+
+Every dashboard user belongs to a **permission group** with a list of keys following a simple
+convention:
+
+| Key pattern | Meaning |
+|---|---|
+| `section.NAME` | Shows an entire bot's section in the sidebar (e.g. `section.arena`) |
+| `page.NAME` | Makes one specific page's nav link + route reachable (e.g. `page.rosters`) |
+| `NAME.action` | A specific in-page capability, separate from just viewing (e.g. `arena.manage`, `moderation.warn`) |
+| `admin.panel` | Full bypass — reserved for true administrators |
+
+Groups are managed entirely in `/admin` — no code changes needed to create a new role.
+Full details, including common pitfalls, are in
+**[docs/NOVA_COMPLETE_GUIDE.md § 4](docs/NOVA_COMPLETE_GUIDE.md#4-the-permissions-system-read-this-before-editing-anyones-access)**.
+
+### ⚠️ Rules to Live By
+
+A short list of hard rules that have caused real incidents in this system — the full list
+(with the reasoning behind each) is in
+**[docs/NOVA_COMPLETE_GUIDE.md § 5](docs/NOVA_COMPLETE_GUIDE.md#5-rules-to-live-by--do-this-never-do-that)**:
+
+- **Only send one varsity registration DM to a person at a time.** Check their pending status
+  in Rosters before sending another.
+- **Never stop or restart a bot while a sync process is running** (Discord role sync, AutoMod
+  word-list sync, bulk DM send, `/force-register-all`).
+- **Never run two `run.py` (Nova) processes at once** — the #1 historical cause of login bugs.
+- **Never hand-edit a JSON data file while its bot/server is running.**
+- **Don't weaken `.gitignore`** to force a commit through — student data and secrets must
+  never be tracked.
 
 ---
 
