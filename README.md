@@ -32,7 +32,7 @@ This README is the quick-start. For everything else, read the docs:
 | Document | What's in it |
 |---|---|
 | **[docs/NOVA_COMPLETE_GUIDE.md](docs/NOVA_COMPLETE_GUIDE.md)** | The complete human-readable guide: every dashboard page explained, the full permissions model, hard rules (do this / never do that), a troubleshooting quick-reference, and what makes the UI polished |
-| **[docs/manual/](docs/manual/00_index.json)** | A 12-chapter machine-readable reference — every bot, cog, command, Flask route, permission key, and settings file in the system, in JSON |
+| **[docs/manual/](docs/manual/00_index.md)** | A 12-chapter deep-dive reference — every bot, cog, command, Flask route, permission key, and settings file, explained in full detail |
 
 ---
 

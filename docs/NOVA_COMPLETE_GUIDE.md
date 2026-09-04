@@ -2,9 +2,10 @@
 ### Website, Permissions, Troubleshooting, Rules to Live By, and What Makes It Great
 
 This is the master narrative guide to the LionByteGG ecosystem's website ("Nova") and how to
-operate it safely. For a machine-readable, route-by-route reference, see [docs/manual/](manual/00_index.json)
-(12 JSON chapters). This document is the human-readable companion: how things work, how to
-use them, what to never do, and why the whole thing feels polished.
+operate it safely. For an even deeper, chapter-by-chapter dive into every bot, command, and
+route, see [docs/manual/](manual/00_index.md) (12 chapters). This document is the fast,
+narrative companion: how things work, how to use them, what to never do, and why the whole
+thing feels polished.
 
 ---
 
@@ -247,6 +248,6 @@ accidentally undo them:
 
 ## 8. Where to Go Deeper
 
-- [docs/manual/00_index.json](manual/00_index.json) — full machine-readable reference, one
+- [docs/manual/00_index.md](manual/00_index.md) — the full deep-dive reference manual, one
   chapter per bot/feature area, covering every route, command, cog, and setting in detail.
 - [CHANGELOG.md](../CHANGELOG.md) — chronological history of what's shipped.
