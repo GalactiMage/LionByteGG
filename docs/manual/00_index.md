@@ -30,6 +30,74 @@ renders cleanly right here on GitHub.
 
 ---
 
+## 🔎 Find It Fast — Search the Manual by Topic
+
+Looking for one specific thing and don't want to read a whole chapter? This index is
+alphabetized by keyword — use your browser's **Ctrl+F / Cmd+F** to jump straight to a term,
+then click through to the exact chapter (and section) that covers it in full.
+
+| Keyword / Topic | Where to find it |
+|---|---|
+| Admin panel (`/admin`, users, groups) | [Ch. 5 §5.4](05_nova_web_auth_admin.md) |
+| Analytics (arena traffic, heatmaps) | [Ch. 9 §9.8](09_arena_kiosk_system.md) |
+| Analytics (member/moderation stats) | [Ch. 5 §5.5](05_nova_web_auth_admin.md) |
+| Analytics export (BoilerCraft, Excel) | [Ch. 8 Part 2](08_nova_web_lionshift_boilercraft_equipment.md) |
+| Announcement bar (kiosk banner) | [Ch. 9 §9.7](09_arena_kiosk_system.md) |
+| AutoMod (Discord native + word tiers) | [Ch. 4 §4.3](04_lionbytegg_bot.md) |
+| Auto-start on boot | [Ch. 11 §11.2](11_troubleshooting_and_operations_guide.md) |
+| Ban / watch list (arena guests) | [Ch. 9 §9.6](09_arena_kiosk_system.md) |
+| Bass boost (music EQ) | [Ch. 2 §2.3](02_lionbeatsgg.md) |
+| BoilerCraft dashboard | [Ch. 8 Part 2](08_nova_web_lionshift_boilercraft_equipment.md) |
+| BoilerWatch (Minecraft chat monitor) | [Ch. 1 §1.4](01_boilercraftgg.md), [Ch. 8 Part 2](08_nova_web_lionshift_boilercraft_equipment.md) |
+| Bot presence / activity status | [Ch. 5 §5.6](05_nova_web_auth_admin.md) |
+| Captains & coaches (multi-team) | [Ch. 6 §6.1](06_nova_web_rosters_varsity.md) |
+| Chat monitor / flagged words (Minecraft) | [Ch. 1 §1.4](01_boilercraftgg.md) |
+| Clock in / clock out (shifts) | [Ch. 3 §3.2](03_lionshiftgg.md) |
+| Discord role sync (varsity/JV) | [Ch. 6 §6.2](06_nova_web_rosters_varsity.md) |
+| Ethernet / static IP / network recovery | [Ch. 11 §11.3](11_troubleshooting_and_operations_guide.md) |
+| Equipment / inventory / QR codes | [Ch. 8 Part 3](08_nova_web_lionshift_boilercraft_equipment.md) |
+| Fernet encryption (PII) | [Ch. 4 §4.7](04_lionbytegg_bot.md), [Ch. 6 §6.8](06_nova_web_rosters_varsity.md), [Ch. 9 §9.5](09_arena_kiosk_system.md), [Ch. 11 §11.9](11_troubleshooting_and_operations_guide.md) |
+| Floor map / seat picker (arena PCs) | [Ch. 10 §10.4](10_arena_kiosk_physical_devices.md) |
+| GGLeap API (shared cache, quota) | [Ch. 9 §9.2](09_arena_kiosk_system.md) |
+| GGLeap games/status panels (Discord) | [Ch. 4 §4.8](04_lionbytegg_bot.md) |
+| Guest access (30-day timer) | [Ch. 4 §4.2](04_lionbytegg_bot.md) |
+| Incident reports (arena) | [Ch. 9 §9.9](09_arena_kiosk_system.md) |
+| Job progress tracking (bulk sync/DM) | [Ch. 6 §6.2](06_nova_web_rosters_varsity.md) |
+| Kiosk boot sequence / trap / lockout | [Ch. 10 §10.3](10_arena_kiosk_physical_devices.md) |
+| Lavalink (music audio server) | [Ch. 2 §2.1](02_lionbeatsgg.md) |
+| Leaderboard (match stats) | [Ch. 6 §6.4](06_nova_web_rosters_varsity.md) |
+| Login (dashboard vs. legacy) | [Ch. 5 §5.1](05_nova_web_auth_admin.md) |
+| Lyrics (music bot) | [Ch. 2 §2.3](02_lionbeatsgg.md) |
+| Master Terminal (GUI control panel) | [Ch. 4 §4.1](04_lionbytegg_bot.md), [Ch. 11 §11.1](11_troubleshooting_and_operations_guide.md) |
+| Moderation (warn/kick/ban) | [Ch. 4 §4.3](04_lionbytegg_bot.md), [Ch. 5 §5.5](05_nova_web_auth_admin.md) |
+| Multi-team assignment (rosters) | [Ch. 6 §6.1](06_nova_web_rosters_varsity.md) |
+| Notification queues (bot ↔ web bridge) | [Ch. 3 §3.6](03_lionshiftgg.md), [Ch. 7 Part 2](07_nova_web_music_tickets.md), [Ch. 11 §11.8](11_troubleshooting_and_operations_guide.md) |
+| Onboarding (Student / Guest setup) | [Ch. 4 §4.2](04_lionbytegg_bot.md) |
+| Permissions system (keys, groups) | [Ch. 5 §5.3](05_nova_web_auth_admin.md) |
+| PC hold / reservation (kiosk) | [Ch. 9 §9.3](09_arena_kiosk_system.md) |
+| PC screen-lock automation | [Ch. 9 §9.4](09_arena_kiosk_system.md) |
+| Quiz game (music bot) | [Ch. 2 §2.4](02_lionbeatsgg.md) |
+| Reaction roles | [Ch. 4 §4.9](04_lionbytegg_bot.md), [Ch. 5 §5.5](05_nova_web_auth_admin.md) |
+| Registration (varsity/JV approval flow) | [Ch. 4 §4.5](04_lionbytegg_bot.md), [Ch. 6 §6.3](06_nova_web_rosters_varsity.md) |
+| REST API (LionBeatsGG) | [Ch. 2 §2.6](02_lionbeatsgg.md) |
+| Restarting a stuck machine/service | [Ch. 11 §11.3](11_troubleshooting_and_operations_guide.md) |
+| Rooms & shift duties (LionShift) | [Ch. 8 Part 1](08_nova_web_lionshift_boilercraft_equipment.md) |
+| Schedule image generator | [Ch. 3 §3.7](03_lionshiftgg.md) |
+| Search (global, in Nova) | [Ch. 5 §5.5](05_nova_web_auth_admin.md) |
+| Settings glossary (every config key) | [Ch. 11 §11.7](11_troubleshooting_and_operations_guide.md) |
+| Shift offers & trades | [Ch. 3 §3.3](03_lionshiftgg.md) |
+| Sign-in guard (anti-spam) | [Ch. 9 §9.6](09_arena_kiosk_system.md) |
+| Starting/stopping services | [Ch. 11 §11.1, §11.4](11_troubleshooting_and_operations_guide.md) |
+| Student profiles (arena) | [Ch. 9 §9.9](09_arena_kiosk_system.md) |
+| Temp voice channels / Join-to-Create | [Ch. 1 §1.4](01_boilercraftgg.md), [Ch. 4 §4.4](04_lionbytegg_bot.md) |
+| Tickets (support system) | [Ch. 1 §1.5](01_boilercraftgg.md), [Ch. 4 §4.9](04_lionbytegg_bot.md), [Ch. 7 Part 2](07_nova_web_music_tickets.md) |
+| Time-off requests | [Ch. 3 §3.4](03_lionshiftgg.md) |
+| Verification (Discord ↔ Minecraft) | [Ch. 1 §1.4](01_boilercraftgg.md) |
+| Watchlist (member surveillance) | [Ch. 4 §4.6](04_lionbytegg_bot.md) |
+| Worker hours calculation | [Ch. 8 Part 1](08_nova_web_lionshift_boilercraft_equipment.md) |
+
+---
+
 ## How This Manual Is Organized
 
 The LionByteGG suite is really **four separate Discord bots plus one web dashboard**, all

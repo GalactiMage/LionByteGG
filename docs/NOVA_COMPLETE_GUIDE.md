@@ -23,8 +23,15 @@ thing feels polished.
 | Arena Kiosk system | Physical sign-in kiosks, PC booking/locking | Arena Staff |
 
 One login, one sidebar, one permission system gates all of it. Nova runs at `http://127.0.0.1:5000`
-by default and is started via `LionByteGG\web\run.py --production`, or all-at-once via
-`Start LionServices.bat` / the Master Terminal GUI.
+by default.
+
+> **To start everything — every bot, Lavalink, and Nova itself — always use
+> `LionByteGG\Start LionServices.bat`.** One double-click launches all six services in the
+> right order and opens the Master Terminal for monitoring. The host machine is also
+> configured to run this same script automatically on startup, so a normal reboot brings
+> the whole suite back by itself. See [docs/manual/11_troubleshooting_and_operations_guide.md](manual/11_troubleshooting_and_operations_guide.md)
+> for the full startup/recovery guide, including what to do if something doesn't come back
+> up on its own.
 
 ---
 
@@ -206,6 +213,29 @@ These are hard-won lessons from real incidents in this project. Follow them exac
 | Sign-in guard blocking real repeat check-ins | Cooldown/max-per-day set too strict | Reset to safe defaults (0/0/1) |
 | A large PowerShell text edit corrupted special characters (em-dashes, etc.) in a Python file | `Get-Content`/`Set-Content` without `-Encoding UTF8` | Never pipe big source files through PowerShell text cmdlets without explicit UTF-8 encoding; verify with `python -c "import app"` after |
 | Template edit doesn't show up in the browser | Production has no hot-reload / browser cache | Restart the server AND hard-refresh (Ctrl+F5) |
+| A service — or the whole machine — stops responding | Anything from one crashed process to a full Windows hang | Try the Master Terminal first, then re-run `Start LionServices.bat`; if neither works, restart the physical host machine (see below) |
+| Machine restarted but Nova/kiosks aren't reachable at the usual address | It reconnected over Wi-Fi instead of the wired Ethernet connection that has the static IP | Reconnect the Ethernet cable — see § "Restarting the Host Machine" below |
+
+### Restarting the Host Machine (For Unforeseen Circumstances)
+
+The machine running LionByteGG **auto-starts every service on boot** — a normal restart
+brings the whole suite back online by itself, no manual steps needed. So when something goes
+genuinely wrong and the steps above (Master Terminal restart, re-running
+`Start LionServices.bat`) don't fix it, restarting the physical host machine is the next,
+most reliable option.
+
+> **Always make sure the machine reconnects over a wired Ethernet cable, not Wi-Fi.** Its
+> static IP address (set via `set_static_ip.bat`) is bound specifically to the Ethernet
+> adapter — on Wi-Fi it won't have that fixed address, which breaks anything relying on the
+> known LAN address (staff bookmarks, kiosks). Ethernet is what gives this setup its best,
+> most consistent experience.
+
+If a restart alone doesn't help: try a full **shutdown + cold boot** instead of just a
+restart, re-run `set_static_ip.bat` as Administrator if the IP looks wrong, check that
+nothing else is squatting on port 5000, and check the physical network (cable seated, switch
+powered) before assuming it's the host machine's fault. Full details, including how to
+verify auto-start is actually configured, are in
+[docs/manual/11_troubleshooting_and_operations_guide.md](manual/11_troubleshooting_and_operations_guide.md).
 
 ---
 

@@ -33,6 +33,13 @@ This README is the quick-start. For everything else, read the docs:
 |---|---|
 | **[docs/NOVA_COMPLETE_GUIDE.md](docs/NOVA_COMPLETE_GUIDE.md)** | The complete human-readable guide: every dashboard page explained, the full permissions model, hard rules (do this / never do that), a troubleshooting quick-reference, and what makes the UI polished |
 | **[docs/manual/](docs/manual/00_index.md)** | A 12-chapter deep-dive reference — every bot, cog, command, Flask route, permission key, and settings file, explained in full detail |
+| **[docs/manual/00_index.md § Find It Fast](docs/manual/00_index.md#-find-it-fast--search-the-manual-by-topic)** | 🔎 **A searchable, alphabetized index** — look up any keyword (a permission, a setting, a feature) and jump straight to the exact chapter and section that covers it |
+
+> **Starting the system?** Always use `LionByteGG\Start LionServices.bat` — it launches
+> every bot, Lavalink, and the Nova web dashboard together in the right order. The host
+> machine also runs this same script automatically on startup. Full startup/recovery
+> instructions (including what to do if a service or the machine itself stops responding)
+> are in [docs/manual/11_troubleshooting_and_operations_guide.md](docs/manual/11_troubleshooting_and_operations_guide.md).
 
 ---
 
@@ -125,12 +132,24 @@ npm install
 
 ### 4. Start the System
 
-**Start everything at once:**
+**Start everything at once (recommended — always use this):**
 ```bash
 LionByteGG\Start LionServices.bat
 ```
+This is the one script that launches every bot, Lavalink, and the Nova web dashboard
+together in the correct order, then opens the Master Terminal for monitoring. On the machine
+that hosts this system day-to-day, this same script is also configured to **run
+automatically on Windows startup**, so a normal reboot brings the entire suite back online
+by itself with no manual steps.
 
-**Or start individually:**
+> **If you ever need to restart the host machine** (for an unexpected issue that a simple
+> service restart doesn't fix), make sure it reconnects over a **wired Ethernet cable, not
+> Wi-Fi** — the machine's static IP address is bound specifically to its Ethernet adapter
+> (see `set_static_ip.bat`), and staying wired gives the most reliable, consistent
+> experience. Full recovery steps (including other ways to fix a stuck machine or service)
+> are in [docs/manual/11_troubleshooting_and_operations_guide.md](docs/manual/11_troubleshooting_and_operations_guide.md).
+
+**Or start individually** (only if you need to bring back one specific service):
 ```bash
 # Main bot + web dashboard
 LionByteGG\start_bot.bat

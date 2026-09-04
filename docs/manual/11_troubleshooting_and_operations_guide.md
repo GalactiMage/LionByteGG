@@ -10,19 +10,29 @@ immediately instead of re-diagnosing from scratch.
 
 ## 11.1 Starting Everything
 
-The recommended way to start the whole suite is a single double-click:
+> **The one command to remember: `LionByteGG\Start LionServices.bat`.** This is the
+> supported, correct way to start the entire suite — every bot, Lavalink, and the Nova web
+> dashboard — with one double-click. Don't start the six pieces individually unless you have
+> a specific reason to (e.g. only one bot crashed and the rest are fine); starting everything
+> through this one script is faster, safer, and guarantees the right order.
 
-```
-LionByteGG\Start LionServices.bat
-```
+Double-clicking `LionByteGG\Start LionServices.bat` does the following, in order:
 
-It's **single-instance guarded** — before doing anything, it checks whether port 5000 is
-already listening (i.e., Nova is already running) and refuses to double-launch the entire
-suite if so. When it does run, it launches all six pieces in this order, each minimized:
-LionByteGG bot → LionShiftGG bot → BoilerCraftGG bot → LionBeatsGG bot → Lavalink → Nova web
-dashboard — then finally opens the **Master Terminal** GUI for ongoing monitoring.
+1. **Checks port 5000 first** (the single-instance guard) — if Nova is already listening,
+   it refuses to launch a second copy of everything and just tells you the services are
+   already running. This prevents the single most common self-inflicted problem in this
+   whole project: two copies of the same service fighting each other.
+2. Plays a short intro animation, then launches all six pieces **in this order**, each
+   minimized to the taskbar: **[1/6]** LionByteGG bot → **[2/6]** LionShiftGG bot →
+   **[3/6]** BoilerCraftGG bot → **[4/6]** LionBeatsGG bot → **[5/6]** Lavalink →
+   **[6/6]** Nova web dashboard.
+3. Opens the **Master Terminal** GUI last, once everything else is up, so you have one place
+   to watch all six services at a glance.
 
 ### Starting One Service at a Time
+
+Only do this if you specifically need to bring back a single service that crashed while
+everything else is healthy:
 
 | Service | Script |
 |---|---|
@@ -37,11 +47,76 @@ dashboard — then finally opens the **Master Terminal** GUI for ongoing monitor
 `LionByteGG\master_terminal.py` is a PyQt6 GUI that doesn't replace the scripts above — it
 wraps them, giving you one window with a colored status card per service, live CPU/RAM/disk
 usage, and a single aggregated log feed. It's the easiest way to keep an eye on all six
-pieces at once without six separate terminal windows open.
+pieces at once without six separate terminal windows open, and it's also the fastest way to
+restart just one misbehaving service without touching the other five.
 
 ---
 
-## 11.2 Stopping Everything
+## 11.2 Auto-Start on Machine Boot
+
+The machine that physically hosts LionByteGG (the on-site server/laptop running all six
+services) is configured to **automatically launch `Start LionServices.bat` when Windows
+starts up** — normally via a shortcut in the Windows Startup folder, or a Task Scheduler
+entry set to run at logon/boot. In everyday operation, this means the whole suite comes back
+online by itself after a normal Windows restart or a power outage, with no one needing to
+manually double-click anything.
+
+**What to check if auto-start doesn't seem to have worked:**
+- Confirm the machine actually finished booting all the way to the desktop — the script
+  can't run before Windows has logged in.
+- Check the Windows **Startup folder** (`shell:startup` in the Run dialog) for a shortcut to
+  `Start LionServices.bat`, or open **Task Scheduler** and look for a task pointing at that
+  same script, set to trigger "At log on" or "At startup." If the shortcut/task is missing
+  or disabled, that's why nothing launched — re-create or re-enable it, then just run the
+  script manually for that session.
+- If in doubt, just double-click `Start LionServices.bat` yourself — it's completely safe to
+  run manually at any time; the single-instance guard means it will simply refuse to start a
+  second copy if auto-start already succeeded.
+
+---
+
+## 11.3 If Something Goes Wrong: The Recovery Ladder
+
+When a service — or the whole machine — stops responding, work through these steps **in
+order**, starting with the least disruptive:
+
+1. **Check the Master Terminal first.** If only one service shows as down, restart just
+   that one from there rather than touching anything else.
+2. **Re-run `Start LionServices.bat`.** If it says everything is already running but
+   something clearly isn't working right, close the misbehaving service's window (or all of
+   them via the Master Terminal) and run the script again.
+3. **If that doesn't resolve it, restart the physical machine.** For **unforeseen
+   circumstances** — a genuinely stuck process, a Windows-level hang, or anything the steps
+   above didn't fix — a full restart of the host machine is the most reliable recovery.
+   Auto-start (§11.2) will bring everything back up again once it reboots.
+   > **Make sure the machine is connected via a wired Ethernet cable (not Wi-Fi) before and
+   > after the restart.** The host machine's network configuration
+   > (`set_static_ip.bat`, at the repo root) assigns a **static IP address specifically to
+   > the "Ethernet" network adapter** — not Wi-Fi. If the machine reconnects over Wi-Fi
+   > instead, it won't have that static IP, and anyone relying on the known LAN address to
+   > reach Nova (or a kiosk relying on a fixed hostname/IP) will suddenly be unable to
+   > connect. A wired Ethernet connection is what gives this whole setup its best, most
+   > consistent experience.
+4. **If a restart still doesn't fix it,** try these, roughly in order of how disruptive they
+   are:
+   - **A full shutdown and cold boot**, not just a restart — occasionally a restart alone
+     doesn't clear a truly stuck driver or network state, while a complete power-off does.
+   - **Re-run `set_static_ip.bat`** (as Administrator) if the machine seems to have the wrong
+     IP address after reconnecting — this re-applies the static IP/DNS configuration to the
+     Ethernet adapter.
+   - **Check for a port conflict.** If Nova refuses to start at all, confirm nothing else on
+     the machine is already using port 5000 (see the single-instance guard note in §11.1) —
+     use the PowerShell command in §11.4 to check for stray `python.exe` processes.
+   - **Check the physical network, not just the machine.** If the machine itself looks
+     healthy but nothing can reach it, check the Ethernet cable is fully seated, and check
+     whether the switch/router it's plugged into needs a power cycle too — not every
+     connectivity problem is the host machine's fault.
+   - **As an absolute last resort**, reboot the router/network switch the host machine is
+     connected to, then the host machine again, in that order.
+
+---
+
+## 11.4 Stopping Everything
 
 | Service | Script |
 |---|---|
@@ -63,7 +138,7 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
 
 ---
 
-## 11.3 Restarting After a Code Change
+## 11.5 Restarting After a Code Change
 
 This is the single most common source of "I fixed it but it's still broken" confusion, so
 memorize this rule: **Nova runs in production mode with no hot-reload.** Editing `app.py` or
@@ -79,12 +154,12 @@ and only need a browser hard-refresh, not a server restart, to pick up changes.
 
 ---
 
-## 11.4 Known Gotchas & Their Fixes
+## 11.6 Known Gotchas & Their Fixes
 
 ### "Login keeps bouncing me back to the login page"
 **Cause:** two `run.py` processes are both bound to port 5000 and fighting over sessions.
 **Fix:** `run.py` now auto-kills any other `run.py` instance on every launch, but if it ever
-recurs, confirm with the PowerShell command in §11.2 that exactly one process is running.
+recurs, confirm with the PowerShell command in §11.4 that exactly one process is running.
 
 ### "A user's bot-switcher dropdown routes them to the wrong section, or nowhere"
 **Cause:** `smart_landing()` requires each section's own specific "main dashboard"
@@ -143,9 +218,15 @@ do binary-safe edits in Python instead (open in `'rb'`/`'wb'` mode). Always run
 `python -c "import app"` immediately after any large PowerShell-based edit to app.py to
 catch a `UnicodeDecodeError` before it causes a confusing downstream failure.
 
+### "The host machine reconnected to the network but Nova/the kiosks aren't reachable at the usual address"
+**Cause:** the machine came back up on Wi-Fi instead of its wired Ethernet connection, so the
+static IP configured by `set_static_ip.bat` (which targets the "Ethernet" adapter
+specifically) never got applied.
+**Fix:** plug the Ethernet cable back in and reconnect it that way — see §11.3, step 3.
+
 ---
 
-## 11.5 Settings Glossary
+## 11.7 Settings Glossary
 
 ### `arena_kiosk_config.json` (in the shared data directory)
 | Key | Meaning |
@@ -168,10 +249,11 @@ catch a `UnicodeDecodeError` before it causes a confusing downstream failure.
 | `LionShiftGG/settings.json` | Shift reminder/late-alert timing, form URLs ([Chapter 3](03_lionshiftgg.md)) |
 | `BoilerCraftGG/data/bot_config.json` | Ticket panel channel, staff role, FAQ channel, support categories ([Chapter 1](01_boilercraftgg.md)) |
 | `flagged_words.json` (LionByteGG bot) | The 3-tier bannable/kickable/warning word lists, synced to Discord's native AutoMod |
+| `set_static_ip.bat` (repo root) | Assigns the host machine's Ethernet adapter a fixed IP + DNS servers, so its LAN address never changes |
 
 ---
 
-## 11.6 The Shared Data Directory Map
+## 11.8 The Shared Data Directory Map
 
 Everything lives under `LionByteGG\data\` (referred to as `DATA_DIR` in the code) — this is
 **not** the same folder as `LionByteGG\web\data\`, which is a separate, web-only data store
@@ -186,7 +268,7 @@ used for a few equipment/auth features.
 
 ---
 
-## 11.7 Encryption & Personal Data
+## 11.9 Encryption & Personal Data
 
 Both the roster PII (emails, phone numbers, PUIDs) and the arena sign-in PII (names, emails)
 are Fernet-encrypted using the **same key**, stored at `data/.roster_encrypt_key`
@@ -197,7 +279,7 @@ encrypting the field or moving that data into SQLite.
 
 ---
 
-## 11.8 Quick Reference — Ports
+## 11.10 Quick Reference — Ports
 
 | Service | Port |
 |---|---|
@@ -207,7 +289,7 @@ encrypting the field or moving that data into SQLite.
 
 ---
 
-## 11.9 Where to Go From Here
+## 11.11 Where to Go From Here
 
 If you've read this whole manual and still can't find your answer, the next-best places to
 look are: the relevant bot's own cog/util source file (this manual tells you exactly which

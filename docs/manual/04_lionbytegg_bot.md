@@ -181,16 +181,48 @@ the Technician role.
 ## 4.10 Slash Commands Reference
 
 ### General (Everyone)
-`/ping` · `/about` · `/club` · `/arena-hours` · `/help` · `/join-mc-server` · `/time` ·
-`/serverinfo`
+
+| Command | What it does |
+|---|---|
+| `/ping` | Reports the bot's current latency to Discord, in milliseconds |
+| `/about` | Shows a short embed describing the bot's purpose and creator |
+| `/club` | Posts a link to the official PNW Esports Club signup page |
+| `/arena-hours` | Displays the arena's current weekly open/close schedule |
+| `/help` | Lists every available command, grouped by category |
+| `/join-mc-server` | Shows how to connect to the linked Minecraft server (see [Chapter 1](01_boilercraftgg.md)) |
+| `/time` | Shows your own remaining Guest-access countdown, if you're a Guest |
+| `/serverinfo` | Shows member/channel/role counts and other server statistics |
 
 ### Administrator Only
-`/force-setup-user` · `/set-activity` · `/reset-activity` · `/restart_service` ·
-`/stop-service` · `/clear` · `/warn` · `/kick` · `/ban` · `/unban` · `/mute` · `/announce` ·
-`/lock` / `/unlock` · `/setup-tickets` · `/setup_guest_transfer` ·
-`/setup_reaction_role` · `/setup_vc_generator` · `/setup_tryout_vc` · `/list_vc_generators` ·
-`/force-register-all` · `/download-transcript` · `/admin-help` · `/say` · `/userinfo` ·
-`/blacklist-tickets` / `/whitelist-tickets` · `/addword` / `/removeword`
+
+| Command | What it does |
+|---|---|
+| `/force-setup-user <user>` | Re-sends the Student/Guest onboarding prompt to a specific member (useful if they dismissed it or their DMs were closed the first time) |
+| `/set-activity <text>` | Overrides the bot's Discord status text (passcode-gated, see below) |
+| `/reset-activity` | Clears the override and restores the automatic arena open/closed status (passcode-gated) |
+| `/restart_service` | Cleanly restarts the bot process (passcode-gated) |
+| `/stop-service` | Shuts the bot down, with a confirmation prompt first (passcode-gated) |
+| `/clear <amount>` | Bulk-deletes up to 100 recent messages from the current channel |
+| `/warn <user> <reason>` | Issues a warning: DMs the user, logs it to `#lionbyte-logs`, and adds a record to their moderation history |
+| `/kick <user> <reason>` | Kicks a member, with the same DM + logging + record behavior as `/warn` |
+| `/ban <user> <reason>` | Bans a member, with the same DM + logging + record behavior |
+| `/unban <user_id>` | Unbans a user by their Discord ID (they've already left, so a mention won't work) |
+| `/mute <user> <duration_minutes> [reason]` | Applies a Discord timeout for the given number of minutes |
+| `/announce <channel> <message>` | Posts a formatted announcement embed to a channel, pinging the Student role |
+| `/lock <channel>` / `/unlock <channel>` | Disables/restores `@everyone`'s ability to send messages in a channel |
+| `/setup-tickets` | Deploys the persistent support-ticket panel to the current channel |
+| `/setup_guest_transfer <channel>` | Posts a permanent "Migrate to Student" button for guests ready to convert |
+| `/setup_reaction_role <channel> <message_id> <emoji> <role>` | Attaches a new emoji → role mapping to an existing message |
+| `/setup_vc_generator <voice_channel> <category>` | Registers a Join-to-Create voice channel generator (see [§4.4](#44-voice-channels--the-same-join-to-create-pattern-as-boilercraftgg)) |
+| `/setup_tryout_vc <voice_channel> <category>` | Same as above, but flagged specifically for esports tryout sessions |
+| `/list_vc_generators` | Shows every currently configured voice-channel generator |
+| `/force-register-all` | DMs the Student/Guest onboarding prompt to every unregistered, non-bot member at once (rate-limited to 2 seconds per DM) |
+| `/download-transcript <user>` | Exports a member's full moderation history as a plain `.txt` file |
+| `/admin-help` | Shows a paginated reference of every admin-only command |
+| `/say <message>` | Makes the bot repeat a message verbatim in the current channel |
+| `/userinfo <user>` | Shows a member's complete profile: identity, moderation history, guest timer, varsity status (passcode-gated) |
+| `/blacklist-tickets <user>` / `/whitelist-tickets <user>` | Blocks or re-allows a user from opening new support tickets |
+| `/addword <word> <tier>` / `/removeword <word>` | Adds/removes a word from the 3-tier flagged-word list (see [§4.3](#43-moderation--the-automod-bridge)), and syncs it to Discord's native AutoMod |
 
 > `/set-activity`, `/restart_service`, and `/stop-service` additionally require passing a
 > security-code modal (`SECURITY_CODE` env var, default `146332`) — a second layer of
