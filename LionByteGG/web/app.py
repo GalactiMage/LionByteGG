@@ -5314,6 +5314,17 @@ def _ggleap_cache_ttl():
     except Exception:
         return 20
 
+def _pc_manager_max_age():
+    """Refresh window for the staff PC Manager tab's auto-poll: a bit tighter
+    than the public kiosk cadence while the arena's open (6s vs 8s), and scaled
+    back a lot — not pinned to a flat 5s — while closed (20s vs 120s) so an
+    after-hours restart-test doesn't quietly burn calls all day. The manual
+    Refresh button still bypasses this instantly regardless."""
+    try:
+        return 6 if _arena_is_open_now(load_arena_config()) else 20
+    except Exception:
+        return 15
+
 # Hard circuit-breaker: no matter how many tabs are polling or how often staff
 # hit the manual force-refresh, once today's usage crosses 85% of the 10k/day
 # cap every cache window (including forced ones) gets floored to 60s so the
@@ -6033,11 +6044,13 @@ def _arena_active_sessions():
 @api_perm_required('page.arena_sessions')
 def api_arena_sessions():
     """Active PC sessions + full room map for the Nova PC Manager tab.
-    Uses a tight 5s refresh window (vs the 8s/120s kiosk default) since this is a
-    small, bounded staff-only audience that needs to see a restarted machine come
-    back quickly — it still shares the ONE global GGLeap cache, so this can only
-    ever *shorten* the effective refresh cadence while someone's actively viewing
-    this tab; it never spins up a separate polling loop or ignores the cache.
+    Uses `_pc_manager_max_age()` — 6s while the arena's open, 20s while closed —
+    which is only ever a bit tighter than the public kiosk cadence, not a flat
+    5s regardless of hours. It still shares the ONE global GGLeap cache, so this
+    can only *shorten* the effective refresh cadence while someone's actively
+    viewing this tab; it never spins up a separate polling loop or ignores the
+    cache, and the daily budget circuit breaker (`_ggleap_budget_guard`) still
+    overrides it if usage ever gets close to the cap.
 
     ?force=1 (the manual Refresh button only) bypasses the window entirely for
     that one request — a human can't click faster than the browser-side cooldown
@@ -6046,7 +6059,7 @@ def api_arena_sessions():
     forced = request.args.get('force') in ('1', 'true', 'yes')
     sessions = _arena_active_sessions()
     sess_by_uid = {s["uuid"]: s for s in sessions}
-    status = _fetch_ggleap_status(max_age=0 if forced else 5)
+    status = _fetch_ggleap_status(max_age=0 if forced else _pc_manager_max_age())
     machines = []
     for p in status.get("pcs", []):
         uid = p.get("uuid")
