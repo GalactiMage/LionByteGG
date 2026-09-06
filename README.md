@@ -506,7 +506,7 @@ system — every bot above is administered from this one login. Full walkthrough
 | **Reaction Roles** | Manage reaction role assignments |
 | **VC System** | View/manage voice channel generators |
 | **Arena Staff — Live Feed** | Real-time kiosk sign-ins |
-| **Arena Staff — Sessions** | Live PC room map with lock/unlock controls |
+| **Arena Staff — PC Manager** | Live PC room map (matches the physical kiosk floor layout) with lock/unlock controls and right-click quick actions |
 | **Arena Staff — Kiosk Manager** | Kiosk hours, announcement banner, sign-in guard, PC screen-lock automation |
 | **Arena Staff — Activity** | Traffic analytics: heatmaps, busiest hours, top visitors |
 | **Arena Staff — Students** | Per-guest visit history, staff notes, ban/watch status |

@@ -598,14 +598,16 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .map-legend .lg-active .dot{ background:#34d399; }
 .map-legend .lg-reserved .dot{ background:#fbbf24; }
 .map-legend .lg-varsity .dot{ background:#e6d3a3; }
-.map-legend .lg-avail .dot{ background:rgba(148,163,184,.35); }
-.map-legend .lg-locked .dot{ background:#c084fc; }
+.map-legend .lg-secured .dot{ background:#2dd4bf; }
+.map-legend .lg-avail .dot{ background:#38bdf8; }
 .map-legend .lg-maint .dot{ background:#c084fc; }
-.map-legend .lg-off .dot{ background:#475569; }
+.map-legend .lg-off .dot{ background:#f87171;box-shadow:0 0 0 0 rgba(248,113,113,.7);animation:legendOffPulse 1.6s ease-in-out infinite; }
 .map-legend .hint { margin-left:auto;font-size:11.5px;color:var(--text-muted);font-weight:600; }
+@keyframes legendOffPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.55);} 50%{ box-shadow:0 0 0 5px rgba(248,113,113,0);} }
 
-.map-wrap { display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start; }
-.map-island { background:linear-gradient(165deg,var(--surface),rgba(255,255,255,.012));border:1px solid var(--border);border-radius:22px;padding:18px 20px 20px;flex:1 1 250px;min-width:240px;max-width:340px;transition:border-color .2s ease; }
+.map-wrap { display:flex;flex-direction:column;gap:22px; }
+.map-islands-row { display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start; }
+.map-island { background:linear-gradient(165deg,var(--surface),rgba(255,255,255,.012));border:1px solid var(--border);border-radius:22px;padding:18px 20px 20px;flex:1 1 190px;min-width:170px;max-width:230px;transition:border-color .2s ease; }
 .map-island:hover { border-color:rgba(255,255,255,.14); }
 .map-island.is-stage { border-color:rgba(207,185,145,.3);background:linear-gradient(165deg,rgba(207,185,145,.06),rgba(255,255,255,.01)); }
 .map-island-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:15px; }
@@ -613,27 +615,56 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .map-island.is-stage .map-island-name { color:#e6d3a3; }
 .map-island-name i { opacity:.85; }
 .map-island-count { font-size:11px;font-weight:800;color:var(--text-muted);background:rgba(255,255,255,.03);padding:3px 9px;border-radius:999px;border:1px solid var(--border); }
-.map-rows { display:flex;flex-direction:column;align-items:center;gap:9px; }
-.map-row { display:flex;gap:10px;justify-content:center;flex-wrap:wrap; }
-.map-desk { width:88%;height:11px;border-radius:7px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.06) 7px,transparent 7px,transparent 15px);border:1px solid var(--border);margin:2px 0; }
-.map-island.is-stage .map-desk { background:linear-gradient(90deg,rgba(207,185,145,.28),rgba(207,185,145,.08));border-color:rgba(207,185,145,.3); }
+/* 2-col × 3-row grid, matching the physical floor layout (1,6)/(2,5)/(3,4) */
+.map-grid { display:grid;grid-template-columns:repeat(2,1fr);gap:9px;justify-items:center; }
+
+/* Front-of-room reference strip (Kiosk / doors / Admin Desk) */
+.map-front { display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px;background:rgba(255,255,255,.012);border:1px solid var(--border);border-radius:16px; }
+.map-front-chip { display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:7px 14px;border-radius:999px;border:1.5px solid var(--border); }
+.map-front-kiosk { color:#e6d3a3;border-color:rgba(207,185,145,.5);background:rgba(207,185,145,.08); }
+.map-front-admin { color:#c7d0e6;border-color:rgba(160,175,205,.4);background:rgba(160,175,205,.06); }
+.map-front-door { width:46px;height:8px;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid var(--border); }
 
 .seat { position:relative;width:52px;height:52px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:800;border:1.5px solid var(--border);background:rgba(148,163,184,.06);color:var(--text-muted);transition:transform .15s ease,box-shadow .2s ease,border-color .2s;cursor:pointer; }
 .seat .sn { font-size:11.5px;letter-spacing:.2px;line-height:1; }
 .seat .si { font-size:13px;line-height:1; }
-.seat.available { background:rgba(148,163,184,.06);color:var(--text-muted);border-color:var(--border); }
-.seat.offline { background:rgba(30,41,59,.5);color:#475569;border-color:rgba(71,85,105,.3);cursor:default; }
+.seat.available { background:linear-gradient(155deg,rgba(56,189,248,.14),rgba(14,116,144,.06));color:#7dd3fc;border-color:rgba(56,189,248,.4); }
+.seat.available.locked-gate { background:linear-gradient(155deg,rgba(45,212,191,.22),rgba(13,148,136,.1));color:#5eead4;border-color:rgba(45,212,191,.55);box-shadow:0 0 0 1px rgba(45,212,191,.15),0 6px 18px rgba(20,184,166,.16); }
+.seat.offline { background:linear-gradient(155deg,rgba(248,113,113,.16),rgba(127,29,29,.1));color:#fca5a5;border-color:rgba(248,113,113,.45);cursor:pointer;box-shadow:0 0 0 0 rgba(248,113,113,.5);animation:seatOfflinePulse 1.8s ease-in-out infinite; }
 .seat.maint { background:rgba(168,85,247,.1);color:#c084fc;border-color:rgba(168,85,247,.35); }
-.seat.active,.seat.reserved,.seat.available,.seat.maint { cursor:pointer; }
+.seat.active,.seat.reserved,.seat.available,.seat.maint,.seat.offline { cursor:pointer; }
 .seat.active { background:linear-gradient(155deg,rgba(52,211,153,.24),rgba(5,150,105,.12));color:#6ee7b7;border-color:rgba(52,211,153,.55);box-shadow:0 0 0 1px rgba(52,211,153,.15),0 6px 18px rgba(16,185,129,.18); }
 .seat.reserved { background:linear-gradient(155deg,rgba(251,191,36,.2),rgba(217,119,6,.1));color:#fcd34d;border-color:rgba(251,191,36,.5); }
 .seat.varsity.active { background:linear-gradient(155deg,rgba(207,185,145,.3),rgba(138,113,65,.12));color:#e6d3a3;border-color:rgba(207,185,145,.6);box-shadow:0 0 0 1px rgba(207,185,145,.2),0 6px 18px rgba(207,185,145,.18); }
-.seat.locked-gate { border-style:dashed;border-color:rgba(168,85,247,.45); }
-.seat:hover:not(.offline) { transform:translateY(-3px);box-shadow:0 10px 26px rgba(0,0,0,.4); }
+.seat.locked-gate:not(.available) { border-style:dashed;border-color:rgba(168,85,247,.45); }
+.seat:hover { transform:translateY(-3px);box-shadow:0 10px 26px rgba(0,0,0,.4); }
 .seat.active::after { content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:seatPulse 1.7s ease-in-out infinite; }
 .seat.varsity.active::after { background:#e6d3a3;box-shadow:0 0 0 0 rgba(207,185,145,.6); }
 @keyframes seatPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(52,211,153,.55);} 50%{ box-shadow:0 0 0 6px rgba(52,211,153,0);} }
-.seat .lockbadge { position:absolute;top:-6px;left:-6px;width:18px;height:18px;border-radius:50%;background:#c084fc;color:#1c0a2e;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.4); }
+@keyframes seatOfflinePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.5);} 50%{ box-shadow:0 0 0 7px rgba(248,113,113,0);} }
+.seat .lockbadge { position:absolute;top:-6px;left:-6px;width:18px;height:18px;border-radius:50%;background:#2dd4bf;color:#052e2b;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.4); }
+
+/* Right-click quick-action menu */
+.seat-ctx-menu { position:fixed;z-index:1400;min-width:220px;background:linear-gradient(165deg,var(--surface),var(--surface-light));border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;animation:ctxIn .12s ease;display:none; }
+.seat-ctx-menu.show { display:block; }
+@keyframes ctxIn { from{ opacity:0;transform:scale(.96);} to{ opacity:1;transform:none;} }
+.ctx-head { padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.02); }
+.ctx-head-ico { width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;background:rgba(255,255,255,.05);color:var(--text-secondary);flex-shrink:0; }
+.ctx-head-txt { min-width:0; }
+.ctx-head-name { font-size:13px;font-weight:800;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.ctx-head-sub { font-size:10.5px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-top:2px; }
+.ctx-items { padding:6px; }
+.ctx-item { display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:13px;font-weight:700;color:var(--text-primary);cursor:pointer;transition:background .12s ease; }
+.ctx-item:hover { background:rgba(255,255,255,.06); }
+.ctx-item i { width:16px;text-align:center;color:var(--text-secondary);font-size:12px; }
+.ctx-item.danger { color:#f87171; }
+.ctx-item.danger i { color:#f87171; }
+.ctx-item.warn { color:#fbbf24; }
+.ctx-item.warn i { color:#fbbf24; }
+.ctx-item.good { color:#5eead4; }
+.ctx-item.good i { color:#5eead4; }
+.ctx-sep { height:1px;background:var(--border);margin:5px 8px; }
+.ctx-empty { padding:12px 14px;font-size:12px;color:var(--text-muted);font-weight:600; }
 
 /* Session detail drawer */
 .sess-detail-back { position:fixed;inset:0;background:rgba(4,7,12,.66);backdrop-filter:blur(4px);z-index:1200;display:none;align-items:center;justify-content:center;padding:20px; }
@@ -645,10 +676,12 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .sd-head.reserved { background:linear-gradient(120deg,rgba(251,191,36,.1),transparent); }
 .sd-head.varsity { background:linear-gradient(120deg,rgba(207,185,145,.12),transparent); }
 .sd-head.maint { background:linear-gradient(120deg,rgba(168,85,247,.14),transparent); }
+.sd-head.offline { background:linear-gradient(120deg,rgba(248,113,113,.14),transparent); }
 .sd-mach-ico { width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;background:rgba(52,211,153,.15);color:#34d399;flex-shrink:0; }
 .sd-head.reserved .sd-mach-ico { background:rgba(251,191,36,.15);color:#fbbf24; }
 .sd-head.varsity .sd-mach-ico { background:rgba(207,185,145,.16);color:#e6d3a3; }
 .sd-head.maint .sd-mach-ico { background:rgba(168,85,247,.18);color:#c084fc; }
+.sd-mach-ico.offline-ico { background:rgba(248,113,113,.16);color:#f87171; }
 .sd-mach { font-size:18px;font-weight:800;color:var(--text-primary); }
 .sd-state { font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-top:4px; }
 .sd-close { position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center; }
@@ -698,7 +731,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 
 <div class="ar-tabs" id="ar-tabs">
     {% if has_perm('page.arena_live') %}<button class="ar-tab" data-tab="live"><i class="fas fa-signal"></i> Live Feed <span class="cnt" id="tab-live-cnt">0</span></button>{% endif %}
-    {% if has_perm('page.arena_sessions') %}<button class="ar-tab" data-tab="sessions"><i class="fas fa-desktop"></i> Sessions <span class="cnt" id="tab-sessions-cnt" style="display:none;">0</span></button>{% endif %}
+    {% if has_perm('page.arena_sessions') %}<button class="ar-tab" data-tab="sessions"><i class="fas fa-desktop"></i> PC Manager <span class="cnt" id="tab-sessions-cnt" style="display:none;">0</span></button>{% endif %}
     {% if has_perm('page.arena_logs') %}<button class="ar-tab" data-tab="logs"><i class="fas fa-scroll"></i> Sign-in Logs</button>{% endif %}
     {% if has_perm('page.arena_logs') %}<button class="ar-tab" data-tab="activity"><i class="fas fa-chart-line"></i> Activity</button>{% endif %}
     {% if has_perm('page.arena_students') %}<button class="ar-tab" data-tab="students"><i class="fas fa-user-group"></i> Students</button>{% endif %}
@@ -728,7 +761,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 {% if has_perm('page.arena_sessions') %}
 <div class="ar-panel" id="panel-sessions">
     <div class="ar-toolbar">
-        <h3><i class="fas fa-desktop" style="color:#22d3ee;"></i> Sessions</h3>
+        <h3><i class="fas fa-desktop" style="color:#22d3ee;"></i> PC Manager</h3>
         <div style="display:flex;gap:8px;align-items:center;">
             <span class="ar-live-meta" id="sess-meta"><span class="dot"></span> <span id="sess-updated">Live</span></span>
             <button class="ar-btn ar-btn-ghost" onclick="loadSessions()"><i class="fas fa-rotate"></i> Refresh</button>
@@ -739,11 +772,11 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
         <div class="lg lg-active"><span class="dot"></span> Logged In</div>
         <div class="lg lg-reserved"><span class="dot"></span> Reserved</div>
         <div class="lg lg-varsity"><span class="dot"></span> Varsity</div>
-        <div class="lg lg-avail"><span class="dot"></span> Open</div>
-        <div class="lg lg-locked"><span class="dot"></span> Locked</div>
+        <div class="lg lg-secured"><span class="dot"></span> Secured &amp; Ready</div>
+        <div class="lg lg-avail"><span class="dot"></span> Open / Unlocked</div>
         <div class="lg lg-maint"><span class="dot"></span> Admin / Maintenance</div>
         <div class="lg lg-off"><span class="dot"></span> Offline</div>
-        <span class="hint"><i class="fas fa-hand-pointer"></i> Click any station for details</span>
+        <span class="hint"><i class="fas fa-hand-pointer"></i> Click for details &middot; right-click for quick actions</span>
     </div>
     <div id="sess-map" class="map-wrap"></div>
     <div id="sess-empty" class="ar-empty" style="display:none;"><i class="fas fa-desktop"></i><p>No stations reporting.</p><span class="ar-empty-hint">Waiting for GGLeap to report machine status.</span></div>
@@ -751,6 +784,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 <div class="sess-detail-back" id="sess-detail-back" onclick="if(event.target===this)closeSessionDetail()">
     <div class="sess-detail" id="sess-detail"></div>
 </div>
+<div class="seat-ctx-menu" id="seat-ctx-menu"></div>
 {% endif %}
 
 <!-- ── LOGS ── -->
@@ -1362,7 +1396,7 @@ function showTab(name) {
     if (sessTimer) { clearInterval(sessTimer); sessTimer = null; }
     if (actTimer) { clearInterval(actTimer); actTimer = null; stopReplay(); }
     if (name === 'live') { liveFirstLoad = true; loadActive(); liveTimer = setInterval(loadActive, 4000); }
-    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 5000); }
+    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 4000); }
     else if (name === 'logs') { loadLogs(); logsTimer = setInterval(() => { if (document.activeElement !== document.getElementById('log-search')) loadLogs(); }, 8000); }
     else if (name === 'controls') { loadConfig(); loadStats(); ctrlTimer = setInterval(loadStats, 10000); }
     else if (name === 'activity') { loadActivity(); }
@@ -2983,48 +3017,82 @@ async function loadSessions() {
     machines.forEach(m => { (groups[m.area] = groups[m.area] || []).push(m); });
     const rank = a => /stage/i.test(a) ? 1000 : parseInt((a.match(/\d+/) || [999])[0]);
     const order = Object.keys(groups).sort((a, b) => rank(a) - rank(b));
+    // Matches the physical floor layout used on the real kiosks: each island is a
+    // 2-col × 3-row block seated (1,6)(2,5)(3,4) — see arena_kiosk1.html SEAT_ORDER.
+    const PHYSICAL_ORDER = [1, 6, 2, 5, 3, 4];
+    function physicalSeatOrder(list) {
+        const bySeat = {};
+        list.forEach(s => { bySeat[parseInt(s.seat)] = s; });
+        if (PHYSICAL_ORDER.every(n => bySeat[n])) return PHYSICAL_ORDER.map(n => bySeat[n]);
+        return list.slice().sort((a, b) => parseInt(a.seat) - parseInt(b.seat));
+    }
 
-    mapEl.innerHTML = order.map(area => {
-        const list = groups[area].slice().sort((a, b) => parseInt(a.seat) - parseInt(b.seat));
+    const islandsHtml = order.map(area => {
+        const list = physicalSeatOrder(groups[area]);
         const isStage = /stage/i.test(area);
-        const occupied = list.filter(s => s.seat_status === 'active' || s.seat_status === 'reserved').length;
-        const half = Math.ceil(list.length / 2);
-        const top = list.slice(0, half), bot = list.slice(half);
+        const occupied = groups[area].filter(s => s.seat_status === 'active' || s.seat_status === 'reserved').length;
         return `<div class="map-island ${isStage ? 'is-stage' : ''}">
             <div class="map-island-head">
                 <div class="map-island-name"><i class="fas ${isStage ? 'fa-star' : 'fa-server'}"></i> ${esc(area)}</div>
                 <div class="map-island-count">${occupied}/${list.length} in use</div>
             </div>
-            <div class="map-rows">
-                <div class="map-row">${top.map(seatHTML).join('')}</div>
-                <div class="map-desk"></div>
-                ${bot.length ? `<div class="map-row">${bot.map(seatHTML).join('')}</div>` : ''}
-            </div>
+            <div class="map-grid">${list.map(seatHTML).join('')}</div>
         </div>`;
     }).join('');
+
+    // Front-of-room reference strip — mirrors the kiosk floor map's Kiosk / Door /
+    // Admin Desk landmarks so the layout reads the same way staff already know it.
+    const frontStrip = `<div class="map-front">
+        <div class="map-front-chip map-front-kiosk"><i class="fas fa-desktop"></i> Kiosk</div>
+        <div class="map-front-door"></div>
+        <div class="map-front-door"></div>
+        <div class="map-front-chip map-front-admin"><i class="fas fa-user-shield"></i> Admin Desk</div>
+    </div>`;
+
+    mapEl.innerHTML = `<div class="map-islands-row">${islandsHtml}</div>${frontStrip}`;
 }
 function seatHTML(m) {
     const st = m.seat_status;
     const varsity = m.varsity && st === 'active';
-    const clickable = st !== 'offline';   // every live station opens a detail/action panel
+    const secured = st === 'available' && m.locked;   // idle + kiosk-gated = "Secured & Ready"
     const icon = st === 'active' ? '<i class="fas fa-user si"></i>'
         : st === 'reserved' ? '<i class="fas fa-hourglass-half si"></i>'
-        : st === 'offline' ? '<i class="fas fa-power-off si"></i>'
+        : st === 'offline' ? '<i class="fas fa-triangle-exclamation si"></i>'
         : st === 'maint' ? (m.admin_mode ? '<i class="fas fa-user-gear si"></i>' : '<i class="fas fa-screwdriver-wrench si"></i>')
-        : m.locked ? '<i class="fas fa-lock si"></i>' : '';
+        : secured ? '<i class="fas fa-circle-check si"></i>' : '<i class="fas fa-lock-open si"></i>';
     const cls = st + (varsity ? ' varsity' : '') + (m.locked && st !== 'offline' ? ' locked-gate' : '');
-    const stLabel = st === 'available' ? (m.locked ? ' — Locked (kiosk gate)' : ' — Open')
-        : st === 'offline' ? ' — Offline'
+    const stLabel = st === 'available' ? (secured ? ' — Secured &amp; Ready for Use' : ' — Open, Unlocked')
+        : st === 'offline' ? ' — System Offline'
         : st === 'maint' ? (m.admin_mode ? ' — Admin Mode' : ' — Maintenance') : '';
     const tip = esc(m.machine) + (m.name ? ' — ' + esc(m.name) : stLabel);
-    return `<div class="seat ${cls}" title="${tip}" ${clickable ? `onclick="openSessionDetail('${esc(m.uuid)}')"` : ''}>${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-lock"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
+    return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
 }
 function openSessionDetail(uuid) {
     const m = _sessAll[uuid];
     if (!m) return;
     const s = _sessMap[uuid];
     document.getElementById('sess-detail-back').classList.add('show');
+    if (m.seat_status === 'offline') { renderSessionOffline(m); return; }
     if (s) { renderSessionOccupied(s, m); } else { renderSessionOpen(m); }
+}
+function renderSessionOffline(m) {
+    const box = document.getElementById('sess-detail');
+    box.innerHTML = `
+        <div class="sd-head offline">
+            <div class="sd-mach-ico offline-ico"><i class="fas fa-triangle-exclamation"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="sd-mach">${esc(m.machine)}</div>
+                <div class="sd-state" style="color:#f87171;">System Offline</div>
+            </div>
+            <button class="sd-close" onclick="closeSessionDetail()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="sd-body">
+            <div class="sd-hint warn" style="color:#fca5a5;"><i class="fas fa-circle-info" style="color:#f87171;"></i> This station isn't reporting to GGLeap — it's likely powered off. It will come back online automatically once it's turned back on; there's no remote power-on available.</div>
+            <div class="sd-rows">
+                ${m.state ? `<div class="sd-row"><div class="k">Last Known State</div><div class="val">${esc(formatMachineState(m.state))}</div></div>` : ''}
+                ${m.last_state_update ? `<div class="sd-row"><div class="k">Last Seen</div><div class="val">${durationSince(m.last_state_update)} ago</div></div>` : ''}
+            </div>
+        </div>`;
 }
 function formatMachineState(raw) {
     const map = {
@@ -3075,9 +3143,10 @@ function renderSessionOpen(m) {
     const st = m.seat_status;
     const adminMode = !!m.admin_mode;
     const rebooting = st === 'maint' && !adminMode;
-    const label = adminMode ? 'Admin Mode' : rebooting ? formatMachineState(m.state) : 'Open — Not Checked In';
-    const stColor = adminMode ? '#c084fc' : rebooting ? '#c084fc' : '#38bdf8';
-    const lockRow = `<div class="sd-row"><div class="k">Access</div><div class="val">${m.locked ? '<i class="fas fa-lock" style="color:#c084fc;"></i> Locked (kiosk gate)' : '<i class="fas fa-lock-open" style="color:#38bdf8;"></i> Unlocked' + (m.unlocked_by ? ' (' + (m.unlocked_by === 'kiosk' ? 'kiosk check-in' : 'staff') + ')' : '')}</div></div>`;
+    const secured = !adminMode && !rebooting && m.locked;
+    const label = adminMode ? 'Admin Mode' : rebooting ? formatMachineState(m.state) : secured ? 'Secured & Ready for Use' : 'Open — Not Checked In';
+    const stColor = adminMode ? '#c084fc' : rebooting ? '#c084fc' : secured ? '#2dd4bf' : '#38bdf8';
+    const lockRow = `<div class="sd-row"><div class="k">Access</div><div class="val">${m.locked ? '<i class="fas fa-circle-check" style="color:#2dd4bf;"></i> Secured (kiosk gate)' : '<i class="fas fa-lock-open" style="color:#38bdf8;"></i> Unlocked' + (m.unlocked_by ? ' (' + (m.unlocked_by === 'kiosk' ? 'kiosk check-in' : 'staff') + ')' : '')}</div></div>`;
     const stateRow = m.state ? `<div class="sd-row"><div class="k">System State</div><div class="val">${esc(formatMachineState(m.state))}</div></div>` : '';
     const updateRow = m.last_state_update ? `<div class="sd-row wide"><div class="k">Last Update</div><div class="val">${durationSince(m.last_state_update)} ago</div></div>` : '';
     const box = document.getElementById('sess-detail');
@@ -3101,7 +3170,7 @@ function renderSessionOpen(m) {
     }
     box.innerHTML = `
         <div class="sd-head ${adminMode || rebooting ? 'maint' : ''}">
-            <div class="sd-avail-ico" ${adminMode || rebooting ? 'style="background:rgba(168,85,247,.18);color:#c084fc;"' : ''}><i class="fas fa-desktop"></i></div>
+            <div class="sd-avail-ico" ${adminMode || rebooting ? 'style="background:rgba(168,85,247,.18);color:#c084fc;"' : secured ? 'style="background:rgba(45,212,191,.18);color:#2dd4bf;"' : ''}><i class="fas ${secured ? 'fa-circle-check' : 'fa-desktop'}"></i></div>
             <div style="flex:1;min-width:0;">
                 <div class="sd-mach">${esc(m.machine)}</div>
                 <div class="sd-state" style="color:${stColor};">${label}</div>
@@ -3190,6 +3259,96 @@ function closeSessionDetail() {
     const b = document.getElementById('sess-detail-back');
     if (b) b.classList.remove('show');
 }
+
+// ═══════════════════ SEAT RIGHT-CLICK QUICK MENU ═══════════════════
+function closeSeatContextMenu() {
+    const el = document.getElementById('seat-ctx-menu');
+    if (el) el.classList.remove('show');
+}
+function ctxItem(label, icon, handler, cls) {
+    return { label, icon, handler, cls: cls || '' };
+}
+function buildSeatContextItems(m, s) {
+    const items = [];
+    items.push(ctxItem('View Details', 'fa-circle-info', () => openSessionDetail(m.uuid)));
+    if (s && s.email && CAN_VIEW_STUDENTS) {
+        items.push(ctxItem('View Student Profile', 'fa-user', () => openProfile(encodeURIComponent(s.email)), 'good'));
+    }
+    if (m.seat_status === 'offline') {
+        return items; // nothing actionable on a powered-off machine
+    }
+    if (!CAN_MANAGE) return items;
+    items.push({ sep: true });
+    if (m.admin_mode) {
+        items.push(ctxItem('Restart System', 'fa-arrow-rotate-right', () => restartAdminMachine(m.uuid, m.machine), 'warn'));
+        items.push(ctxItem('Power Off System', 'fa-power-off', () => shutdownAdminMachine(m.uuid, m.machine), 'danger'));
+    } else if (m.seat_status === 'active') {
+        items.push(ctxItem('Cancel &amp; Restart', 'fa-power-off', () => cancelSession(s.uuid, s.machine, true), 'danger'));
+        if (CAN_UNLOCK) items.push(ctxItem('Unlock Station', 'fa-lock-open', () => unlockSession(s.uuid, s.machine)));
+    } else if (m.seat_status === 'reserved') {
+        items.push(ctxItem('Cancel Reservation', 'fa-lock', () => cancelSession(s.uuid, s.machine, false), 'warn'));
+    } else if (m.seat_status === 'available') {
+        items.push(ctxItem('Check In Student', 'fa-user-check', () => openCheckinForm(m.uuid), 'good'));
+        if (m.locked) items.push(ctxItem('Unlock Station', 'fa-lock-open', () => unlockSession(m.uuid, m.machine)));
+        else items.push(ctxItem('Lock Station', 'fa-lock', () => lockSession(m.uuid, m.machine), 'warn'));
+    }
+    items.push({ sep: true });
+    items.push(ctxItem('Copy Machine Name', 'fa-copy', () => {
+        navigator.clipboard && navigator.clipboard.writeText(m.machine).then(() => toast('Copied "' + m.machine + '"', 'success'));
+    }));
+    return items;
+}
+function openSeatContextMenu(evt, uuid) {
+    const m = _sessAll[uuid];
+    if (!m) return;
+    evt.preventDefault();
+    const s = _sessMap[uuid];
+    const menu = document.getElementById('seat-ctx-menu');
+    if (!menu) return;
+    const statusLabel = m.seat_status === 'active' ? (m.varsity ? 'Varsity · Logged In' : 'Logged In')
+        : m.seat_status === 'reserved' ? 'Reserved'
+        : m.seat_status === 'offline' ? 'Offline'
+        : m.seat_status === 'maint' ? (m.admin_mode ? 'Admin Mode' : 'Maintenance')
+        : (m.locked ? 'Secured & Ready' : 'Open, Unlocked');
+    const items = buildSeatContextItems(m, s);
+    const itemsHTML = items.map(it => it.sep
+        ? '<div class="ctx-sep"></div>'
+        : `<div class="ctx-item ${it.cls}" data-ctx-idx="${items.indexOf(it)}"><i class="fas ${it.icon}"></i> ${it.label}</div>`
+    ).join('');
+    menu.innerHTML = `
+        <div class="ctx-head">
+            <div class="ctx-head-ico"><i class="fas fa-desktop"></i></div>
+            <div class="ctx-head-txt">
+                <div class="ctx-head-name">${esc(m.machine)}</div>
+                <div class="ctx-head-sub">${esc(statusLabel)}</div>
+            </div>
+        </div>
+        <div class="ctx-items">${itemsHTML || '<div class="ctx-empty">No actions available</div>'}</div>`;
+    menu.querySelectorAll('.ctx-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const idx = parseInt(el.dataset.ctxIdx, 10);
+            closeSeatContextMenu();
+            if (items[idx] && items[idx].handler) items[idx].handler();
+        });
+    });
+    // Position near the cursor, clamped to the viewport so it never runs offscreen.
+    menu.classList.add('show');
+    const mw = menu.offsetWidth || 220, mh = menu.offsetHeight || 200;
+    let x = evt.clientX, y = evt.clientY;
+    if (x + mw > window.innerWidth - 10) x = window.innerWidth - mw - 10;
+    if (y + mh > window.innerHeight - 10) y = window.innerHeight - mh - 10;
+    menu.style.left = Math.max(8, x) + 'px';
+    menu.style.top = Math.max(8, y) + 'px';
+}
+document.getElementById('sess-map') && document.getElementById('sess-map').addEventListener('contextmenu', (e) => {
+    const seat = e.target.closest && e.target.closest('.seat[data-uuid]');
+    if (!seat) return;
+    openSeatContextMenu(e, seat.dataset.uuid);
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('#seat-ctx-menu')) closeSeatContextMenu(); });
+document.addEventListener('scroll', closeSeatContextMenu, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSeatContextMenu(); });
+
 async function cancelSession(uuid, machine, active) {
     const msg = active
         ? `Cancel the session on ${machine}? This will force-restart the machine and log the student out.`

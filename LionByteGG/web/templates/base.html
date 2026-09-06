@@ -4728,7 +4728,7 @@
             <div class="nav-section">
                 <div class="nav-section-title">Kiosk</div>
                 {% if 'page.arena_live' in perms %}<a href="/arena/live" class="nav-link {% if request.path in ['/arena', '/arena/', '/arena/live'] %}active{% endif %}"><i class="fas fa-signal"></i> Live Feed</a>{% endif %}
-                {% if 'page.arena_live' in perms %}<a href="/arena/sessions" class="nav-link {% if request.path == '/arena/sessions' %}active{% endif %}"><i class="fas fa-desktop"></i> Sessions</a>{% endif %}
+                {% if 'page.arena_sessions' in perms %}<a href="/arena/sessions" class="nav-link {% if request.path == '/arena/sessions' %}active{% endif %}"><i class="fas fa-desktop"></i> PC Manager</a>{% endif %}
                 {% if 'page.arena_logs' in perms %}<a href="/arena/logs" class="nav-link {% if request.path == '/arena/logs' %}active{% endif %}"><i class="fas fa-scroll"></i> Sign-in Logs</a>{% endif %}
                 {% if 'page.arena_logs' in perms %}<a href="/arena/activity" class="nav-link {% if request.path == '/arena/activity' %}active{% endif %}"><i class="fas fa-chart-line"></i> Activity</a>{% endif %}
                 {% if 'page.arena_controls' in perms %}<a href="/arena/controls" class="nav-link {% if request.path == '/arena/controls' %}active{% endif %}"><i class="fas fa-sliders-h"></i> Kiosk Manager</a>{% endif %}

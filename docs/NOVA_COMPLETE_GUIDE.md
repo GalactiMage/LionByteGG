@@ -88,7 +88,9 @@ questions if your program needs different ones — is in
 
 ### Arena Staff
 - **Live Feed** — real-time sign-ins as they happen at the physical kiosks.
-- **Sessions** — a room map of every arena PC with live lock/unlock/power controls.
+- **PC Manager** — a top-down room map of every arena PC (laid out just like the physical
+  kiosk floor plan) with live lock/unlock/power controls, right-click quick actions, and a
+  fast 5-second refresh so a machine you just restarted shows up quickly.
 - **Kiosk Manager (Controls)** — everything about the physical kiosks: hours, announcement
   banner, sign-in anti-spam guard, PC screen-lock automation, add/remove kiosks, GGLeap API
   usage meter.

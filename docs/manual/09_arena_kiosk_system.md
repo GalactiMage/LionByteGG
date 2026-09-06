@@ -344,3 +344,55 @@ There's no single "reset kiosk" button — holds are in-memory and clear themsel
 next server restart or naturally expire after `pc_hold_minutes`; sign-in records need to be
 removed at the student-profile level (`DELETE /api/arena/student?email=...`) if they were
 test data that shouldn't count toward analytics.
+
+---
+
+## 9.15 The PC Manager Tab — Layout, Colors & Quick Actions
+
+The staff-facing PC room map (`/arena/sessions`, gated by `page.arena_sessions`) is labeled
+**"PC Manager"** in the sidebar and tab bar (its URL/permission key still say "sessions"
+internally for backward compatibility — only the display name changed).
+
+### Status colors, explained
+Every seat uses a distinct color + icon so a status is readable at a glance without hovering:
+
+| State | Color | Icon | Meaning |
+|---|---|---|---|
+| Logged In | Green | person | A real student is actively playing |
+| Reserved | Amber | hourglass | Held for a guest walking over from the kiosk |
+| Varsity (Logged In) | Gold | person | Same as Logged In, but a varsity/JV player |
+| **Secured & Ready** | Teal, with a green checkmark | check-circle | Idle, no one signed in, and the kiosk screen-lock has it gated — everything is working correctly, it's just waiting for someone to check in |
+| Open / Unlocked | Blue | unlock | Idle and NOT locked — anyone could sit down without checking in first |
+| Admin / Maintenance | Purple | gear / wrench | In Admin Mode, restarting, starting up, or shutting down |
+| **Offline** | Red, pulsing | warning triangle | Not reporting to GGLeap at all — almost always means the machine is fully powered off |
+
+A machine that's offline is now clickable (it wasn't before) — clicking it opens an
+informational panel explaining there's no remote power-on available and showing its last
+known state/last-seen time, rather than doing nothing.
+
+### Right-click quick actions
+Right-clicking any seat opens a small context menu with the actions relevant to that
+specific machine's current state — e.g. Check In Student + Lock/Unlock for an idle machine,
+Cancel & Restart for a logged-in session, Restart/Power Off for Admin Mode, and (if the seat
+has a signed-in student and you hold `page.arena_students`) a direct **View Student
+Profile** shortcut. Every machine's menu also offers **Copy Machine Name** for quickly
+pasting a station name elsewhere (a support ticket, a Discord message, etc.). Left-click
+still opens the full detail drawer as before; right-click is a purely additive shortcut.
+
+### Faster updates without breaking the GGLeap budget
+This tab refreshes on a **5-second window** — noticeably tighter than the public kiosk
+cadence (15s open / 120s closed, see §9.2) — specifically so a machine you just restarted
+shows its new state quickly instead of waiting up to two minutes. It still flows through the
+single shared GGLeap cache described in §9.2, so this can only ever *shorten* the effective
+refresh rate while a staff member has the tab open; it never opens a second polling loop or
+calls GGLeap outside that shared cache. Left continuously open all day, this tab adds at
+most a few thousand extra calls to the daily budget — comfortably inside the 10,000/day
+limit — and it costs nothing extra when no one is looking at it.
+
+### Floor layout matches the physical kiosks
+Each island renders as a 2-column × 3-row grid in the real physical seating order —
+`(1,6) / (2,5) / (3,4)` — the same `SEAT_ORDER` used by the actual kiosk floor map (see
+[Chapter 10 §10.4](10_arena_kiosk_physical_devices.md)), instead of a generic ascending
+split. A small front-of-room reference strip (Kiosk chip on the left, Admin Desk chip on the
+right) sits below the islands purely for spatial orientation, mirroring the kiosk's own
+"Kiosk / Door / Stage / Door / Admin Desk" landmarks.

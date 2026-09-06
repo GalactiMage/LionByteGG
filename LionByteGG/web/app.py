@@ -5366,11 +5366,15 @@ def _ggleap_patch_machine_lock(machine_uuid, lock, message=None):
             m["AdminLockMessage"] = message if lock else None
             break
 
-def _fetch_ggleap_status():
+def _fetch_ggleap_status(max_age=None):
     """Live PC status for the kiosk display, derived from the shared machines
     cache. The transform (and session tracking) only re-runs when the underlying
-    get-all actually refreshed."""
-    machines, error = _ggleap_get_machines()
+    get-all actually refreshed. `max_age` lets a specific caller (e.g. the staff
+    PC Manager tab) ask for a tighter refresh window than the default kiosk/public
+    cadence — it still flows through the ONE shared _ggleap_get_machines() cache,
+    so it never adds a second independent polling loop or extra API calls beyond
+    whatever the shortest currently-requested window needs."""
+    machines, error = _ggleap_get_machines(max_age=max_age)
 
     # Reuse the last transform unless the raw data changed since we built it.
     if _ggleap_status_cache["data"] is not None and _ggleap_status_cache["raw_at"] == _ggleap_machines_cache["fetched_at"]:
@@ -6010,10 +6014,15 @@ def _arena_active_sessions():
 @app.route('/api/arena/sessions')
 @api_perm_required('page.arena_sessions')
 def api_arena_sessions():
-    """Active PC sessions + full room map for the Nova Sessions tab."""
+    """Active PC sessions + full room map for the Nova PC Manager tab.
+    Uses a tight 5s refresh window (vs the 8s/120s kiosk default) since this is a
+    small, bounded staff-only audience that needs to see a restarted machine come
+    back quickly — it still shares the ONE global GGLeap cache, so this can only
+    ever *shorten* the effective refresh cadence while someone's actively viewing
+    this tab; it never spins up a separate polling loop or ignores the cache."""
     sessions = _arena_active_sessions()
     sess_by_uid = {s["uuid"]: s for s in sessions}
-    status = _fetch_ggleap_status()
+    status = _fetch_ggleap_status(max_age=5)
     machines = []
     for p in status.get("pcs", []):
         uid = p.get("uuid")
