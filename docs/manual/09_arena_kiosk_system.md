@@ -380,18 +380,18 @@ pasting a station name elsewhere (a support ticket, a Discord message, etc.). Le
 still opens the full detail drawer as before; right-click is a purely additive shortcut.
 
 ### Faster updates without breaking the GGLeap budget
-This tab's auto-refresh cadence scales with the arena's own open/closed schedule instead
-of using one flat number: **8 seconds while open** — the exact same cadence the public
-kiosks have always used, so an open tab adds zero *incremental* GGLeap load beyond what
-the system already runs safely every day — and **45 seconds while closed** (vs the kiosk's
-120s), fast enough for an after-hours restart-test to see a real update in under a minute
-without an aggressive cadence around the clock. It still flows through the single shared
-GGLeap cache described in §9.2, so this can only ever *shorten* the effective refresh rate
-while a staff member has the tab open; it never opens a second polling loop or calls
-GGLeap outside that shared cache. Even the unrealistic worst case of this tab being left
-open and visible 24 hours a day, every day, stays comfortably under half the 10,000/day
-budget by design — there's no need to rely on the emergency circuit breaker described in
-§9.2 for this to be safe, it's simply an extra backstop for the unexpected.
+This tab auto-refreshes on a flat **15-second window**, the same regardless of whether
+the arena is currently open or closed — simple, predictable, and noticeably faster than
+the kiosk's closed-hours cadence (120s, see §9.2) without ever approaching a risky rate.
+It still flows through the single shared GGLeap cache described in §9.2, so this can only
+ever *shorten* the effective refresh rate while a staff member has the tab open; it never
+opens a second polling loop or calls GGLeap outside that shared cache. Even the
+unrealistic worst case of this tab being left open and visible 24 hours a day, every day,
+comes out to roughly 5,760 calls — under 58% of the 10,000/day budget — with no need to
+rely on the emergency circuit breaker described in §9.2 for this to be safe; that breaker
+is simply an extra backstop for the unexpected. The manual **Refresh** button still
+bypasses this window entirely for an instant, true check whenever staff want one right
+after physically restarting a machine.
 
 ### Floor layout matches the physical kiosks
 Each island renders as a 2-column × 3-row grid in the real physical seating order —
