@@ -5314,6 +5314,23 @@ def _ggleap_cache_ttl():
     except Exception:
         return 20
 
+# Hard circuit-breaker: no matter how many tabs are polling or how often staff
+# hit the manual force-refresh, once today's usage crosses 85% of the 10k/day
+# cap every cache window (including forced ones) gets floored to 60s so the
+# remaining budget can't be exhausted by a busy day.
+_GGLEAP_DAILY_BUDGET = 10000
+_GGLEAP_SAFETY_FLOOR_PCT = 0.85
+_GGLEAP_SAFETY_MAX_AGE = 60
+
+def _ggleap_budget_guard(max_age):
+    """Raise (never lower) the requested max_age once today's usage is within
+    the safety margin of the daily budget."""
+    with _ggleap_usage_lock:
+        used_today = _ggleap_usage.get("total", 0) if _ggleap_usage.get("date") == _ggleap_usage_today() else 0
+    if used_today >= _GGLEAP_DAILY_BUDGET * _GGLEAP_SAFETY_FLOOR_PCT:
+        return max(max_age, _GGLEAP_SAFETY_MAX_AGE)
+    return max_age
+
 def _ggleap_get_machines(max_age=None, force=False):
     """One shared machines/get-all, server-cached. Returns (machines, error).
     On any error (e.g. 429) the last good list is served stale so the kiosks never
@@ -5324,6 +5341,7 @@ def _ggleap_get_machines(max_age=None, force=False):
         return (_ggleap_machines_cache["machines"] or []), "GGLeap paused"
     if max_age is None:
         max_age = _ggleap_cache_ttl()
+    max_age = _ggleap_budget_guard(max_age)
     now = _t.time()
     cached = _ggleap_machines_cache["machines"]
     # Throttle by last ATTEMPT (success or failure) so a 429 outage backs off to the
