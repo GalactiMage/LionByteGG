@@ -759,7 +759,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
         <h3><i class="fas fa-desktop" style="color:#22d3ee;"></i> PC Manager</h3>
         <div style="display:flex;gap:8px;align-items:center;">
             <span class="ar-live-meta" id="sess-meta"><span class="dot"></span> <span id="sess-updated">Live</span></span>
-            <button class="ar-btn ar-btn-ghost" onclick="loadSessions()"><i class="fas fa-rotate"></i> Refresh</button>
+            <button class="ar-btn ar-btn-ghost" id="sess-refresh-btn" onclick="loadSessions(true)"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
     </div>
     <div class="sess-summary" id="sess-summary"></div>
@@ -2972,13 +2972,25 @@ async function resetStudentAccount() {
 // ═══════════════════ SESSIONS (room map) ═══════════════════
 let _sessMap = {};   // uuid -> session detail (active/reserved only)
 let _sessAll = {};   // uuid -> machine entry (every station on the map)
-async function loadSessions() {
+let _sessRefreshCooldown = false;
+async function loadSessions(force) {
     if (document.hidden) return;
     const mapEl = document.getElementById('sess-map');
     if (!mapEl) return;
+    // Manual force-refresh bypasses the shared cache window for this one request —
+    // guarded by a client cooldown so repeated clicks can't hammer the GGLeap API.
+    const btn = document.getElementById('sess-refresh-btn');
+    const doForce = !!force && !_sessRefreshCooldown;
+    if (force && _sessRefreshCooldown) return;
+    if (doForce && btn) {
+        _sessRefreshCooldown = true;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-rotate fa-spin"></i> Checking…';
+        setTimeout(() => { _sessRefreshCooldown = false; if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rotate"></i> Refresh'; } }, 3000);
+    }
     let d;
     try {
-        const r = await fetch('/api/arena/sessions');
+        const r = await fetch('/api/arena/sessions' + (doForce ? '?force=1' : ''));
         if (!r.ok) { const m = document.getElementById('sess-updated'); if (m) m.textContent = 'Reconnecting…'; return; }
         d = await r.json();
     } catch (e) { return; }

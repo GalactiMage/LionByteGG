@@ -6019,10 +6019,16 @@ def api_arena_sessions():
     small, bounded staff-only audience that needs to see a restarted machine come
     back quickly — it still shares the ONE global GGLeap cache, so this can only
     ever *shorten* the effective refresh cadence while someone's actively viewing
-    this tab; it never spins up a separate polling loop or ignores the cache."""
+    this tab; it never spins up a separate polling loop or ignores the cache.
+
+    ?force=1 (the manual Refresh button only) bypasses the window entirely for
+    that one request — a human can't click faster than the browser-side cooldown
+    lets them, so this stays budget-safe while giving staff a true "check right
+    now" after physically restarting a machine, instead of waiting out the window."""
+    forced = request.args.get('force') in ('1', 'true', 'yes')
     sessions = _arena_active_sessions()
     sess_by_uid = {s["uuid"]: s for s in sessions}
-    status = _fetch_ggleap_status(max_age=5)
+    status = _fetch_ggleap_status(max_age=0 if forced else 5)
     machines = []
     for p in status.get("pcs", []):
         uid = p.get("uuid")
