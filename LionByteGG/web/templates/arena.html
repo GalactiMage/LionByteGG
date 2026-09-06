@@ -1391,7 +1391,7 @@ function showTab(name) {
     if (sessTimer) { clearInterval(sessTimer); sessTimer = null; }
     if (actTimer) { clearInterval(actTimer); actTimer = null; stopReplay(); }
     if (name === 'live') { liveFirstLoad = true; loadActive(); liveTimer = setInterval(loadActive, 4000); }
-    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 15000); }
+    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 8000); }
     else if (name === 'logs') { loadLogs(); logsTimer = setInterval(() => { if (document.activeElement !== document.getElementById('log-search')) loadLogs(); }, 8000); }
     else if (name === 'controls') { loadConfig(); loadStats(); ctrlTimer = setInterval(loadStats, 10000); }
     else if (name === 'activity') { loadActivity(); }
@@ -3066,6 +3066,16 @@ function seatHTML(m) {
     const tip = esc(m.machine) + (m.name ? ' — ' + esc(m.name) : stLabel);
     return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
 }
+// Instantly reflect a staff-initiated change in the map without waiting for the
+// next poll — the background refresh (see loadSessions) still reconciles with
+// the real GGLeap state shortly after, this is just for a snappy-feeling UI.
+function _optimisticSeat(uuid, patch) {
+    const m = _sessAll[uuid];
+    if (!m) return;
+    Object.assign(m, patch);
+    const el = document.querySelector(`.seat[data-uuid="${CSS.escape(uuid)}"]`);
+    if (el) el.outerHTML = seatHTML(m);
+}
 function openSessionDetail(uuid) {
     const m = _sessAll[uuid];
     if (!m) return;
@@ -3216,6 +3226,7 @@ async function submitSessionCheckin(uuid, machine) {
         const d = await r.json();
         if (d.success) {
             toast(`${name} checked in on ${machine}`, 'success');
+            _optimisticSeat(uuid, { seat_status: 'active', locked: false, name, email, started_at: new Date().toISOString() });
             closeSessionDetail();
             loadSessions();
             if (typeof loadActive === 'function') loadActive();
@@ -3234,7 +3245,7 @@ async function unlockSession(uuid, machine) {
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
-        if (d.success) { toast(`${machine} unlocked`, 'success'); closeSessionDetail(); loadSessions(); }
+        if (d.success) { toast(`${machine} unlocked`, 'success'); _optimisticSeat(uuid, { locked: false, unlocked: true, unlocked_by: 'staff' }); closeSessionDetail(); loadSessions(); }
         else { toast(d.error || 'Could not unlock', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock-open"></i> Unlock Station'; } }
     } catch (e) {
         toast('Network error', 'error');
@@ -3247,7 +3258,7 @@ async function lockSession(uuid, machine) {
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
-        if (d.success) { toast(`${machine} locked`, 'success'); closeSessionDetail(); loadSessions(); }
+        if (d.success) { toast(`${machine} locked`, 'success'); _optimisticSeat(uuid, { locked: true, unlocked: false, unlocked_by: null }); closeSessionDetail(); loadSessions(); }
         else { toast(d.error || 'Could not lock', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lock Station'; } }
     } catch (e) {
         toast('Network error', 'error');
@@ -3361,6 +3372,9 @@ async function cancelSession(uuid, machine, active) {
         const d = await r.json();
         if (d.success) {
             toast(d.action === 'restarted' ? `${machine} is restarting` : `${machine} locked`, 'success');
+            _optimisticSeat(uuid, d.action === 'restarted'
+                ? { seat_status: 'maint', state: 'Restarting', name: '', email: '' }
+                : { seat_status: 'available', locked: true, name: '', email: '' });
             closeSessionDetail();
             loadSessions();
         } else {
@@ -3382,6 +3396,9 @@ async function _powerAdminMachine(uuid, machine, action) {
         const d = await r.json();
         if (d.success) {
             toast(`${machine} is ${action === 'restart' ? 'restarting' : 'powering off'}`, 'success');
+            _optimisticSeat(uuid, action === 'restart'
+                ? { seat_status: 'maint', state: 'Restarting', admin_mode: false }
+                : { seat_status: 'offline', state: 'Off', admin_mode: false });
             closeSessionDetail();
             loadSessions();
         } else {

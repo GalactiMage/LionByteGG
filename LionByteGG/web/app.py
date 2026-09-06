@@ -5315,12 +5315,19 @@ def _ggleap_cache_ttl():
         return 20
 
 def _pc_manager_max_age():
-    """Refresh window for the staff PC Manager tab's auto-poll: a flat 15s
-    regardless of arena open/closed status. Worst case (this tab left open and
-    visible 24 hours a day, every day) is ~5,760 calls/day — under 58% of the
-    10,000/day budget, with no reliance on the circuit breaker below. The
-    manual Refresh button still bypasses this instantly regardless."""
-    return 15
+    """Refresh window for the staff PC Manager tab's auto-poll. While the arena
+    is open this reuses the exact same 8s cadence the public kiosks already use
+    for their own live status — so this adds zero incremental GGLeap load or
+    change in behavior for students at the kiosks, it just rides the same
+    already-running cache. While closed it tightens to 45s (vs the kiosk's own
+    120s) so an after-hours restart-test isn't stuck waiting two minutes. Worst
+    case (this tab left open and visible 24/7) is ~4,900 calls/day — under 49%
+    of the 10,000/day budget, with no reliance on the circuit breaker below.
+    The manual Refresh button still bypasses this instantly regardless."""
+    try:
+        return 8 if _arena_is_open_now(load_arena_config()) else 45
+    except Exception:
+        return 20
 
 # Hard circuit-breaker: no matter how many tabs are polling or how often staff
 # hit the manual force-refresh, once today's usage crosses 85% of the 10k/day
@@ -6041,13 +6048,15 @@ def _arena_active_sessions():
 @api_perm_required('page.arena_sessions')
 def api_arena_sessions():
     """Active PC sessions + full room map for the Nova PC Manager tab.
-    Uses `_pc_manager_max_age()` — a flat 15s regardless of arena open/closed
-    status. It still shares the ONE global GGLeap cache, so this can only
-    *shorten* the effective refresh cadence while someone's actively viewing
-    this tab; it never spins up a separate polling loop. Worst case (this tab
-    left open and visible 24/7) stays under 58% of the daily budget by design —
-    the circuit breaker (`_ggleap_budget_guard`) is only an extra backstop for
-    the unexpected, not something normal use relies on.
+    Uses `_pc_manager_max_age()` — 8s while the arena's open (identical to the
+    public kiosk cadence, so it never changes anything for students at the
+    kiosks) and 45s while closed (vs the kiosk's 120s, so after-hours
+    restart-testing isn't stuck waiting two minutes). It still shares the ONE
+    global GGLeap cache, so this can only *shorten* the effective refresh
+    cadence while someone's actively viewing this tab; it never spins up a
+    separate polling loop. Worst case (this tab left open 24/7) stays under
+    49% of the daily budget by design — the circuit breaker
+    (`_ggleap_budget_guard`) is only an extra backstop for the unexpected.
 
     ?force=1 (the manual Refresh button only) bypasses the window entirely for
     that one request — a human can't click faster than the browser-side cooldown
