@@ -1391,7 +1391,7 @@ function showTab(name) {
     if (sessTimer) { clearInterval(sessTimer); sessTimer = null; }
     if (actTimer) { clearInterval(actTimer); actTimer = null; stopReplay(); }
     if (name === 'live') { liveFirstLoad = true; loadActive(); liveTimer = setInterval(loadActive, 4000); }
-    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 6000); }
+    else if (name === 'sessions') { loadSessions(); sessTimer = setInterval(loadSessions, 8000); }
     else if (name === 'logs') { loadLogs(); logsTimer = setInterval(() => { if (document.activeElement !== document.getElementById('log-search')) loadLogs(); }, 8000); }
     else if (name === 'controls') { loadConfig(); loadStats(); ctrlTimer = setInterval(loadStats, 10000); }
     else if (name === 'activity') { loadActivity(); }

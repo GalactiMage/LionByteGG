@@ -380,14 +380,18 @@ pasting a station name elsewhere (a support ticket, a Discord message, etc.). Le
 still opens the full detail drawer as before; right-click is a purely additive shortcut.
 
 ### Faster updates without breaking the GGLeap budget
-This tab refreshes on a **5-second window** — noticeably tighter than the public kiosk
-cadence (15s open / 120s closed, see §9.2) — specifically so a machine you just restarted
-shows its new state quickly instead of waiting up to two minutes. It still flows through the
-single shared GGLeap cache described in §9.2, so this can only ever *shorten* the effective
-refresh rate while a staff member has the tab open; it never opens a second polling loop or
-calls GGLeap outside that shared cache. Left continuously open all day, this tab adds at
-most a few thousand extra calls to the daily budget — comfortably inside the 10,000/day
-limit — and it costs nothing extra when no one is looking at it.
+This tab's auto-refresh cadence scales with the arena's own open/closed schedule instead
+of using one flat number: **8 seconds while open** — the exact same cadence the public
+kiosks have always used, so an open tab adds zero *incremental* GGLeap load beyond what
+the system already runs safely every day — and **45 seconds while closed** (vs the kiosk's
+120s), fast enough for an after-hours restart-test to see a real update in under a minute
+without an aggressive cadence around the clock. It still flows through the single shared
+GGLeap cache described in §9.2, so this can only ever *shorten* the effective refresh rate
+while a staff member has the tab open; it never opens a second polling loop or calls
+GGLeap outside that shared cache. Even the unrealistic worst case of this tab being left
+open and visible 24 hours a day, every day, stays comfortably under half the 10,000/day
+budget by design — there's no need to rely on the emergency circuit breaker described in
+§9.2 for this to be safe, it's simply an extra backstop for the unexpected.
 
 ### Floor layout matches the physical kiosks
 Each island renders as a 2-column × 3-row grid in the real physical seating order —
