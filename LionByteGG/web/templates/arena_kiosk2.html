@@ -892,12 +892,12 @@
     </div>
   </div>
 
-  <!-- Varsity Check-In (bottom-right, shown even when locked/closed) -->
-  <button class="varsity-fab" id="varsityBtn" aria-label="Varsity Check-In">
+  <!-- Team Check-In (bottom-right, shown even when locked/closed) -->
+  <button class="varsity-fab" id="varsityBtn" aria-label="Team Check-In">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="5.2"/><path d="M8.2 13.5L6 22l6-3 6 3-2.2-8.5"/></svg>
-    <span>Varsity Check-In</span>
+    <span>Team Check-In</span>
   </button>
-  <div class="varsity-tip" id="varsityTip">Varsity Check-In is currently disabled by an administrator.</div>
+  <div class="varsity-tip" id="varsityTip">Team Check-In is currently disabled by an administrator.</div>
 
   <div class="card-wrap">
 
@@ -1066,9 +1066,9 @@
         <div class="entry-badge v-badge">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="5.2"/><path d="M8.2 13.5L6 22l6-3 6 3-2.2-8.5"/></svg>
         </div>
-        <div class="eyebrow">PNW Esports Arena · Varsity</div>
-        <h1>Varsity Check-In</h1>
-        <p class="sub">After-hours access for approved varsity members.</p>
+        <div class="eyebrow">PNW Esports Arena · Team</div>
+        <h1>Team Check-In</h1>
+        <p class="sub">After-hours access for approved varsity &amp; JV members.</p>
 
         <div class="banner" id="vBanner">
           <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9L2.7 17a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
@@ -1100,7 +1100,7 @@
               <svg viewBox="0 0 24 24"><path d="M3 6.5h18v11H3v-11zM3 6.5l9 7 9-7"/></svg>
               <input type="text" id="vEmail" placeholder="rivera24@purdue.edu" autocomplete="off" autocapitalize="none" inputmode="email" spellcheck="false" />
             </div>
-            <div class="field-hint">As it appears on your roster</div>
+            <div class="field-hint">As it appears on your roster — @purdue.edu or @pnw.edu both work</div>
           </div>
           <button type="submit" class="submit" id="varsitySubmit">
             <span style="display:flex;align-items:center;gap:10px;">CONTINUE
@@ -2185,7 +2185,7 @@
     const last = (document.getElementById('vLast').value || '').trim();
     const email = (document.getElementById('vEmail').value || '').trim().toLowerCase();
     if (!first || !last){ showVBanner('Please enter your first and last name.'); return; }
-    if (!email){ showVBanner('Please enter your Purdue email.'); return; }
+    if (!email){ showVBanner('Please enter your Purdue or PNW email.'); return; }
     hideVBanner();
     const btn = document.getElementById('varsitySubmit');
     const _btnHtml = btn.innerHTML;
@@ -2205,9 +2205,9 @@
     }
     btn.disabled = false; btn.innerHTML = _btnHtml;
     closeVarsity();
-    // Show the success screen with a varsity flavour.
+    // Show the success screen with a team-check-in flavour (tier-aware label).
     successName.textContent = d.first_name || first;
-    const _wl = document.querySelector('#successPanel .welcome-label'); if (_wl) _wl.textContent = 'Varsity';
+    const _wl = document.querySelector('#successPanel .welcome-label'); if (_wl) _wl.textContent = d.tier === 'jv' ? 'JV' : 'Varsity';
     const _sEnter = document.getElementById('successEnter'); if (_sEnter) _sEnter.textContent = 'After-hours access granted';
     const _sMach = document.getElementById('successMachine'); if (_sMach) _sMach.style.display = 'none';
     const _hv = document.getElementById('unlockHeroVisit'); if (_hv){ _hv.classList.remove('go'); void _hv.offsetWidth; _hv.classList.add('go'); }

@@ -5315,19 +5315,26 @@ def _ggleap_cache_ttl():
         return 20
 
 def _pc_manager_max_age():
-    """Refresh window for the staff PC Manager tab's auto-poll. While the arena
-    is open this reuses the exact same 8s cadence the public kiosks already use
-    for their own live status — so this adds zero incremental GGLeap load or
-    change in behavior for students at the kiosks, it just rides the same
-    already-running cache. While closed it tightens to 45s (vs the kiosk's own
-    120s) so an after-hours restart-test isn't stuck waiting two minutes. Worst
-    case (this tab left open and visible 24/7) is ~4,900 calls/day — under 49%
-    of the 10,000/day budget, with no reliance on the circuit breaker below.
-    The manual Refresh button still bypasses this instantly regardless."""
+    """Refresh window for the staff PC Manager tab's auto-poll. Configurable in
+    Kiosk Manager settings (`pc_manager_refresh_open` / `pc_manager_refresh_closed`)
+    so staff can tune it anytime without a restart — config is reloaded fresh on
+    every call, so a saved change takes effect on the very next request. Defaults:
+    8s while open (matches the public kiosk cadence exactly, so this adds zero
+    incremental GGLeap load for students at the kiosks) and 45s while closed (vs
+    the kiosk's own 120s) so an after-hours restart-test isn't stuck waiting two
+    minutes. Values are clamped to 3-120s so a bad setting can't create a runaway
+    polling rate. The manual Refresh button still bypasses this instantly."""
+    cfg = load_arena_config()
     try:
-        return 8 if _arena_is_open_now(load_arena_config()) else 45
+        is_open = _arena_is_open_now(cfg)
     except Exception:
         return 20
+    key = "pc_manager_refresh_open" if is_open else "pc_manager_refresh_closed"
+    default = 8 if is_open else 45
+    try:
+        return max(3, min(120, int(cfg.get(key, default))))
+    except (TypeError, ValueError):
+        return default
 
 # Hard circuit-breaker: no matter how many tabs are polling or how often staff
 # hit the manual force-refresh, once today's usage crosses 85% of the 10k/day
@@ -6285,11 +6292,11 @@ def api_arena_session_checkin(uid):
                     "machine_name": name_m, "unlocked": ok})
 
 
-# -- Varsity after-hours check-in ------------------------------------------
+# -- Team (Varsity + JV) after-hours check-in ------------------------------
 _VARSITY_DM = (
     "?? **Your Machine is Ready — {machine}**\n\n"
     "Your after-hours Arena session is now **active under privilege of policy**.\n\n"
-    "After-hours play is a privilege reserved for approved varsity members. Any misuse "
+    "After-hours play is a privilege reserved for approved team members. Any misuse "
     "of after-hours access may result in this privilege being revoked by any means "
     "necessary. Please use after-hours play respectfully and represent PNW Esports with integrity.\n\n"
     "— PNW Esports Arena"
@@ -6300,13 +6307,45 @@ def _arena_norm_name(s):
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
+# purdue.edu and pnw.edu are the same identity with a different suffix — accept
+# either domain on either side (roster vs. what the student typed) as a match.
+_ARENA_EQUIV_EMAIL_DOMAINS = ("purdue.edu", "pnw.edu")
+
+
+def _arena_email_matches(submitted, roster_email):
+    a = (submitted or "").strip().lower()
+    b = (roster_email or "").strip().lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    a_local, _, a_dom = a.partition("@")
+    b_local, _, b_dom = b.partition("@")
+    return a_local == b_local and a_dom in _ARENA_EQUIV_EMAIL_DOMAINS and b_dom in _ARENA_EQUIV_EMAIL_DOMAINS
+
+
+def _arena_name_matches(first, last, full_name):
+    """True if first/last match the roster's full name. Handles a middle name in
+    between (e.g. full name "Jane Q. Smith") and a multi-word last name (e.g.
+    entering last name "Van Till" against full name "John Van Till")."""
+    first_n = _arena_norm_name(first)
+    last_n = _arena_norm_name(last)
+    full_n = _arena_norm_name(full_name)
+    if not first_n or not last_n or not full_n:
+        return False
+    if full_n == f"{first_n} {last_n}":
+        return True
+    return full_n.startswith(first_n + " ") and full_n.endswith(" " + last_n)
+
+
 def _arena_find_varsity(first, last, email):
-    """Match a kiosk varsity login against the roster. Returns (player, error_code).
-    A player qualifies if their Purdue email matches, they're a varsity-type player,
-    active, and the first/last name they entered appears in their roster full name."""
+    """Match a kiosk Team Check-In login against the roster. Returns (player, error_code).
+    A player qualifies if their Purdue/PNW email matches (either domain accepted for
+    the same mailbox name), they're a varsity or JV player, active, and the first/last
+    name they entered matches their roster full name (multi-word last names supported).
+    Callers should check `player.get("player_type")` for "jv" to enforce the
+    Stage-machine restriction (JV can check in on Island PCs, not Stage)."""
     email = (email or "").strip().lower()
-    first = _arena_norm_name(first)
-    last = _arena_norm_name(last)
     if not email:
         return None, "email_required"
     try:
@@ -6315,19 +6354,18 @@ def _arena_find_varsity(first, last, email):
         players = []
     match = None
     for p in players:
-        pe = (p.get("purdue_email") or "").strip().lower()
-        if pe and pe == email:
+        pe = p.get("purdue_email") or ""
+        if pe and _arena_email_matches(email, pe):
             match = p
             break
     if not match:
         return None, "not_found"
     ptype = (match.get("player_type") or "").lower()
-    if "varsity" not in ptype:
+    if "varsity" not in ptype and "jv" not in ptype:
         return None, "not_varsity"
     if (match.get("status") or "active").lower() != "active":
         return None, "inactive"
-    tokens = set(_arena_norm_name(match.get("full_name")).split())
-    if (first and first not in tokens) or (last and last not in tokens):
+    if not _arena_name_matches(first, last, match.get("full_name")):
         return None, "name_mismatch"
     return match, None
 
@@ -6342,8 +6380,8 @@ def _arena_varsity_by_email(email):
     except Exception:
         players = []
     for p in players:
-        pe = (p.get("purdue_email") or "").strip().lower()
-        if pe and pe == email and "varsity" in (p.get("player_type") or "").lower() \
+        pe = p.get("purdue_email") or ""
+        if pe and _arena_email_matches(email, pe) and "varsity" in (p.get("player_type") or "").lower() \
                 and (p.get("status") or "active").lower() == "active":
             return p
     return None
@@ -6413,11 +6451,13 @@ def api_arena_puid_register():
 
 @app.route('/api/arena/varsity-checkin', methods=['POST'])
 def api_arena_varsity_checkin():
-    """Public: an approved varsity member checks in for after-hours play. Works
-    regardless of open hours. On a PC kiosk they also pick a station to unlock."""
+    """Public: an approved varsity or JV team member checks in for after-hours
+    play. Works regardless of open hours. On a PC kiosk they also pick a station
+    to unlock — JV can pick any Island station but not Stage (Stage stays
+    Varsity-only, enforced below)."""
     cfg = load_arena_config()
     if not cfg.get("varsity_checkin", False):
-        return jsonify({"success": False, "error": "Varsity Check-In is not available right now."}), 403
+        return jsonify({"success": False, "error": "Team Check-In is not available right now."}), 403
     data = request.get_json(silent=True) or {}
     kid = _clean_str(data.get("kioskId") or data.get("kiosk_id") or "kiosk-1", 40)
     kcfg = _arena_kiosk_cfg(cfg, kid)
@@ -6429,21 +6469,23 @@ def api_arena_varsity_checkin():
     if not first or not last:
         return jsonify({"success": False, "error": "Please enter your first and last name."}), 400
     if not email:
-        return jsonify({"success": False, "error": "Please enter your Purdue email."}), 400
+        return jsonify({"success": False, "error": "Please enter your Purdue or PNW email."}), 400
 
     player, err = _arena_find_varsity(first, last, email)
     if not player:
-        msg = ("We couldn't match your details to an approved varsity roster entry. "
-               "Double-check your first name, last name, and Purdue email exactly as they "
+        msg = ("We couldn't match your details to an approved team roster entry. "
+               "Double-check your first name, last name, and Purdue/PNW email exactly as they "
                "appear on your roster — if it still doesn't work, contact your coach to fix your roster info.")
         return jsonify({"success": False, "error": msg, "mismatch": True, "reason": err}), 403
 
     name = player.get("full_name") or (first + " " + last).strip()
+    is_jv = "varsity" not in (player.get("player_type") or "").lower()
+    tier = "jv" if is_jv else "varsity"
 
     # Validate-only: PC kiosk checks the roster match before showing the station
     # picker. No sign-in is recorded and no DM is sent until the final check-in.
     if data.get("validate"):
-        return jsonify({"success": True, "validated": True, "name": name, "first_name": first})
+        return jsonify({"success": True, "validated": True, "name": name, "first_name": first, "tier": tier})
 
     machine_name = None
     if machine_uuid:
@@ -6451,6 +6493,8 @@ def api_arena_varsity_checkin():
         machine = next((p for p in status.get("pcs", []) if p.get("uuid") == machine_uuid), None)
         if not machine:
             return jsonify({"success": False, "error": "That station is no longer listed. Please pick another."}), 404
+        if is_jv and _is_varsity_pc(machine.get("name", "")):
+            return jsonify({"success": False, "error": "Stage is reserved for Varsity — JV can check in on any Island station instead."}), 403
         if machine.get("status") != "available" or _pc_hold_active(machine_uuid):
             return jsonify({"success": False, "error": "That station was just taken. Please pick another."}), 409
         machine_name = machine.get("name", "your station")
@@ -6470,8 +6514,8 @@ def api_arena_varsity_checkin():
         "first_name": first, "last_name": last, "email": email,
         "kiosk_id": kid, "kiosk_label": kcfg.get("label"),
         "room": machine_name or kcfg.get("room", ""),
-        "accepted_rules": True, "kind": "varsity",
-        "reason": ("Varsity After-Hours — " + machine_name) if machine_name else "Varsity After-Hours",
+        "accepted_rules": True, "kind": "varsity", "player_type": tier,
+        "reason": (("JV" if is_jv else "Varsity") + " After-Hours" + (f" — {machine_name}" if machine_name else "")),
         "machine": machine_name, "machine_uuid": machine_uuid or None,
         "signed_in_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -6500,6 +6544,7 @@ def api_arena_varsity_checkin():
         "returning": returning,
         "name": name,
         "first_name": first,
+        "tier": tier,
         "machine_name": machine_name,
         "dmed": dmed,
         "hold_minutes": max(1, min(120, int(cfg.get("pc_hold_minutes", KIOSK_HOLD_MINUTES)))),
@@ -10522,6 +10567,8 @@ DEFAULT_ARENA_CONFIG = {
     "closing_soon_minutes": 15,
     "pc_lock_enabled": False,
     "pc_hold_minutes": 10,
+    "pc_manager_refresh_open": 8,
+    "pc_manager_refresh_closed": 45,
     "ggleap_paused": False,
     "varsity_checkin": False,
     "signin_guard": {
@@ -11991,6 +12038,16 @@ def api_arena_save_config():
     if "pc_hold_minutes" in data:
         try:
             cfg["pc_hold_minutes"] = max(1, min(120, int(data["pc_hold_minutes"])))
+        except (ValueError, TypeError):
+            pass
+    if "pc_manager_refresh_open" in data:
+        try:
+            cfg["pc_manager_refresh_open"] = max(3, min(120, int(data["pc_manager_refresh_open"])))
+        except (ValueError, TypeError):
+            pass
+    if "pc_manager_refresh_closed" in data:
+        try:
+            cfg["pc_manager_refresh_closed"] = max(3, min(120, int(data["pc_manager_refresh_closed"])))
         except (ValueError, TypeError):
             pass
     if "signin_guard" in data and isinstance(data["signin_guard"], dict):

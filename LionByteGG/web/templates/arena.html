@@ -1022,11 +1022,20 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
         </div>
         <div class="ar-set-card" style="grid-column:1/-1;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
-                <h4 style="margin:0;"><i class="fas fa-medal" style="color:#CFB991;"></i> Varsity After-Hours Check-In</h4>
+                <h4 style="margin:0;"><i class="fas fa-medal" style="color:#CFB991;"></i> Team Check-In (Varsity &amp; JV After-Hours)</h4>
             </div>
             <div class="ar-toggle-row">
-                <div><div class="tr-label">Enable the Varsity Check-In button on kiosks</div><div class="tr-desc">Adds a "Varsity Check-In" button to every kiosk (shown even when locked/closed) so approved varsity members can check in for after-hours play. Turn off to gray out the button on all kiosks.</div></div>
+                <div><div class="tr-label">Enable the Team Check-In button on kiosks</div><div class="tr-desc">Adds a "Team Check-In" button to every kiosk (shown even when locked/closed) so approved varsity and JV members can check in for after-hours play. Varsity can pick any Island or Stage station; JV can pick any Island station but not Stage. Turn off to gray out the button on all kiosks.</div></div>
                 <label class="ar-switch"><input type="checkbox" id="cfg-varsity"><span class="slider"></span></label>
+            </div>
+        </div>
+        <div class="ar-set-card" style="grid-column:1/-1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+                <h4 style="margin:0;"><i class="fas fa-gauge-high"></i> PC Manager Refresh Speed</h4>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <div class="ar-field half"><label>While arena is open (seconds)</label><input type="number" id="cfg-pcmgr-open" min="3" max="120" placeholder="8"><div style="font-size:11px;color:var(--text-muted,#8890a5);margin-top:5px;line-height:1.4;">How often the staff PC Manager tab auto-refreshes while the arena is open. 8s matches the kiosks' own cadence exactly (no extra API load).</div></div>
+                <div class="ar-field half"><label>While arena is closed (seconds)</label><input type="number" id="cfg-pcmgr-closed" min="3" max="120" placeholder="45"><div style="font-size:11px;color:var(--text-muted,#8890a5);margin-top:5px;line-height:1.4;">How often it refreshes while closed — lower for faster after-hours restart-testing, higher to save API budget. Takes effect immediately on save, no restart needed.</div></div>
             </div>
         </div>
         <div class="ar-set-card" style="grid-column:1/-1;">
@@ -2467,6 +2476,8 @@ async function loadConfig() {
         document.getElementById('cfg-pc-lock').checked = !!c.pc_lock_enabled;
         document.getElementById('cfg-pc-hold').value = c.pc_hold_minutes ?? 10;
         { const _v = document.getElementById('cfg-varsity'); if (_v) _v.checked = !!c.varsity_checkin; }
+        { const _po = document.getElementById('cfg-pcmgr-open'); if (_po) _po.value = c.pc_manager_refresh_open ?? 8; }
+        { const _pc = document.getElementById('cfg-pcmgr-closed'); if (_pc) _pc.value = c.pc_manager_refresh_closed ?? 45; }
         const _sg = c.signin_guard || {};
         document.getElementById('cfg-guard-enabled').checked = _sg.enabled !== false;
         document.getElementById('cfg-guard-cooldown').value = _sg.cooldown_minutes ?? 15;
@@ -2535,6 +2546,8 @@ async function saveConfig() {
         pc_lock_enabled: document.getElementById('cfg-pc-lock').checked,
         pc_hold_minutes: parseInt(document.getElementById('cfg-pc-hold').value || '10', 10),
         varsity_checkin: (document.getElementById('cfg-varsity') || {}).checked || false,
+        pc_manager_refresh_open: parseInt((document.getElementById('cfg-pcmgr-open') || {}).value || '8', 10),
+        pc_manager_refresh_closed: parseInt((document.getElementById('cfg-pcmgr-closed') || {}).value || '45', 10),
         signin_guard: {
             enabled: document.getElementById('cfg-guard-enabled').checked,
             cooldown_minutes: parseInt(document.getElementById('cfg-guard-cooldown').value || '0', 10),
