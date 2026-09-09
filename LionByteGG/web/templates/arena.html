@@ -559,14 +559,19 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .ar-btn-danger { background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3); }
 .ar-btn-danger:hover { background:rgba(239,68,68,.22); }
 .lf-item { cursor:pointer; }
-/* Live feed: returning + varsity tags */
+/* Live feed: returning + varsity/JV tags */
 .lc-tags { display:flex;flex-wrap:wrap;gap:6px;margin-top:10px; }
 .lc-return { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.3); }
 .lc-varsity { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;letter-spacing:.3px;padding:3px 10px;border-radius:999px;background:linear-gradient(135deg,#e6d3a3,#c9a96a);color:#1B1706;border:none;box-shadow:0 2px 8px rgba(207,185,145,.35); }
+.lc-varsity.jv { background:linear-gradient(135deg,#7dd3fc,#0ea5e9);color:#04202e;box-shadow:0 2px 8px rgba(14,165,233,.35); }
 .live-card.varsity { border-color:rgba(207,185,145,.5);background:linear-gradient(160deg,rgba(207,185,145,.10),rgba(207,185,145,.02) 60%);box-shadow:0 0 0 1px rgba(207,185,145,.14),0 10px 30px -12px rgba(207,185,145,.3); }
 .live-card.varsity::after { content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#e6d3a3,#8a7141);border-radius:16px 16px 0 0; }
 .live-card.varsity .live-dot { background:#e6d3a3;box-shadow:0 0 0 3px rgba(207,185,145,.25); }
 .live-card.varsity .ar-av { box-shadow:0 4px 14px rgba(207,185,145,.35); }
+.live-card.jv { border-color:rgba(56,189,248,.5);background:linear-gradient(160deg,rgba(56,189,248,.10),rgba(56,189,248,.02) 60%);box-shadow:0 0 0 1px rgba(56,189,248,.14),0 10px 30px -12px rgba(56,189,248,.3); }
+.live-card.jv::after { content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#7dd3fc,#0369a1);border-radius:16px 16px 0 0; }
+.live-card.jv .live-dot { background:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.25); }
+.live-card.jv .ar-av { box-shadow:0 4px 14px rgba(56,189,248,.35); }
 /* System-unlock (bypass admin) live card */
 .lc-bypass { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;letter-spacing:.3px;padding:3px 10px;border-radius:999px;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border:none;box-shadow:0 2px 8px rgba(168,85,247,.4);text-transform:uppercase; }
 .live-card.unlock-card { border-color:rgba(168,85,247,.45);background:linear-gradient(160deg,rgba(168,85,247,.10),rgba(168,85,247,.02) 60%);box-shadow:0 0 0 1px rgba(168,85,247,.14),0 10px 30px -12px rgba(168,85,247,.3); }
@@ -578,6 +583,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .log-tag.return { background:rgba(52,211,153,.14);color:#34d399; }
 .log-tag.new { background:rgba(96,165,250,.14);color:#60a5fa; }
 .log-tag.varsity { background:rgba(207,185,145,.16);color:#e6d3a3; }
+.log-tag.jv { background:rgba(56,189,248,.16);color:#7dd3fc; }
 /* Active Sessions tab — top-down room map */
 .sess-summary { display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px;margin-bottom:20px; }
 .sess-sum { position:relative;overflow:hidden;background:linear-gradient(160deg,var(--surface),var(--surface-light));border:1px solid var(--border);border-radius:16px;padding:16px 18px;transition:transform .15s ease,border-color .15s ease; }
@@ -1503,14 +1509,19 @@ function liveCardHTML(rec){
     const reason = rec.reason ? `<div class="meta" style="margin:4px 0 0;color:#22d3ee;"><i class="fas fa-comment-dots"></i> ${esc(rec.reason)}</div>` : '';
     const by = (rec.manual && rec.checked_in_by) ? `<div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);"><i class="fas fa-user-shield" style="color:#22d3ee;margin-right:5px;"></i>Checked in by ${esc(rec.checked_in_by)}</div>` : '';
     const isVarsity = rec.kind === 'varsity';
-    const varsityTag = isVarsity ? '<span class="lc-varsity"><i class="fas fa-medal"></i> Varsity · After-Hours</span>' : '';
+    const isJv = isVarsity && /^JV\b/.test(rec.reason || '');
+    const varsityTag = isVarsity
+        ? (isJv
+            ? '<span class="lc-varsity jv"><i class="fas fa-shield-halved"></i> JV · After-Hours</span>'
+            : '<span class="lc-varsity"><i class="fas fa-medal"></i> Varsity · After-Hours</span>')
+        : '';
     const returnTag = rec.returning ? '<span class="lc-return"><i class="fas fa-rotate-left"></i> Returning</span>' : '';
     const tagRow = (varsityTag || returnTag) ? `<div class="lc-tags">${varsityTag}${returnTag}</div>` : '';
     return `
-        <div class="ar-card live-card${isVarsity ? ' varsity' : ''}" id="live-${rec.id}" data-id="${rec.id}" data-email="${esc(rec.email||'')}" data-name="${esc(rec.name||'')}">
+        <div class="ar-card live-card${isVarsity ? (isJv ? ' jv' : ' varsity') : ''}" id="live-${rec.id}" data-id="${rec.id}" data-email="${esc(rec.email||'')}" data-name="${esc(rec.name||'')}">
             <span class="live-dot"></span>
             <div class="card-head">
-                <div class="ar-av" style="background:${isVarsity ? 'linear-gradient(135deg,#CFB991,#8a7141)' : avColor(rec.email||rec.name)}">${esc(initials(rec.name))}</div>
+                <div class="ar-av" style="background:${isJv ? 'linear-gradient(135deg,#7dd3fc,#0ea5e9)' : isVarsity ? 'linear-gradient(135deg,#CFB991,#8a7141)' : avColor(rec.email||rec.name)}">${esc(initials(rec.name))}</div>
                 <div style="min-width:0;">
                     <div class="name">${esc(rec.name)}${rec.manual ? ' <span class="mtag" title="Checked in by staff"><i class="fas fa-user-shield"></i></span>' : ''}</div>
                     ${rec.email ? `<div class="meta" style="margin:2px 0 0;"><i class="fas fa-envelope"></i> ${esc(rec.email)}</div>` : ''}
@@ -1818,7 +1829,7 @@ async function loadLogs() {
                     <div class="ar-log-row" onclick="filterByEmail('${esc((rec.email || rec.name || '').replace(/'/g, ''))}')">
                         <div class="ar-av sm" style="background:${avColor(rec.email||rec.name)}">${esc(initials(rec.name))}</div>
                         <div class="ar-log-main">
-                            <div class="ar-log-name">${esc(rec.name)}${rec.manual ? ' <span class="mtag" title="Checked in by staff"><i class="fas fa-user-shield"></i></span>' : ''}${rec.kind === 'varsity' ? ' <span class="log-tag varsity"><i class="fas fa-medal"></i> Varsity</span>' : (rec.returning ? ' <span class="log-tag return"><i class="fas fa-rotate-left"></i> Returning</span>' : ' <span class="log-tag new">New</span>')}</div>
+                            <div class="ar-log-name">${esc(rec.name)}${rec.manual ? ' <span class="mtag" title="Checked in by staff"><i class="fas fa-user-shield"></i></span>' : ''}${rec.kind === 'varsity' ? (/^JV\b/.test(rec.reason || '') ? ' <span class="log-tag jv"><i class="fas fa-shield-halved"></i> JV</span>' : ' <span class="log-tag varsity"><i class="fas fa-medal"></i> Varsity</span>') : (rec.returning ? ' <span class="log-tag return"><i class="fas fa-rotate-left"></i> Returning</span>' : ' <span class="log-tag new">New</span>')}</div>
                             <div class="ar-log-email"><i class="fas fa-envelope"></i> ${esc(rec.email) || '—'}${rec.reason ? ` <span style="color:#22d3ee;">· <i class="fas fa-comment-dots"></i> ${esc(rec.reason)}</span>` : ''}${(rec.manual && rec.checked_in_by) ? ` <span style="color:var(--text-muted);">· <i class="fas fa-user-shield"></i> by ${esc(rec.checked_in_by)}</span>` : ''}</div>
                         </div>
                         <div class="ar-log-kiosk"><div class="kb">${esc(rec.kiosk_label || rec.kiosk_id || '')}</div><div class="rm">${esc(rec.room || '')}</div></div>
