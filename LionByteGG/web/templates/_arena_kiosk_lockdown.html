@@ -146,6 +146,7 @@
   let _kioskWakeLock = null;
   let _kioskAlarmTimer = null;
   let _kioskFsWatchdog = null;
+  let _kioskEverSecure = false;   // true only after fullscreen has genuinely engaged at least once this session
   window._kioskTrapped = false;
 
   function _kioskIsFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
@@ -160,6 +161,7 @@
   async function engageTrap(){
     window._kioskTrapped = true;
     window._allowReload = false;               // arm the navigation guard (beforeunload)
+    _kioskEverSecure = false;                  // fresh boot/reload/resume — quiet until the first real gesture
     document.body.classList.add('kiosk-trapped');
     try { if ('wakeLock' in navigator) _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     _requestKioskFullscreen();
@@ -214,15 +216,18 @@
   // fullscreen AND frontmost with no staff action required. "Secure" means all three:
   // genuinely fullscreen, the tab is visible, and the window has focus — so a new tab
   // or popup stealing focus counts as insecure even though fullscreenElement can linger.
-  // Every tick that it's not secure: re-request fullscreen (if that's what's missing)
-  // and sound the alarm; the beep keeps going until it's fully secure again. Any real
-  // tap/click also re-forces fullscreen instantly via the gesture listeners below, so it
-  // snaps back with no "click here" prompt. Skipped during the boot animation. ----
+  // Every tick that it's not secure: re-request fullscreen (if that's what's missing).
+  // The alarm only sounds once it has been secure at least once THIS session and then
+  // LOST it — a genuine escape attempt. A fresh boot, a server restart, or reloading the
+  // page is not an escape (fullscreen was never on yet, just needs the first tap), so it
+  // stays quiet and simply keeps retrying until that first tap grants it. Any real
+  // tap/click also re-forces fullscreen instantly via the gesture listeners below. ----
   function _kioskSecure(){ return _kioskIsFullscreen() && !document.hidden && document.hasFocus(); }
   function _fsWatchdogTick(){
     if (!window._kioskTrapped || _bootRunning) return;
-    if (_kioskSecure()){ _stopKioskAlarm(); return; }
+    if (_kioskSecure()){ _kioskEverSecure = true; _stopKioskAlarm(); return; }
     if (!_kioskIsFullscreen()) _requestKioskFullscreen();
+    if (!_kioskEverSecure) return;             // still waiting on the first-ever gesture — don't alarm yet
     try { const c = getAudioCtx(); if (c && c.state === 'suspended') c.resume(); } catch(e){}
     _startKioskAlarm();
   }
@@ -236,15 +241,16 @@
   }
   function _onFullscreenChange(){
     if (!window._kioskTrapped) return;
-    if (_kioskSecure()) { _stopKioskAlarm(); return; }
+    if (_kioskSecure()) { _kioskEverSecure = true; _stopKioskAlarm(); return; }
     _requestKioskFullscreen();
+    if (!_kioskEverSecure) return;              // never armed yet this session — quiet retry, no alarm
     _startKioskAlarm();
   }
   document.addEventListener('fullscreenchange', _onFullscreenChange);
   document.addEventListener('webkitfullscreenchange', _onFullscreenChange);
   window.addEventListener('blur', () => {
     if (!window._kioskTrapped) return;
-    _startKioskAlarm();                        // immediate feedback; watchdog keeps it going until secure
+    if (_kioskEverSecure) _startKioskAlarm();  // immediate feedback; watchdog keeps it going until secure
     setTimeout(() => { try { window.focus(); } catch(e){} }, 50);
   });
   window.addEventListener('focus', () => {
@@ -261,7 +267,7 @@
       }
       _requestKioskFullscreen();
       _fsWatchdogTick();
-    } else {
+    } else if (_kioskEverSecure) {
       _startKioskAlarm();
     }
   });
