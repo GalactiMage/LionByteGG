@@ -282,13 +282,18 @@
   // Re-force fullscreen on EVERY browser event that carries user-activation. The browser
   // only grants requestFullscreen() from inside one of these activation-triggering events,
   // so hooking all of them means literally any interaction — a tap, a key, a mouse button,
-  // a scroll wheel, the end of a touch — slams the kiosk straight back into fullscreen.
-  // Combined with the fullscreenchange handler + the 250ms watchdog, exiting is near-impossible
-  // to hold: the instant the user does anything at all, it re-locks.
-  ['pointerdown','pointerup','mousedown','mouseup','click','dblclick','contextmenu',
-   'touchstart','touchend','keydown','keyup','wheel'].forEach(evt => {
-    document.addEventListener(evt, () => { if (window._kioskTrapped) _requestKioskFullscreen(); }, { capture: true, passive: true });
+  // a scroll wheel, the end of a touch, or even just MOVING the mouse — slams the kiosk
+  // straight back into fullscreen. Movement events (mousemove/pointermove/mouseover/scroll)
+  // matter most on a live kiosk: staff/guests are always moving the cursor, so the screen
+  // re-locks the instant it's touched even without a deliberate click. Combined with the
+  // fullscreenchange handler + the 150ms watchdog, staying out of fullscreen is near-impossible.
+  const _reforce = () => { if (window._kioskTrapped) _requestKioskFullscreen(); };
+  ['pointerdown','pointerup','pointermove','mousedown','mouseup','mousemove','mouseover',
+   'click','dblclick','contextmenu','touchstart','touchend','touchmove','keydown','keyup',
+   'wheel','scroll'].forEach(evt => {
+    document.addEventListener(evt, _reforce, { capture: true, passive: true });
   });
+  window.addEventListener('scroll', _reforce, { capture: true, passive: true });
   // Mouse heading for the top-of-screen browser chrome (the X / minimize) is the #1 escape
   // attempt — treat the cursor leaving the document as a trigger to re-assert fullscreen too.
   document.addEventListener('mouseout', (e) => {
