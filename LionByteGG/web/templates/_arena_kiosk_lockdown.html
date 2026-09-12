@@ -282,6 +282,7 @@
     if (_bootRunning) return;
     _bootRunning = true;
     releasedOverlay.classList.remove('show');
+    if (orientationOverlay) orientationOverlay.classList.remove('show');   // step 3 below handles orientation instead
     bootOverlay.classList.remove('done');
     bootOverlay.classList.add('show');
     bootRetryBtn.style.display = 'none';
@@ -335,8 +336,19 @@
       localStorage.removeItem(_k);
     } catch(e){ inputOK = false; }
     if (!(window.innerWidth > 0 && window.innerHeight > 0)) inputOK = false;
+
+    // Orientation is tested right here, live — landscape is treated as a real
+    // failure: it complains (ROTATE) and loops, re-checking every second, until
+    // the screen is rotated to portrait, then continues on its own.
+    while (_isLandscape()){
+      setBootStep('input', 'fail', 'ROTATE');
+      bootStatusEl.textContent = 'Screen is in landscape — rotate to portrait to continue…';
+      await bootSleep(1000);
+    }
+
     if (inputOK){
       setBootStep('input', 'ok', 'READY');
+      bootStatusEl.textContent = 'Display & input verified.';
     } else {
       setBootStep('input', 'fail', 'FAULT');
       bootStatusEl.textContent = 'Display/input check failed…';
@@ -345,6 +357,8 @@
 
     // 4 — Confirm the trap actually armed (it was requested at the top of this
     // function already; retry once here in case the first attempt silently failed).
+    // Only reports ARMED once full-screen has genuinely engaged, not just requested —
+    // if it's still pending a user gesture, that's shown honestly instead.
     setBootStep('lock', 'active', 'ARMING');
     bootStatusEl.textContent = 'Engaging kiosk lock…';
     if (!document.body.classList.contains('kiosk-trapped')) await engageTrap();
@@ -353,8 +367,14 @@
       _requestKioskFullscreen();
       await bootSleep(400);
     }
-    setBootStep('lock', 'ok', 'ARMED');
-    bootStatusEl.textContent = 'All systems secure. Kiosk ready.';
+    const _fullyArmed = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (_fullyArmed){
+      setBootStep('lock', 'ok', 'ARMED');
+      bootStatusEl.textContent = 'All systems secure. Kiosk ready.';
+    } else {
+      setBootStep('lock', 'ok', 'TRAP SET');
+      bootStatusEl.textContent = 'Locked — full-screen will engage on first tap.';
+    }
     await bootSleep(1200);
 
     // Mark this kiosk SESSION armed so a reload/refresh skips the procedure (stuck-recovery only).
@@ -389,10 +409,14 @@
   }
 
   /* ================= PORTRAIT REQUIREMENT (every kiosk runs portrait) ================= */
+  // The boot sequence's own step 3 (above) is the primary check while booting —
+  // this overlay only takes over for two cases where there's no step list to show
+  // a complaint in: an already-armed session resuming after reload, and a rotation
+  // that happens later, mid-use, after boot has already finished.
   const orientationOverlay = document.getElementById('orientationOverlay');
   function _isLandscape(){ return window.innerWidth > window.innerHeight; }
   function _updateOrientationGate(){
-    if (!orientationOverlay) return;
+    if (!orientationOverlay || _bootRunning) return;
     orientationOverlay.classList.toggle('show', _isLandscape());
   }
   function _waitForPortrait(){
@@ -420,13 +444,12 @@
   function _kioskBootStart(){
     let armedSession = false;
     try { armedSession = sessionStorage.getItem('kioskSessionArmed') === '1'; } catch(e){}
-    (async () => {
-      await _waitForPortrait();          // won't boot/resume until the screen is in portrait
-      if (armedSession){
-        resumeAfterReload();
-      } else {
-        runBootSequence();
-      }
-    })();
+    if (armedSession){
+      // Skipping the boot animation entirely on a same-session reload, so there's
+      // no step list to complain in — gate the whole thing on the overlay instead.
+      _waitForPortrait().then(resumeAfterReload);
+    } else {
+      runBootSequence();   // orientation is checked live, inline, as step 3
+    }
   }
 </script>
