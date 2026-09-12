@@ -145,8 +145,10 @@
   /* ================= KIOSK BOOT PREFLIGHT + TRAP (shared) ================= */
   let _kioskWakeLock = null;
   let _kioskAlarmTimer = null;
+  let _kioskFsWatchdog = null;
   window._kioskTrapped = false;
 
+  function _kioskIsFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
   function _requestKioskFullscreen(){
     try {
       const el = document.documentElement;
@@ -161,12 +163,14 @@
     document.body.classList.add('kiosk-trapped');
     try { if ('wakeLock' in navigator) _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     _requestKioskFullscreen();
+    _startFsWatchdog();                        // keep it fullscreen + frontmost for as long as the trap is armed
   }
   async function releaseTrap(){
     window._kioskTrapped = false;
     window._allowReload = true;                // allow staff to navigate/close
     try { sessionStorage.removeItem('kioskSessionArmed'); } catch(e){}   // released = no longer an armed session
     document.body.classList.remove('kiosk-trapped');
+    _stopFsWatchdog();
     _stopKioskAlarm();
     try { if (_kioskWakeLock){ await _kioskWakeLock.release(); _kioskWakeLock = null; } } catch(e){}
     try {
@@ -206,9 +210,33 @@
     clearInterval(_kioskAlarmTimer);
     _kioskAlarmTimer = null;
   }
+  // ---- Continuous watchdog: for the WHOLE time the trap is armed, keep the kiosk
+  // fullscreen AND frontmost with no staff action required. "Secure" means all three:
+  // genuinely fullscreen, the tab is visible, and the window has focus — so a new tab
+  // or popup stealing focus counts as insecure even though fullscreenElement can linger.
+  // Every tick that it's not secure: re-request fullscreen (if that's what's missing)
+  // and sound the alarm; the beep keeps going until it's fully secure again. Any real
+  // tap/click also re-forces fullscreen instantly via the gesture listeners below, so it
+  // snaps back with no "click here" prompt. Skipped during the boot animation. ----
+  function _kioskSecure(){ return _kioskIsFullscreen() && !document.hidden && document.hasFocus(); }
+  function _fsWatchdogTick(){
+    if (!window._kioskTrapped || _bootRunning) return;
+    if (_kioskSecure()){ _stopKioskAlarm(); return; }
+    if (!_kioskIsFullscreen()) _requestKioskFullscreen();
+    try { const c = getAudioCtx(); if (c && c.state === 'suspended') c.resume(); } catch(e){}
+    _startKioskAlarm();
+  }
+  function _startFsWatchdog(){
+    if (_kioskFsWatchdog) return;
+    _kioskFsWatchdog = setInterval(_fsWatchdogTick, 600);
+  }
+  function _stopFsWatchdog(){
+    clearInterval(_kioskFsWatchdog);
+    _kioskFsWatchdog = null;
+  }
   function _onFullscreenChange(){
     if (!window._kioskTrapped) return;
-    if (document.fullscreenElement || document.webkitFullscreenElement) { _stopKioskAlarm(); return; }
+    if (_kioskSecure()) { _stopKioskAlarm(); return; }
     _requestKioskFullscreen();
     _startKioskAlarm();
   }
@@ -216,10 +244,14 @@
   document.addEventListener('webkitfullscreenchange', _onFullscreenChange);
   window.addEventListener('blur', () => {
     if (!window._kioskTrapped) return;
-    _startKioskAlarm();
+    _startKioskAlarm();                        // immediate feedback; watchdog keeps it going until secure
     setTimeout(() => { try { window.focus(); } catch(e){} }, 50);
   });
-  window.addEventListener('focus', () => { if (window._kioskTrapped){ _stopKioskAlarm(); _requestKioskFullscreen(); } });
+  window.addEventListener('focus', () => {
+    if (!window._kioskTrapped) return;
+    _requestKioskFullscreen();
+    _fsWatchdogTick();                         // re-evaluate now; silences the alarm only if fully secure
+  });
   // Re-acquire the screen wake lock (and fullscreen/alarm state) if the OS backgrounds the tab.
   document.addEventListener('visibilitychange', async () => {
     if (!window._kioskTrapped) return;
@@ -227,8 +259,8 @@
       if ('wakeLock' in navigator){
         try { _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
       }
-      _stopKioskAlarm();
       _requestKioskFullscreen();
+      _fsWatchdogTick();
     } else {
       _startKioskAlarm();
     }
