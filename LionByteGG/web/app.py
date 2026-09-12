@@ -5522,9 +5522,12 @@ def api_arena_pcs_public():
     pcs = []
     stage = []
     available = in_use = offline = 0
+    disabled_uuids = _arena_disabled_uuids()
     for p in data.get("pcs", []):
         name = p.get("name", "")
         uid = p.get("uuid")
+        if uid in disabled_uuids:
+            continue                   # pulled from rotation by staff — invisible to guests, renders as an empty seat
         status = p.get("status")       # available | in-use | offline
         if status == "in-use":
             _pc_clear_hold(uid)        # they arrived & logged in — hold is done
@@ -5560,6 +5563,18 @@ def api_arena_pcs_public():
 # UserLoggedIn) it shows occupied for as long as they stay, then frees on logout.
 KIOSK_HOLD_MINUTES = 10
 _arena_pc_holds = {}   # machine_uuid -> {"name", "email", "kiosk_id", "until"}
+
+# Manually disabled ("maintenance mode") PCs — staff can pull a specific working
+# machine out of rotation without it looking "offline" to GGLeap. Persisted in
+# the arena config so it survives a restart; enforced both on the guest-facing
+# picker (excluded entirely) and the booking endpoints (defense in depth).
+def _arena_disabled_meta(cfg=None):
+    """dict of machine_uuid -> {uuid, name, since, by} for every disabled PC."""
+    cfg = cfg or load_arena_config()
+    return {d.get("uuid"): d for d in (cfg.get("disabled_machines") or []) if d.get("uuid")}
+
+def _arena_disabled_uuids(cfg=None):
+    return set(_arena_disabled_meta(cfg).keys())
 
 def _pc_hold_active(machine_uuid):
     import time as _t
@@ -5905,6 +5920,8 @@ def api_arena_kiosk_book():
     machine = next((p for p in status.get("pcs", []) if p.get("uuid") == machine_uuid), None)
     if not machine:
         return jsonify({"success": False, "error": "That PC is no longer listed. Please pick another."}), 404
+    if machine_uuid in _arena_disabled_uuids(cfg):
+        return jsonify({"success": False, "error": "That PC is temporarily out of service. Please pick another."}), 409
     if machine.get("status") != "available":
         return jsonify({"success": False, "error": "That PC was just taken. Please pick another."}), 409
     if _pc_hold_active(machine_uuid):
@@ -6073,6 +6090,7 @@ def api_arena_sessions():
     sessions = _arena_active_sessions()
     sess_by_uid = {s["uuid"]: s for s in sessions}
     status = _fetch_ggleap_status(max_age=0 if forced else _pc_manager_max_age())
+    disabled_meta = _arena_disabled_meta()
     machines = []
     for p in status.get("pcs", []):
         uid = p.get("uuid")
@@ -6081,8 +6099,11 @@ def api_arena_sessions():
         m = re.match(r"^(Island\s+\d+|Stage)\s+S(\d+)", name, re.IGNORECASE)
         area = m.group(1).title() if m else "Other"
         seat = m.group(2) if m else name
+        dis = disabled_meta.get(uid)
         if s:
             seat_status = s["status"]              # active | reserved
+        elif dis:
+            seat_status = "disabled"                # manually pulled from rotation — takes priority over available/offline/maint
         elif p.get("status") == "available":
             seat_status = "available"
         elif p.get("status") == "offline":
@@ -6096,6 +6117,9 @@ def api_arena_sessions():
             "area": area,
             "seat": seat,
             "seat_status": seat_status,
+            "disabled": bool(dis),
+            "disabled_since": dis.get("since") if dis else None,
+            "disabled_by": dis.get("by") if dis else None,
             "locked": (not _is_unlocked) and (bool(p.get("locked")) or uid in _pc_we_locked),
             "unlocked": _is_unlocked,
             "unlocked_by": ("kiosk" if uid in _pc_kiosk_unlocked else ("staff" if uid in _pc_human_unlocked else None)),
@@ -6121,6 +6145,7 @@ def api_arena_sessions():
         "reserved": sum(1 for s in sessions if s["status"] == "reserved"),
         "available": sum(1 for m in machines if m["seat_status"] == "available"),
         "offline": sum(1 for m in machines if m["seat_status"] == "offline"),
+        "disabled": sum(1 for m in machines if m["seat_status"] == "disabled"),
     })
 
 
@@ -6231,6 +6256,43 @@ def api_arena_session_lock(uid):
         return jsonify({"success": False, "error": (err or "GGLeap error") + " Could not lock the machine."}), 502
     _pc_we_locked.add(uid)
     log_activity("arena_session_lock", "arena", f"{_arena_staff_name()} locked {name}")
+    return jsonify({"success": True, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/disable', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_disable(uid):
+    """Pull a specific PC out of rotation (maintenance mode). Guests and Team
+    Check-In can no longer pick it, even though GGLeap still sees it as fine —
+    for a machine that's physically broken, being serviced, etc. Takes effect
+    immediately: the guest picker re-polls every few seconds and PC Manager
+    shares the same live data, so no restart or manual refresh is needed."""
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    name = machine.get("name", uid) if machine else uid
+    cfg = load_arena_config()
+    entries = [d for d in (cfg.get("disabled_machines") or []) if d.get("uuid") != uid]
+    entries.append({
+        "uuid": uid, "name": name,
+        "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "by": _arena_staff_name(),
+    })
+    cfg["disabled_machines"] = entries
+    save_arena_config(cfg)
+    log_activity("arena_pc_disable", "arena", f"{_arena_staff_name()} disabled {name} (maintenance)")
+    return jsonify({"success": True, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/enable', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_enable(uid):
+    """Put a manually-disabled PC back into rotation."""
+    cfg = load_arena_config()
+    entries = cfg.get("disabled_machines") or []
+    name = next((d.get("name") for d in entries if d.get("uuid") == uid), uid)
+    cfg["disabled_machines"] = [d for d in entries if d.get("uuid") != uid]
+    save_arena_config(cfg)
+    log_activity("arena_pc_enable", "arena", f"{_arena_staff_name()} re-enabled {name}")
     return jsonify({"success": True, "machine": name})
 
 
@@ -6493,6 +6555,8 @@ def api_arena_varsity_checkin():
         machine = next((p for p in status.get("pcs", []) if p.get("uuid") == machine_uuid), None)
         if not machine:
             return jsonify({"success": False, "error": "That station is no longer listed. Please pick another."}), 404
+        if machine_uuid in _arena_disabled_uuids(cfg):
+            return jsonify({"success": False, "error": "That station is temporarily out of service. Please pick another."}), 409
         if is_jv and _is_varsity_pc(machine.get("name", "")):
             return jsonify({"success": False, "error": "Stage is reserved for Varsity — JV can check in on any Island station instead."}), 403
         if machine.get("status") != "available" or _pc_hold_active(machine_uuid):
@@ -10571,6 +10635,7 @@ DEFAULT_ARENA_CONFIG = {
     "pc_manager_refresh_closed": 45,
     "ggleap_paused": False,
     "varsity_checkin": False,
+    "disabled_machines": [],
     "signin_guard": {
         "enabled": True,
         "cooldown_minutes": 0,

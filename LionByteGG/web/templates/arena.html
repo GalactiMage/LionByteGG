@@ -594,6 +594,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .sess-sum.s-avail::after { background:linear-gradient(90deg,#38bdf8,transparent); }
 .sess-sum.s-locked::after { background:linear-gradient(90deg,#c084fc,transparent); }
 .sess-sum.s-off::after { background:linear-gradient(90deg,#64748b,transparent); }
+.sess-sum.s-disabled::after { background:linear-gradient(90deg,#94a3b8,transparent); }
 .sess-sum .v { font-size:30px;font-weight:900;color:var(--text-primary);line-height:1;letter-spacing:-1px; }
 .sess-sum .l { font-size:11px;color:var(--text-secondary);margin-top:6px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;display:flex;align-items:center;gap:6px; }
 .sess-sum .l i { opacity:.75;font-size:10px; }
@@ -607,6 +608,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .map-legend .lg-secured .dot{ background:#2dd4bf; }
 .map-legend .lg-avail .dot{ background:#38bdf8; }
 .map-legend .lg-maint .dot{ background:#c084fc; }
+.map-legend .lg-disabled .dot{ background:#94a3b8; }
 .map-legend .lg-off .dot{ background:#f87171;box-shadow:0 0 0 0 rgba(248,113,113,.7);animation:legendOffPulse 1.6s ease-in-out infinite; }
 .map-legend .hint { margin-left:auto;font-size:11.5px;color:var(--text-muted);font-weight:600; }
 @keyframes legendOffPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.55);} 50%{ box-shadow:0 0 0 5px rgba(248,113,113,0);} }
@@ -633,7 +635,8 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .seat.available.locked-gate { background:linear-gradient(155deg,rgba(45,212,191,.22),rgba(13,148,136,.1));color:#5eead4;border-color:rgba(45,212,191,.55);box-shadow:0 0 0 1px rgba(45,212,191,.15),0 6px 18px rgba(20,184,166,.16); }
 .seat.offline { background:linear-gradient(155deg,rgba(248,113,113,.16),rgba(127,29,29,.1));color:#fca5a5;border-color:rgba(248,113,113,.45);cursor:pointer;box-shadow:0 0 0 0 rgba(248,113,113,.5);animation:seatOfflinePulse 1.8s ease-in-out infinite; }
 .seat.maint { background:rgba(168,85,247,.1);color:#c084fc;border-color:rgba(168,85,247,.35); }
-.seat.active,.seat.reserved,.seat.available,.seat.maint,.seat.offline { cursor:pointer; }
+.seat.disabled { background:rgba(148,163,184,.1);color:#94a3b8;border-color:rgba(148,163,184,.35);border-style:dashed;opacity:.75; }
+.seat.active,.seat.reserved,.seat.available,.seat.maint,.seat.offline,.seat.disabled { cursor:pointer; }
 .seat.active { background:linear-gradient(155deg,rgba(52,211,153,.24),rgba(5,150,105,.12));color:#6ee7b7;border-color:rgba(52,211,153,.55);box-shadow:0 0 0 1px rgba(52,211,153,.15),0 6px 18px rgba(16,185,129,.18); }
 .seat.reserved { background:linear-gradient(155deg,rgba(251,191,36,.2),rgba(217,119,6,.1));color:#fcd34d;border-color:rgba(251,191,36,.5); }
 .seat.varsity.active { background:linear-gradient(155deg,rgba(207,185,145,.3),rgba(138,113,65,.12));color:#e6d3a3;border-color:rgba(207,185,145,.6);box-shadow:0 0 0 1px rgba(207,185,145,.2),0 6px 18px rgba(207,185,145,.18); }
@@ -776,6 +779,7 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
         <div class="lg lg-secured"><span class="dot"></span> Secured &amp; Ready</div>
         <div class="lg lg-avail"><span class="dot"></span> Open / Unlocked</div>
         <div class="lg lg-maint"><span class="dot"></span> Admin / Maintenance</div>
+        <div class="lg lg-disabled"><span class="dot"></span> Disabled</div>
         <div class="lg lg-off"><span class="dot"></span> Offline</div>
         <span class="hint"><i class="fas fa-hand-pointer"></i> Click for details &middot; right-click for quick actions</span>
     </div>
@@ -3037,7 +3041,8 @@ async function loadSessions(force) {
         + `<div class="sess-sum s-reserved"><div class="v">${d.reserved || 0}</div><div class="l"><i class="fas fa-hourglass-half"></i> Reserved</div></div>`
         + `<div class="sess-sum s-avail"><div class="v">${d.available || 0}</div><div class="l"><i class="fas fa-circle"></i> Open</div></div>`
         + `<div class="sess-sum s-locked"><div class="v">${machines.filter(m => m.locked).length}</div><div class="l"><i class="fas fa-lock"></i> Locked</div></div>`
-        + `<div class="sess-sum s-off"><div class="v">${d.offline || 0}</div><div class="l"><i class="fas fa-power-off"></i> Offline</div></div>`;
+        + `<div class="sess-sum s-off"><div class="v">${d.offline || 0}</div><div class="l"><i class="fas fa-power-off"></i> Offline</div></div>`
+        + `<div class="sess-sum s-disabled"><div class="v">${d.disabled || 0}</div><div class="l"><i class="fas fa-screwdriver-wrench"></i> Disabled</div></div>`;
 
     const empty = document.getElementById('sess-empty');
     if (!machines.length) { mapEl.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
@@ -3081,11 +3086,13 @@ function seatHTML(m) {
     const icon = st === 'active' ? '<i class="fas fa-user si"></i>'
         : st === 'reserved' ? '<i class="fas fa-hourglass-half si"></i>'
         : st === 'offline' ? '<i class="fas fa-triangle-exclamation si"></i>'
+        : st === 'disabled' ? '<i class="fas fa-screwdriver-wrench si"></i>'
         : st === 'maint' ? (m.admin_mode ? '<i class="fas fa-user-gear si"></i>' : '<i class="fas fa-screwdriver-wrench si"></i>')
         : secured ? '<i class="fas fa-circle-check si"></i>' : '<i class="fas fa-lock-open si"></i>';
     const cls = st + (varsity ? ' varsity' : '') + (m.locked && st !== 'offline' ? ' locked-gate' : '');
     const stLabel = st === 'available' ? (secured ? ' — Secured &amp; Ready for Use' : ' — Open, Unlocked')
         : st === 'offline' ? ' — System Offline'
+        : st === 'disabled' ? ' — Disabled (Maintenance)'
         : st === 'maint' ? (m.admin_mode ? ' — Admin Mode' : ' — Maintenance') : '';
     const tip = esc(m.machine) + (m.name ? ' — ' + esc(m.name) : stLabel);
     return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
@@ -3105,8 +3112,32 @@ function openSessionDetail(uuid) {
     if (!m) return;
     const s = _sessMap[uuid];
     document.getElementById('sess-detail-back').classList.add('show');
+    if (m.seat_status === 'disabled') { renderSessionDisabled(m); return; }
     if (m.seat_status === 'offline') { renderSessionOffline(m); return; }
     if (s) { renderSessionOccupied(s, m); } else { renderSessionOpen(m); }
+}
+function renderSessionDisabled(m) {
+    const box = document.getElementById('sess-detail');
+    const since = m.disabled_since ? durationSince(m.disabled_since) + ' ago' : '—';
+    box.innerHTML = `
+        <div class="sd-head" style="background:linear-gradient(135deg,rgba(168,85,247,.14),rgba(124,58,237,.05));">
+            <div class="sd-mach-ico" style="background:rgba(168,85,247,.16);color:#c084fc;"><i class="fas fa-screwdriver-wrench"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="sd-mach">${esc(m.machine)}</div>
+                <div class="sd-state" style="color:#c084fc;">Disabled — Maintenance</div>
+            </div>
+            <button class="sd-close" onclick="closeSessionDetail()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="sd-body">
+            <div class="sd-hint" style="color:#d8b4fe;"><i class="fas fa-circle-info" style="color:#c084fc;"></i> A staff member manually pulled this PC out of rotation. Guests and Team Check-In can't pick it, even though GGLeap may still report it as fine.</div>
+            <div class="sd-rows">
+                <div class="sd-row"><div class="k">Disabled By</div><div class="val">${esc(m.disabled_by || 'Staff')}</div></div>
+                <div class="sd-row"><div class="k">Disabled</div><div class="val">${since}</div></div>
+            </div>
+            ${CAN_MANAGE ? `<div class="sd-actions">
+                <button class="ar-btn ar-btn-success" style="justify-content:center;width:100%;" onclick="enableSeat('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-power-off"></i> Re-enable This PC</button>
+            </div>` : ''}
+        </div>`;
 }
 function renderSessionOffline(m) {
     const box = document.getElementById('sess-detail');
@@ -3199,6 +3230,7 @@ function renderSessionOpen(m) {
                 ${m.locked
                     ? `<button class="ar-btn ar-btn-unlock" style="justify-content:center;width:100%;" onclick="unlockSession('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-lock-open"></i> Unlock Station</button>`
                     : `<button class="ar-btn ar-btn-warn" style="justify-content:center;width:100%;" onclick="lockSession('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-lock"></i> Lock Station</button>`}
+                <button class="ar-btn ar-btn-ghost sd-disable-btn" style="justify-content:center;width:100%;" onclick="disableSeat('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-screwdriver-wrench"></i> Disable This PC</button>
             </div>` : '<div class="sd-hint" style="color:var(--text-muted);">You do not have permission to manage stations.</div>';
     }
     box.innerHTML = `
@@ -3289,6 +3321,47 @@ async function lockSession(uuid, machine) {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lock Station'; }
     }
 }
+async function disableSeat(uuid, machine) {
+    if (!confirm(`Take ${machine} out of rotation for maintenance? Guests and Team Check-In won't be able to pick it until you re-enable it.`)) return;
+    const btn = document.querySelector('#sess-detail .sd-disable-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Disabling…'; }
+    try {
+        const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const d = await r.json();
+        if (d.success) {
+            toast(`${machine} disabled — out of rotation`, 'success');
+            _optimisticSeat(uuid, { seat_status: 'disabled', disabled: true, disabled_since: new Date().toISOString() });
+            closeSessionDetail();
+            loadSessions();
+        } else {
+            toast(d.error || 'Could not disable', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-screwdriver-wrench"></i> Disable This PC'; }
+        }
+    } catch (e) {
+        toast('Network error', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-screwdriver-wrench"></i> Disable This PC'; }
+    }
+}
+async function enableSeat(uuid, machine) {
+    const btn = document.querySelector('#sess-detail .ar-btn-success');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Re-enabling…'; }
+    try {
+        const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const d = await r.json();
+        if (d.success) {
+            toast(`${machine} back in rotation`, 'success');
+            _optimisticSeat(uuid, { seat_status: 'available', disabled: false, disabled_since: null, disabled_by: null });
+            closeSessionDetail();
+            loadSessions();
+        } else {
+            toast(d.error || 'Could not re-enable', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-power-off"></i> Re-enable This PC'; }
+        }
+    } catch (e) {
+        toast('Network error', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-power-off"></i> Re-enable This PC'; }
+    }
+}
 function closeSessionDetail() {
     const b = document.getElementById('sess-detail-back');
     if (b) b.classList.remove('show');
@@ -3308,8 +3381,19 @@ function buildSeatContextItems(m, s) {
     if (s && s.email && CAN_VIEW_STUDENTS) {
         items.push(ctxItem('View Student Profile', 'fa-user', () => openProfile(encodeURIComponent(s.email)), 'good'));
     }
+    if (m.seat_status === 'disabled') {
+        if (CAN_MANAGE) {
+            items.push({ sep: true });
+            items.push(ctxItem('Re-enable This PC', 'fa-power-off', () => enableSeat(m.uuid, m.machine), 'good'));
+        }
+        return items;
+    }
     if (m.seat_status === 'offline') {
-        return items; // nothing actionable on a powered-off machine
+        if (CAN_MANAGE) {
+            items.push({ sep: true });
+            items.push(ctxItem('Disable This PC (Maintenance)', 'fa-screwdriver-wrench', () => disableSeat(m.uuid, m.machine), 'warn'));
+        }
+        return items;
     }
     if (!CAN_MANAGE) return items;
     items.push({ sep: true });
@@ -3327,6 +3411,7 @@ function buildSeatContextItems(m, s) {
         else items.push(ctxItem('Lock Station', 'fa-lock', () => lockSession(m.uuid, m.machine), 'warn'));
     }
     items.push({ sep: true });
+    items.push(ctxItem('Disable This PC (Maintenance)', 'fa-screwdriver-wrench', () => disableSeat(m.uuid, m.machine), 'warn'));
     items.push(ctxItem('Copy Machine Name', 'fa-copy', () => {
         navigator.clipboard && navigator.clipboard.writeText(m.machine).then(() => toast('Copied "' + m.machine + '"', 'success'));
     }));
