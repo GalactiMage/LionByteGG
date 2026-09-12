@@ -279,6 +279,10 @@
       (e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Tab'));
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   }, true);
+  // Block the right-click menu and drag/selection while trapped — no "Save as", "View
+  // source", "Inspect", or dragging links/images out. (Non-passive so preventDefault works.)
+  document.addEventListener('contextmenu', (e) => { if (window._kioskTrapped) e.preventDefault(); }, true);
+  document.addEventListener('dragstart', (e) => { if (window._kioskTrapped) e.preventDefault(); }, true);
   // Re-force fullscreen on EVERY browser event that carries user-activation. The browser
   // only grants requestFullscreen() from inside one of these activation-triggering events,
   // so hooking all of them means literally any interaction — a tap, a key, a mouse button,

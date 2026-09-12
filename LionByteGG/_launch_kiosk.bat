@@ -57,11 +57,22 @@ start "" "%BROWSER%" ^
   --noerrdialogs ^
   --disable-infobars ^
   --disable-session-crashed-bubble ^
+  --disable-features=TranslateUI,Translate,AutofillServerCommunication,DevToolsConsoleLogging ^
   --disable-pinch ^
   --overscroll-history-navigation=0 ^
-  --disable-features=TranslateUI,Translate ^
+  --disable-dev-tools ^
+  --disable-extensions ^
+  --disable-plugins-discovery ^
+  --disable-background-networking ^
+  --disable-component-update ^
+  --disable-translate ^
+  --disable-save-password-bubble ^
+  --disable-notifications ^
+  --disable-popup-blocking ^
+  --no-context-menu ^
   --autoplay-policy=no-user-gesture-required ^
   --check-for-update-interval=31536000 ^
+  --password-store=basic ^
   "%KIOSK_URL%"
 
 endlocal
