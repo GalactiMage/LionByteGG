@@ -228,7 +228,7 @@
   }
   function _startFsWatchdog(){
     if (_kioskFsWatchdog) return;
-    _kioskFsWatchdog = setInterval(_fsWatchdogTick, 600);
+    _kioskFsWatchdog = setInterval(_fsWatchdogTick, 250);   // tight interval → re-forces fullscreen almost instantly
   }
   function _stopFsWatchdog(){
     clearInterval(_kioskFsWatchdog);
