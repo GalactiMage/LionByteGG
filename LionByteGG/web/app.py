@@ -11225,6 +11225,97 @@ def arena_kiosk_device(kid):
     return render_template(template, kiosk=_arena_kiosk_public(cfg, kid))
 
 
+@app.route('/arena/kiosk/<kid>/launcher.bat')
+def arena_kiosk_launcher(kid):
+    """Generate a ready-to-run Chrome --kiosk launcher .bat for THIS kiosk, with this
+    server's address baked in automatically. Download it onto any kiosk laptop and
+    double-click — it opens the kiosk in true locked fullscreen (no toolbar/X/exit).
+    Fully self-contained (no other files needed)."""
+    cfg = load_arena_config()
+    kid = _arena_normalize_kid(kid)
+    if kid not in cfg.get("kiosks", {}):
+        return ("Kiosk not found", 404)
+    kcfg = _arena_kiosk_cfg(cfg, kid)
+    if kcfg.get("admin_only") and not _is_full_access_user():
+        return redirect(url_for('login', next=request.path))
+    # The host the client used to reach us is exactly the address that machine can
+    # reach the server at — bake it straight into the launcher.
+    server = request.host  # e.g. "192.168.1.50:5000"
+    kid_path = kid.replace("kiosk-", "") if kid.startswith("kiosk-") else kid
+    label = str(kcfg.get("label") or kid).replace("^", "").replace("&", "and").replace("%", "")
+    kiosk_url = f"http://{server}/arena/kiosk/{kid_path}"
+    bat = "\r\n".join([
+        "@echo off",
+        "setlocal EnableExtensions",
+        "REM ==========================================================================",
+        f"REM  LionByteGG Nova - Kiosk launcher for: {label}",
+        "REM  Double-click this file to open the kiosk in TRUE locked fullscreen",
+        "REM  (Chrome --kiosk: no toolbar, no X, no exit, no dev tools, no tampering).",
+        "REM  This file already knows this server's address - just run it on the kiosk PC.",
+        "REM  To exit as staff: Alt+F4, or use the in-page Release, then close.",
+        "REM ==========================================================================",
+        "",
+        f'set "KIOSK_URL={kiosk_url}"',
+        "",
+        "REM ---- Find Chrome (preferred); fall back to Edge ----",
+        'set "BROWSER="',
+        "for %%P in (",
+        '  "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"',
+        '  "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"',
+        '  "%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe"',
+        ") do if not defined BROWSER if exist %%~P set \"BROWSER=%%~P\"",
+        "if not defined BROWSER (",
+        "  for %%P in (",
+        '    "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe"',
+        '    "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"',
+        "  ) do if not defined BROWSER if exist %%~P set \"BROWSER=%%~P\"",
+        ")",
+        "if not defined BROWSER (",
+        "  echo Could not find Google Chrome or Microsoft Edge. Install Chrome and try again.",
+        "  pause",
+        "  exit /b 1",
+        ")",
+        "",
+        'set "PROFILE=%~dp0.kiosk-profile"',
+        "",
+        'echo Launching kiosk at %KIOSK_URL%',
+        'start "" "%BROWSER%" ^',
+        "  --kiosk ^",
+        "  --start-fullscreen ^",
+        '  --user-data-dir="%PROFILE%" ^',
+        "  --no-first-run ^",
+        "  --no-default-browser-check ^",
+        "  --noerrdialogs ^",
+        "  --disable-infobars ^",
+        "  --disable-session-crashed-bubble ^",
+        "  --disable-features=TranslateUI,Translate,AutofillServerCommunication ^",
+        "  --disable-pinch ^",
+        "  --overscroll-history-navigation=0 ^",
+        "  --disable-dev-tools ^",
+        "  --disable-extensions ^",
+        "  --disable-plugins-discovery ^",
+        "  --disable-background-networking ^",
+        "  --disable-component-update ^",
+        "  --disable-translate ^",
+        "  --disable-save-password-bubble ^",
+        "  --disable-notifications ^",
+        "  --disable-popup-blocking ^",
+        "  --no-context-menu ^",
+        "  --autoplay-policy=no-user-gesture-required ^",
+        "  --check-for-update-interval=31536000 ^",
+        "  --password-store=basic ^",
+        '  "%KIOSK_URL%"',
+        "",
+        "endlocal",
+        "exit /b 0",
+        "",
+    ])
+    safe_name = "".join(c for c in str(kcfg.get("label") or kid) if c.isalnum() or c in " -_").strip().replace(" ", "-")
+    resp = Response(bat, mimetype="application/bat")
+    resp.headers["Content-Disposition"] = f'attachment; filename="Launch-{safe_name or kid}.bat"'
+    return resp
+
+
 # -- Arena API — staff endpoints -------------------------------------------
 
 @app.route('/api/arena/stats')

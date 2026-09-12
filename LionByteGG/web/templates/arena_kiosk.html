@@ -41,6 +41,8 @@
         .kc-name { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
         .kc-room { color: #A0A4B8; font-size: 14px; }
         .kc-go { margin-top: 18px; display: flex; align-items: center; gap: 8px; color: #CFB991; font-weight: 600; font-size: 14px; }
+        .kc-setup { margin-top: 16px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: #8FB8FF; text-decoration: none; padding: 8px 12px; border-radius: 10px; background: rgba(96,143,255,.1); border: 1px solid rgba(96,143,255,.3); transition: background .15s ease, border-color .15s ease; }
+        .kc-setup:hover { background: rgba(96,143,255,.2); border-color: rgba(96,143,255,.55); }
         .foot { margin-top: 34px; color: #5F637A; font-size: 13px; }
         .foot a { color: #A0A4B8; text-decoration: none; }
     </style>
@@ -53,7 +55,7 @@
         <p class="sub">Tap the station this device belongs to.</p>
         <div class="grid">
             {% for k in kiosks %}
-            <a class="kiosk-card {% if not k.enabled %}disabled{% endif %}" href="/arena/kiosk/{{ k.id }}">
+            <div class="kiosk-card {% if not k.enabled %}disabled{% endif %}" onclick="location.href='/arena/kiosk/{{ k.id }}'" style="cursor:pointer;">
                 <div class="kc-top">
                     <div class="kc-icon"><i class="fas fa-desktop"></i></div>
                     <span class="kc-status {% if k.enabled %}open{% else %}closed{% endif %}">{{ 'Enabled' if k.enabled else 'Disabled' }}</span>
@@ -61,12 +63,19 @@
                 <div class="kc-name">{{ k.label }}</div>
                 <div class="kc-room">{{ k.room }}</div>
                 <div class="kc-go">Launch <i class="fas fa-arrow-right"></i></div>
-            </a>
+                <a class="kc-setup" href="/arena/kiosk/{{ k.id }}/launcher.bat" onclick="event.stopPropagation();" title="Download the locked-fullscreen launcher for this device">
+                    <i class="fas fa-download"></i> Set up locked kiosk mode
+                </a>
+            </div>
             {% endfor %}
         </div>
-        <div class="foot">Powered by LionByteGG Nova · <a href="/arena/live">Staff Dashboard</a></div>
+        <div class="foot">
+            Powered by LionByteGG Nova · <a href="/arena/live">Staff Dashboard</a><br>
+            <span style="font-size:12px;color:#5F637A;">New device? Tap “Set up locked kiosk mode” on a kiosk above to download its launcher, then run it on that PC for a true locked fullscreen (no exit).</span>
+        </div>
     </div>
 </body>
 </html>
+
 
 
