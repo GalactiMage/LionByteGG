@@ -614,23 +614,29 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 @keyframes legendOffPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.55);} 50%{ box-shadow:0 0 0 5px rgba(248,113,113,0);} }
 
 .map-wrap { display:flex;flex-direction:column;gap:22px; }
-.map-islands-row { display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start; }
-.map-island { background:linear-gradient(165deg,var(--surface),rgba(255,255,255,.012));border:1px solid var(--border);border-radius:22px;padding:18px 20px 20px;flex:1 1 190px;min-width:170px;max-width:230px;transition:border-color .2s ease; }
-.map-island:hover { border-color:rgba(255,255,255,.14); }
+.map-islands-row { display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:20px;align-items:start; }
+.map-island { position:relative;background:linear-gradient(165deg,var(--surface),rgba(255,255,255,.012));border:1px solid var(--border);border-radius:22px;padding:18px 20px 20px;overflow:hidden;transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease; }
+.map-island::before { content:'';position:absolute;top:0;left:0;right:0;height:2.5px;background:linear-gradient(90deg,rgba(56,189,248,.55),rgba(52,211,153,.55));opacity:.55; }
+.map-island.is-stage::before { background:linear-gradient(90deg,rgba(207,185,145,.7),rgba(168,85,247,.4)); }
+.map-island:hover { border-color:rgba(255,255,255,.16);transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,0,0,.32); }
 .map-island.is-stage { border-color:rgba(207,185,145,.3);background:linear-gradient(165deg,rgba(207,185,145,.06),rgba(255,255,255,.01)); }
-.map-island-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:15px; }
+.map-island-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:11px; }
 .map-island-name { font-size:13.5px;font-weight:800;color:var(--text-primary);letter-spacing:.3px;display:flex;align-items:center;gap:8px; }
 .map-island.is-stage .map-island-name { color:#e6d3a3; }
 .map-island-name i { opacity:.85; }
-.map-island-count { font-size:11px;font-weight:800;color:var(--text-muted);background:rgba(255,255,255,.03);padding:3px 9px;border-radius:999px;border:1px solid var(--border); }
+.map-island-count { font-size:11px;font-weight:800;color:var(--text-muted);background:rgba(255,255,255,.03);padding:3px 9px;border-radius:999px;border:1px solid var(--border);white-space:nowrap; }
+.map-island-bar { height:4px;border-radius:3px;background:rgba(255,255,255,.05);overflow:hidden;margin-bottom:14px; }
+.map-island-bar-fill { height:100%;border-radius:3px;transition:width .5s ease;background:linear-gradient(90deg,#38bdf8,#0ea5e9); }
+.map-island-bar-fill.lvl-mid { background:linear-gradient(90deg,#fbbf24,#f59e0b); }
+.map-island-bar-fill.lvl-full { background:linear-gradient(90deg,#34d399,#10b981); }
 /* 2-col × 3-row grid, matching the physical floor layout (1,6)/(2,5)/(3,4) */
 .map-grid { display:grid;grid-template-columns:repeat(2,1fr);gap:9px;justify-items:center; }
 
 .seat { position:relative;width:52px;height:52px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:800;border:1.5px solid var(--border);background:rgba(148,163,184,.06);color:var(--text-muted);transition:transform .15s ease,box-shadow .2s ease,border-color .2s;cursor:pointer; }
 .seat.empty { background:rgba(255,255,255,.015);border-style:dashed;border-color:rgba(255,255,255,.06);color:rgba(148,163,184,.35);cursor:default;box-shadow:none; }
 .seat.empty:hover { transform:none;box-shadow:none; }
-.seat .sn { font-size:11.5px;letter-spacing:.2px;line-height:1; }
-.seat .si { font-size:13px;line-height:1; }
+.seat .sn { font-size:11.5px;letter-spacing:.2px;line-height:1;transition:opacity .15s ease; }
+.seat .si { font-size:13px;line-height:1;transition:opacity .15s ease; }
 .seat.available { background:linear-gradient(155deg,rgba(56,189,248,.14),rgba(14,116,144,.06));color:#7dd3fc;border-color:rgba(56,189,248,.4); }
 .seat.available.locked-gate { background:linear-gradient(155deg,rgba(45,212,191,.22),rgba(13,148,136,.1));color:#5eead4;border-color:rgba(45,212,191,.55);box-shadow:0 0 0 1px rgba(45,212,191,.15),0 6px 18px rgba(20,184,166,.16); }
 .seat.offline { background:linear-gradient(155deg,rgba(248,113,113,.16),rgba(127,29,29,.1));color:#fca5a5;border-color:rgba(248,113,113,.45);cursor:pointer;box-shadow:0 0 0 0 rgba(248,113,113,.5);animation:seatOfflinePulse 1.8s ease-in-out infinite; }
@@ -642,11 +648,31 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 .seat.varsity.active { background:linear-gradient(155deg,rgba(207,185,145,.3),rgba(138,113,65,.12));color:#e6d3a3;border-color:rgba(207,185,145,.6);box-shadow:0 0 0 1px rgba(207,185,145,.2),0 6px 18px rgba(207,185,145,.18); }
 .seat.locked-gate:not(.available) { border-style:dashed;border-color:rgba(168,85,247,.45); }
 .seat:hover { transform:translateY(-3px);box-shadow:0 10px 26px rgba(0,0,0,.4); }
-.seat.active::after { content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:seatPulse 1.7s ease-in-out infinite; }
+.seat.active::after { content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:seatPulse 1.7s ease-in-out infinite;z-index:2; }
 .seat.varsity.active::after { background:#e6d3a3;box-shadow:0 0 0 0 rgba(207,185,145,.6); }
 @keyframes seatPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(52,211,153,.55);} 50%{ box-shadow:0 0 0 6px rgba(52,211,153,0);} }
 @keyframes seatOfflinePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.5);} 50%{ box-shadow:0 0 0 7px rgba(248,113,113,0);} }
 .seat .lockbadge { position:absolute;top:-6px;left:-6px;width:18px;height:18px;border-radius:50%;background:#2dd4bf;color:#052e2b;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.4); }
+
+/* Live-session "energy ring" — a comet of light circulating the seat border while
+   a session is active, and a slower amber ring while a reservation hold is pending. */
+@keyframes seatOrbit { to { transform:rotate(1turn); } }
+@keyframes seatIconSpin { to { transform:rotate(1turn); } }
+.seat-ring { content:'';position:absolute;inset:-4px;border-radius:15px;padding:2px;pointer-events:none;
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+    animation:seatOrbit 2.6s linear infinite;z-index:1; }
+.seat.active .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(110,231,183,.95) 14%,transparent 32%,transparent 100%); }
+.seat.varsity.active .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(230,211,163,.95) 14%,transparent 32%,transparent 100%); }
+.seat.reserved .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(252,211,77,.95) 14%,transparent 32%,transparent 100%);animation-duration:3.4s;animation-direction:reverse; }
+.seat.reserved .si { animation:seatIconSpin 2.8s linear infinite; }
+
+/* Task-in-flight indicator — shown the instant an action is sent to GGLeap, until
+   the response comes back, so staff always see something is happening right now. */
+.seat.sending .si,.seat.sending .sn { opacity:.2; }
+.seat-spin { position:absolute;inset:-4px;border-radius:15px;pointer-events:none;z-index:3;
+    border:2.5px solid transparent;border-top-color:rgba(255,255,255,.92);border-right-color:rgba(255,255,255,.35);
+    animation:seatOrbit .7s linear infinite; }
 
 /* Right-click quick-action menu */
 .seat-ctx-menu { position:fixed;z-index:1400;min-width:220px;background:linear-gradient(165deg,var(--surface),var(--surface-light));border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;animation:ctxIn .12s ease;display:none; }
@@ -3068,11 +3094,15 @@ async function loadSessions(force) {
         const list = physicalSeatOrder(groups[area]);
         const isStage = /stage/i.test(area);
         const occupied = groups[area].filter(s => s.seat_status === 'active' || s.seat_status === 'reserved').length;
+        const total = groups[area].length;
+        const pct = total ? Math.round((occupied / total) * 100) : 0;
+        const lvl = pct >= 100 ? 'lvl-full' : pct >= 50 ? 'lvl-mid' : '';
         return `<div class="map-island ${isStage ? 'is-stage' : ''}">
             <div class="map-island-head">
                 <div class="map-island-name"><i class="fas ${isStage ? 'fa-star' : 'fa-server'}"></i> ${esc(area)}</div>
-                <div class="map-island-count">${occupied}/${groups[area].length} in use</div>
+                <div class="map-island-count">${occupied}/${total} in use</div>
             </div>
+            <div class="map-island-bar"><div class="map-island-bar-fill ${lvl}" style="width:${pct}%;"></div></div>
             <div class="map-grid">${list.map(s => s ? seatHTML(s) : '<div class="seat empty"></div>').join('')}</div>
         </div>`;
     }).join('');
@@ -3095,7 +3125,8 @@ function seatHTML(m) {
         : st === 'disabled' ? ' — Disabled (Maintenance)'
         : st === 'maint' ? (m.admin_mode ? ' — Admin Mode' : ' — Maintenance') : '';
     const tip = esc(m.machine) + (m.name ? ' — ' + esc(m.name) : stLabel);
-    return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
+    const ring = (st === 'active' || st === 'reserved') ? '<span class="seat-ring"></span>' : '';
+    return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${ring}${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
 }
 // Instantly reflect a staff-initiated change in the map without waiting for the
 // next poll — the background refresh (see loadSessions) still reconciles with
@@ -3106,6 +3137,17 @@ function _optimisticSeat(uuid, patch) {
     Object.assign(m, patch);
     const el = document.querySelector(`.seat[data-uuid="${CSS.escape(uuid)}"]`);
     if (el) el.outerHTML = seatHTML(m);
+}
+// Shows a spinning ring + dimmed icon on a seat the instant an action is sent to
+// GGLeap, so staff get immediate feedback that something is happening — cleared
+// once the response comes back (success or failure).
+function _seatSending(uuid, on) {
+    const el = document.querySelector(`.seat[data-uuid="${CSS.escape(uuid)}"]`);
+    if (!el) return;
+    el.classList.toggle('sending', on);
+    let sp = el.querySelector('.seat-spin');
+    if (on) { if (!sp) { sp = document.createElement('span'); sp.className = 'seat-spin'; el.appendChild(sp); } }
+    else if (sp) { sp.remove(); }
 }
 function openSessionDetail(uuid) {
     const m = _sessAll[uuid];
@@ -3279,9 +3321,11 @@ async function submitSessionCheckin(uuid, machine) {
     if (!name) { toast('Enter the student\'s name', 'error'); return; }
     const btn = document.querySelector('#sess-detail .ar-btn-success');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking in…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email }) });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(`${name} checked in on ${machine}`, 'success');
             _optimisticSeat(uuid, { seat_status: 'active', locked: false, name, email, started_at: new Date().toISOString() });
@@ -3293,6 +3337,7 @@ async function submitSessionCheckin(uuid, machine) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Check In & Unlock'; }
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Check In & Unlock'; }
     }
@@ -3300,12 +3345,15 @@ async function submitSessionCheckin(uuid, machine) {
 async function unlockSession(uuid, machine) {
     const btn = document.querySelector('#sess-detail .ar-btn-unlock');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Unlocking…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) { toast(`${machine} unlocked`, 'success'); _optimisticSeat(uuid, { locked: false, unlocked: true, unlocked_by: 'staff' }); closeSessionDetail(); loadSessions(); }
         else { toast(d.error || 'Could not unlock', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock-open"></i> Unlock Station'; } }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock-open"></i> Unlock Station'; }
     }
@@ -3313,12 +3361,15 @@ async function unlockSession(uuid, machine) {
 async function lockSession(uuid, machine) {
     const btn = document.querySelector('#sess-detail .ar-btn-warn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Locking…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) { toast(`${machine} locked`, 'success'); _optimisticSeat(uuid, { locked: true, unlocked: false, unlocked_by: null }); closeSessionDetail(); loadSessions(); }
         else { toast(d.error || 'Could not lock', 'error'); if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lock Station'; } }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lock Station'; }
     }
@@ -3327,9 +3378,11 @@ async function disableSeat(uuid, machine) {
     if (!confirm(`Take ${machine} out of rotation for maintenance? Guests and Team Check-In won't be able to pick it until you re-enable it.`)) return;
     const btn = document.querySelector('#sess-detail .sd-disable-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Disabling…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(`${machine} disabled — out of rotation`, 'success');
             _optimisticSeat(uuid, { seat_status: 'disabled', disabled: true, disabled_since: new Date().toISOString() });
@@ -3340,6 +3393,7 @@ async function disableSeat(uuid, machine) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-screwdriver-wrench"></i> Disable This PC'; }
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-screwdriver-wrench"></i> Disable This PC'; }
     }
@@ -3347,9 +3401,11 @@ async function disableSeat(uuid, machine) {
 async function enableSeat(uuid, machine) {
     const btn = document.querySelector('#sess-detail .ar-btn-success');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Re-enabling…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(`${machine} back in rotation`, 'success');
             _optimisticSeat(uuid, { seat_status: 'available', disabled: false, disabled_since: null, disabled_by: null });
@@ -3360,17 +3416,20 @@ async function enableSeat(uuid, machine) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-power-off"></i> Re-enable This PC'; }
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-power-off"></i> Re-enable This PC'; }
     }
 }
 async function enableAdminMode(uuid, machine) {
-    if (!confirm(`Put ${machine} into Admin Mode?\n\nThis ends any active session on it right now and locks the station for staff/admin use only, until it's restarted or powered off.`)) return;
+    if (!confirm(`Enable Admin Mode on ${machine}?\n\nThis will end any active session right now, unlock the full Windows desktop on that PC, and allow it to be remotely accessed and controlled through the GGLeap Dashboard — until it's restarted or powered off.`)) return;
     const btn = document.querySelector('#sess-detail .sd-adminmode-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enabling Admin Mode…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/admin-mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(`${machine} is now in Admin Mode`, 'success');
             _optimisticSeat(uuid, { seat_status: 'maint', admin_mode: true, state: 'AdminMode', locked: false, name: '', email: '' });
@@ -3381,6 +3440,7 @@ async function enableAdminMode(uuid, machine) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-gear"></i> Enable Admin Mode'; }
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-gear"></i> Enable Admin Mode'; }
     }
@@ -3502,9 +3562,11 @@ async function cancelSession(uuid, machine, active) {
     const box = document.getElementById('sess-detail');
     const btn = box ? box.querySelector('.ar-btn-danger, .ar-btn-warn') : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Working…'; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(d.action === 'restarted' ? `${machine} is restarting` : `${machine} locked`, 'success');
             _optimisticSeat(uuid, d.action === 'restarted'
@@ -3518,6 +3580,7 @@ async function cancelSession(uuid, machine, active) {
             loadSessions();
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = active ? '<i class="fas fa-power-off"></i> Cancel & Restart' : '<i class="fas fa-lock"></i> Cancel Session'; }
     }
@@ -3526,9 +3589,11 @@ async function _powerAdminMachine(uuid, machine, action) {
     const btn = document.querySelector('#sess-detail .ar-btn-warn, #sess-detail .ar-btn-danger');
     const busyLabel = action === 'restart' ? 'Restarting…' : 'Powering off…';
     if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${busyLabel}`; }
+    _seatSending(uuid, true);
     try {
         const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/power', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
         const d = await r.json();
+        _seatSending(uuid, false);
         if (d.success) {
             toast(`${machine} is ${action === 'restart' ? 'restarting' : 'powering off'}`, 'success');
             _optimisticSeat(uuid, action === 'restart'
@@ -3541,6 +3606,7 @@ async function _powerAdminMachine(uuid, machine, action) {
             if (btn) { btn.disabled = false; btn.innerHTML = action === 'restart' ? '<i class="fas fa-arrow-rotate-right"></i> Restart System' : '<i class="fas fa-power-off"></i> Power Off System'; }
         }
     } catch (e) {
+        _seatSending(uuid, false);
         toast('Network error', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = action === 'restart' ? '<i class="fas fa-arrow-rotate-right"></i> Restart System' : '<i class="fas fa-power-off"></i> Power Off System'; }
     }
