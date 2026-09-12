@@ -228,7 +228,7 @@
   }
   function _startFsWatchdog(){
     if (_kioskFsWatchdog) return;
-    _kioskFsWatchdog = setInterval(_fsWatchdogTick, 250);   // tight interval → re-forces fullscreen almost instantly
+    _kioskFsWatchdog = setInterval(_fsWatchdogTick, 150);   // very tight → re-forces fullscreen the instant it can
   }
   function _stopFsWatchdog(){
     clearInterval(_kioskFsWatchdog);
@@ -279,12 +279,21 @@
       (e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Tab'));
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   }, true);
-  // Any of the first touch/click/pointer events satisfies the browser's "user gesture"
-  // requirement for fullscreen — listening on all three (not just one event type) covers
-  // every input path a kiosk touchscreen or mouse might actually fire.
-  ['pointerdown', 'click', 'touchstart'].forEach(evt => {
+  // Re-force fullscreen on EVERY browser event that carries user-activation. The browser
+  // only grants requestFullscreen() from inside one of these activation-triggering events,
+  // so hooking all of them means literally any interaction — a tap, a key, a mouse button,
+  // a scroll wheel, the end of a touch — slams the kiosk straight back into fullscreen.
+  // Combined with the fullscreenchange handler + the 250ms watchdog, exiting is near-impossible
+  // to hold: the instant the user does anything at all, it re-locks.
+  ['pointerdown','pointerup','mousedown','mouseup','click','dblclick','contextmenu',
+   'touchstart','touchend','keydown','keyup','wheel'].forEach(evt => {
     document.addEventListener(evt, () => { if (window._kioskTrapped) _requestKioskFullscreen(); }, { capture: true, passive: true });
   });
+  // Mouse heading for the top-of-screen browser chrome (the X / minimize) is the #1 escape
+  // attempt — treat the cursor leaving the document as a trigger to re-assert fullscreen too.
+  document.addEventListener('mouseout', (e) => {
+    if (window._kioskTrapped && !e.relatedTarget) _requestKioskFullscreen();
+  }, { capture: true, passive: true });
 
   const bootOverlay = document.getElementById('bootOverlay');
   const bootStatusEl = document.getElementById('bootStatus');
