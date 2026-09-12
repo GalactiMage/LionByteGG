@@ -654,29 +654,25 @@ input.ar-select::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:p
 @keyframes seatOfflinePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,113,113,.5);} 50%{ box-shadow:0 0 0 7px rgba(248,113,113,0);} }
 .seat .lockbadge { position:absolute;top:-6px;left:-6px;width:18px;height:18px;border-radius:50%;background:#2dd4bf;color:#052e2b;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.4); }
 
-/* Live-session "energy ring" — a true circular ring (independent of the seat's
-   rounded-square shape, so it reads as an orbit, not a spinning square) with a
-   soft comet of light circulating it while a session is active, and a slower
-   reverse-direction ring while a reservation hold is pending. */
-@keyframes seatOrbit { to { transform:translate(-50%,-50%) rotate(1turn); } }
+/* Live-session "energy ring" — a solid, bright segment of light that genuinely
+   travels along the seat's own rounded-square outline (an SVG rect stroke with an
+   animated dash, so the segment rides the exact perimeter at constant speed),
+   green while a session is active, reverse-direction amber while a reservation
+   hold is pending. */
+@keyframes seatDash { to { stroke-dashoffset:-100; } }
 @keyframes seatIconSpin { to { transform:rotate(1turn); } }
-.seat-ring { content:'';position:absolute;top:50%;left:50%;width:68px;height:68px;border-radius:50%;padding:2.5px;pointer-events:none;
-    transform:translate(-50%,-50%) rotate(0deg);
-    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
-    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
-    animation:seatOrbit 2.6s linear infinite;z-index:1; }
-.seat.active .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(52,211,153,.15) 40%,rgba(110,231,183,1) 62%,rgba(52,211,153,.15) 78%,transparent 100%);filter:drop-shadow(0 0 4px rgba(52,211,153,.65)); }
-.seat.varsity.active .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(207,185,145,.15) 40%,rgba(230,211,163,1) 62%,rgba(207,185,145,.15) 78%,transparent 100%);filter:drop-shadow(0 0 4px rgba(230,211,163,.65)); }
-.seat.reserved .seat-ring { background:conic-gradient(from 0deg,transparent 0%,rgba(251,191,36,.15) 40%,rgba(252,211,77,1) 62%,rgba(251,191,36,.15) 78%,transparent 100%);filter:drop-shadow(0 0 4px rgba(251,191,36,.6));animation-duration:3.6s;animation-direction:reverse; }
+.seat-ring { position:absolute;inset:-3px;pointer-events:none;overflow:visible;z-index:1; }
+.seat-ring rect { fill:none;stroke-width:3;stroke-linecap:round;stroke-dasharray:26 74;stroke-dashoffset:0;animation:seatDash 2s linear infinite; }
+.seat.active .seat-ring rect { stroke:#34d399;filter:drop-shadow(0 0 4px rgba(52,211,153,.9)); }
+.seat.varsity.active .seat-ring rect { stroke:#e6d3a3;filter:drop-shadow(0 0 4px rgba(230,211,163,.9)); }
+.seat.reserved .seat-ring rect { stroke:#fbbf24;filter:drop-shadow(0 0 4px rgba(251,191,36,.85));animation-duration:2.6s;animation-direction:reverse; }
 .seat.reserved .si { animation:seatIconSpin 2.8s linear infinite; }
 
-/* Task-in-flight indicator — shown the instant an action is sent to GGLeap, until
-   the response comes back, so staff always see something is happening right now. */
+/* Task-in-flight indicator — a fast white segment tracing the same outline the
+   instant an action is sent to GGLeap, until the response comes back. */
 .seat.sending .si,.seat.sending .sn { opacity:.2; }
-.seat-spin { position:absolute;top:50%;left:50%;width:68px;height:68px;border-radius:50%;pointer-events:none;z-index:3;
-    transform:translate(-50%,-50%) rotate(0deg);
-    border:2.5px solid transparent;border-top-color:rgba(255,255,255,.92);border-right-color:rgba(255,255,255,.35);
-    animation:seatOrbit .7s linear infinite; }
+.seat-spin { position:absolute;inset:-3px;pointer-events:none;overflow:visible;z-index:3; }
+.seat-spin rect { fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-dasharray:34 66;animation:seatDash .8s linear infinite; }
 
 /* Right-click quick-action menu */
 .seat-ctx-menu { position:fixed;z-index:1400;min-width:220px;background:linear-gradient(165deg,var(--surface),var(--surface-light));border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;animation:ctxIn .12s ease;display:none; }
@@ -3129,8 +3125,15 @@ function seatHTML(m) {
         : st === 'disabled' ? ' — Disabled (Maintenance)'
         : st === 'maint' ? (m.admin_mode ? ' — Admin Mode' : ' — Maintenance') : '';
     const tip = esc(m.machine) + (m.name ? ' — ' + esc(m.name) : stLabel);
-    const ring = (st === 'active' || st === 'reserved') ? '<span class="seat-ring"></span>' : '';
+    const ring = (st === 'active' || st === 'reserved') ? _seatRingSVG('seat-ring') : '';
     return `<div class="seat ${cls}" data-uuid="${esc(m.uuid)}" title="${tip}" onclick="openSessionDetail('${esc(m.uuid)}')">${ring}${m.locked && st !== 'offline' && !varsity && st !== 'active' && st !== 'reserved' ? '<span class="lockbadge"><i class="fas fa-check"></i></span>' : ''}${icon}<span class="sn">${esc(m.seat)}</span></div>`;
+}
+// An SVG rounded-rect stroke sized to the seat (+3px on each side). pathLength=100
+// lets the dash + animation be expressed in constant percentage units so the bright
+// segment rides the exact rounded-square perimeter at an even speed, regardless of
+// the seat's real pixel size.
+function _seatRingSVG(cls) {
+    return `<svg class="${cls}" viewBox="0 0 58 58" preserveAspectRatio="none" aria-hidden="true"><rect x="1.6" y="1.6" width="54.8" height="54.8" rx="15" ry="15" pathLength="100"/></svg>`;
 }
 // Instantly reflect a staff-initiated change in the map without waiting for the
 // next poll — the background refresh (see loadSessions) still reconciles with
@@ -3142,15 +3145,15 @@ function _optimisticSeat(uuid, patch) {
     const el = document.querySelector(`.seat[data-uuid="${CSS.escape(uuid)}"]`);
     if (el) el.outerHTML = seatHTML(m);
 }
-// Shows a spinning ring + dimmed icon on a seat the instant an action is sent to
-// GGLeap, so staff get immediate feedback that something is happening — cleared
-// once the response comes back (success or failure).
+// Shows a fast segment tracing the seat outline + a dimmed icon the instant an
+// action is sent to GGLeap, so staff get immediate feedback that something is
+// happening — cleared once the response comes back (success or failure).
 function _seatSending(uuid, on) {
     const el = document.querySelector(`.seat[data-uuid="${CSS.escape(uuid)}"]`);
     if (!el) return;
     el.classList.toggle('sending', on);
     let sp = el.querySelector('.seat-spin');
-    if (on) { if (!sp) { sp = document.createElement('span'); sp.className = 'seat-spin'; el.appendChild(sp); } }
+    if (on) { if (!sp) el.insertAdjacentHTML('beforeend', _seatRingSVG('seat-spin')); }
     else if (sp) { sp.remove(); }
 }
 function openSessionDetail(uuid) {
