@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>{{ arena_name or 'Arena' }} — Choose Kiosk</title>
+    <title>{{ arena_name or 'Arena' }} — Select a Kiosk</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/LionByteGGLogo.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -40,9 +40,9 @@
         .kc-status.closed { color: #E8776B; background: rgba(232,119,107,.12); border: 1px solid rgba(232,119,107,.35); }
         .kc-name { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
         .kc-room { color: #A0A4B8; font-size: 14px; }
-        .kc-go { margin-top: 18px; display: flex; align-items: center; gap: 8px; color: #CFB991; font-weight: 600; font-size: 14px; }
-        .kc-setup { margin-top: 16px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: #8FB8FF; text-decoration: none; padding: 8px 12px; border-radius: 10px; background: rgba(96,143,255,.1); border: 1px solid rgba(96,143,255,.3); transition: background .15s ease, border-color .15s ease; }
-        .kc-setup:hover { background: rgba(96,143,255,.2); border-color: rgba(96,143,255,.55); }
+        .kc-watchdog { margin-top: 18px; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-weight: 700; font-size: 14px; color: #1B1706; padding: 11px 16px; border-radius: 12px; background: linear-gradient(135deg, #CFB991, #8A7B5C); box-shadow: 0 8px 20px -8px rgba(207,185,145,.5); transition: transform .15s ease, box-shadow .15s ease; }
+        .kc-watchdog:hover { transform: translateY(-2px); box-shadow: 0 12px 26px -8px rgba(207,185,145,.65); }
+        .kc-hint { margin-top: 12px; display: none; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: #6EE7B7; }
         .foot { margin-top: 34px; color: #5F637A; font-size: 13px; }
         .foot a { color: #A0A4B8; text-decoration: none; }
     </style>
@@ -51,31 +51,39 @@
     <div class="wrap">
         <div class="logo"><i class="fas fa-gamepad"></i></div>
         <div class="eyebrow">{{ arena_name }}</div>
-        <h1>Select This iPad's Kiosk</h1>
-        <p class="sub">Tap the station this device belongs to.</p>
+        <h1>Select a Kiosk</h1>
+        <p class="sub">Choose the kiosk this device will become, then start its watchdog.</p>
         <div class="grid">
             {% for k in kiosks %}
-            <div class="kiosk-card {% if not k.enabled %}disabled{% endif %}" onclick="location.href='/arena/kiosk/{{ k.id }}'" style="cursor:pointer;">
+            <div class="kiosk-card {% if not k.enabled %}disabled{% endif %}">
                 <div class="kc-top">
                     <div class="kc-icon"><i class="fas fa-desktop"></i></div>
                     <span class="kc-status {% if k.enabled %}open{% else %}closed{% endif %}">{{ 'Enabled' if k.enabled else 'Disabled' }}</span>
                 </div>
                 <div class="kc-name">{{ k.label }}</div>
                 <div class="kc-room">{{ k.room }}</div>
-                <div class="kc-go">Launch <i class="fas fa-arrow-right"></i></div>
-                <a class="kc-setup" href="/arena/kiosk/{{ k.id }}/launcher.bat" onclick="event.stopPropagation();" title="Download the locked-fullscreen launcher for this device">
-                    <i class="fas fa-download"></i> Set up locked kiosk mode
+                <a class="kc-watchdog" href="/arena/kiosk/{{ k.id }}/launcher.bat" onclick="showLaunchHint(this)" title="Downloads the locked-kiosk launcher for this device">
+                    <i class="fas fa-shield-halved"></i> Start Watchdog
                 </a>
+                <div class="kc-hint"><i class="fas fa-circle-check"></i> Downloaded — launch the downloaded file to start the kiosk.</div>
             </div>
             {% endfor %}
         </div>
         <div class="foot">
             Powered by LionByteGG Nova · <a href="/arena/live">Staff Dashboard</a><br>
-            <span style="font-size:12px;color:#5F637A;">New device? Tap “Set up locked kiosk mode” on a kiosk above to download its launcher, then run it on that PC for a true locked fullscreen (no exit).</span>
+            <span style="font-size:12px;color:#5F637A;">New device? Tap “Start Watchdog” on the kiosk above to download its launcher, then run the downloaded file on that PC to lock it into kiosk mode.</span>
         </div>
     </div>
+    <script>
+      function showLaunchHint(link) {
+        const card = link.closest('.kiosk-card');
+        const hint = card && card.querySelector('.kc-hint');
+        if (hint) hint.style.display = 'flex';
+      }
+    </script>
 </body>
 </html>
+
 
 
 

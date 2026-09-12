@@ -4748,9 +4748,7 @@
             {% endif %}
             <div class="nav-section">
                 <div class="nav-section-title">Launch</div>
-                <a href="/arena/kiosk" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-tablet-alt"></i> Choose Kiosk</a>
-                <a href="/arena/kiosk/1" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-desktop"></i> Kiosk 1</a>
-                <a href="/arena/kiosk/2" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-desktop"></i> Kiosk 2</a>
+                <a href="#" onclick="confirmLaunchKiosk(event)" class="nav-link"><i class="fas fa-tablet-alt"></i> Launch Kiosk</a>
                 {% if session.get('dashboard_user', {}).get('is_admin') or session.get('legacy_login') %}
                 <a href="/arena/kiosk/demo" target="_blank" rel="noopener noreferrer" class="nav-link"><i class="fas fa-flask"></i> Demo Kiosk <span class="nav-badge" style="background:rgba(207,185,145,.2);color:#e6d3a3;">ADMIN</span></a>
                 {% endif %}
@@ -4946,6 +4944,29 @@
             {% block content %}{% endblock %}
         </div>
     </main>
+
+    <!-- Launch Kiosk Confirm Modal -->
+    <div class="modal-overlay" id="launch-kiosk-modal">
+        <div class="modal" style="max-width:440px;">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="fas fa-triangle-exclamation" style="color:#fbbf24;"></i> Turn This Device Into a Kiosk?</h3>
+                <button class="modal-close" onclick="closeLaunchKioskModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--text-secondary);line-height:1.6;margin:0;">
+                    This button is meant only for a device you actually want to turn into a Kiosk —
+                    it downloads a launcher that locks the screen into full-time kiosk mode.
+                    <strong style="color:var(--text-primary);">Do not use this on your own laptop or a staff computer.</strong>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeLaunchKioskModal()">No, Cancel</button>
+                <button class="btn btn-primary" onclick="proceedToLaunchKiosk()"><i class="fas fa-check"></i> Yes, Set Up This Kiosk</button>
+            </div>
+        </div>
+    </div>
 
     <!-- User Profile Modal -->
     <div class="modal-overlay" id="user-profile-modal">
@@ -7097,6 +7118,22 @@
         // it out and leave the sidebar stuck off-screen.
 
         // ============ Modal Helpers ============
+
+        // "Launch Kiosk" nav link — warn before going anywhere near the kiosk setup page,
+        // since it's easy to misclick and it's meant only for devices being turned into a kiosk.
+        function confirmLaunchKiosk(e) {
+            if (e) e.preventDefault();
+            const modal = document.getElementById('launch-kiosk-modal');
+            modal.classList.add('active');
+            document.body.classList.add('modal-open');
+        }
+        function closeLaunchKioskModal() {
+            closeModalWithAnimation(document.getElementById('launch-kiosk-modal'));
+        }
+        function proceedToLaunchKiosk() {
+            closeLaunchKioskModal();
+            window.open('/arena/kiosk', '_blank', 'noopener,noreferrer');
+        }
         
         // Smooth close modal with animation
         function closeModalWithAnimation(modalElement, callback = null) {
