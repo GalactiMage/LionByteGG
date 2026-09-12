@@ -705,6 +705,10 @@
   .boot-shield svg{ width:36px; height:36px; fill:none; stroke:var(--gold-bright); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
   .boot-shield.released{ background:radial-gradient(circle at 50% 35%, rgba(52,211,153,0.20), rgba(52,211,153,0.02) 70%); border-color:rgba(52,211,153,0.4); box-shadow:0 0 40px -10px rgba(52,211,153,0.4); }
   .boot-shield.released svg{ stroke:var(--success); }
+  .boot-shield.rotate{ background:radial-gradient(circle at 50% 35%, rgba(232,119,107,0.20), rgba(232,119,107,0.02) 70%); border-color:rgba(232,119,107,0.4); box-shadow:0 0 40px -10px rgba(232,119,107,0.4); animation:rotateHint 1.8s ease-in-out infinite; }
+  .boot-shield.rotate svg{ stroke:#e8776b; }
+  @keyframes rotateHint{ 0%,100%{ transform:rotate(0deg); } 50%{ transform:rotate(-90deg); } }
+  #orientationOverlay{ z-index:900; }
   .boot-title{ font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; color:var(--text-primary); letter-spacing:-0.01em; }
   .boot-kiosk{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--gold); letter-spacing:.14em; text-transform:uppercase; margin-top:8px; }
   .boot-steps{ margin:30px 0 16px; display:flex; flex-direction:column; gap:11px; text-align:left; }
@@ -1703,6 +1707,19 @@
     <button type="button" class="boot-retry" id="relockBtn" style="margin-top:26px;">Re-Lock Kiosk</button>
   </div>
   <div class="boot-foot">Trap Disarmed</div>
+</div>
+
+<!-- ROTATE-TO-PORTRAIT (this kiosk's floor map is portrait-only) -->
+<div class="boot-overlay" id="orientationOverlay">
+  <div class="boot-box">
+    <div class="boot-shield rotate">
+      <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="16" rx="2"/><path d="M12 22a5 5 0 01-5-5M12 22a5 5 0 005-5M9 20l-2-3 3-1"/></svg>
+    </div>
+    <div class="boot-title">Please Rotate to Portrait</div>
+    <div class="boot-kiosk">This kiosk only runs in portrait orientation</div>
+    <div class="boot-status" style="margin-top:20px;">Rotate this screen (or the Windows display orientation) to portrait to continue — the kiosk will resume automatically.</div>
+  </div>
+  <div class="boot-foot">Waiting for Portrait</div>
 </div>
 
 <script>
@@ -3217,36 +3234,112 @@
 
   /* ================= KIOSK BOOT PREFLIGHT + TRAP ================= */
   let _kioskWakeLock = null;
+  let _kioskAlarmTimer = null;
   window._kioskTrapped = false;
 
+  function _requestKioskFullscreen(){
+    try {
+      const el = document.documentElement;
+      if (document.fullscreenElement || document.webkitFullscreenElement) return;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch(e){}                               // needs a user gesture the very first time — the pointerdown listener below covers that
+  }
   async function engageTrap(){
     window._kioskTrapped = true;
     window._allowReload = false;               // arm the navigation guard (beforeunload)
     document.body.classList.add('kiosk-trapped');
     try { if ('wakeLock' in navigator) _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
-    try {
-      const el = document.documentElement;
-      if (el.requestFullscreen) await el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    } catch(e){}                               // fullscreen may need a user gesture; the trap + fullscreen keeps students in the kiosk
+    _requestKioskFullscreen();
   }
   async function releaseTrap(){
     window._kioskTrapped = false;
     window._allowReload = true;                // allow staff to navigate/close
     try { sessionStorage.removeItem('kioskSessionArmed'); } catch(e){}   // released = no longer an armed session
     document.body.classList.remove('kiosk-trapped');
+    _stopKioskAlarm();
     try { if (_kioskWakeLock){ await _kioskWakeLock.release(); _kioskWakeLock = null; } } catch(e){}
     try {
       if (document.exitFullscreen) await document.exitFullscreen();
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     } catch(e){}
   }
-  // Re-acquire the screen wake lock if iOS drops it when the app is refocused.
+
+  // ---- Snap-back: Escape can never be blocked by JS (a hard browser security rule), so
+  // instead we detect the instant fullscreen is lost, re-request it, and sound an alarm
+  // until the kiosk is frontmost and fullscreen again. Also covers a stray popup/new tab
+  // stealing focus, or an Alt-Tab away — same detection, same response. ----
+  function _kioskAlarmBeep(){
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(1046.5, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } catch(e){}
+  }
+  function _startKioskAlarm(){
+    if (_kioskAlarmTimer) return;
+    _kioskAlarmBeep();
+    _kioskAlarmTimer = setInterval(_kioskAlarmBeep, 700);
+  }
+  function _stopKioskAlarm(){
+    clearInterval(_kioskAlarmTimer);
+    _kioskAlarmTimer = null;
+  }
+  function _onFullscreenChange(){
+    if (!window._kioskTrapped) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) { _stopKioskAlarm(); return; }
+    _requestKioskFullscreen();
+    _startKioskAlarm();
+  }
+  document.addEventListener('fullscreenchange', _onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', _onFullscreenChange);
+  window.addEventListener('blur', () => {
+    if (!window._kioskTrapped) return;
+    _startKioskAlarm();
+    setTimeout(() => { try { window.focus(); } catch(e){} }, 50);
+  });
+  window.addEventListener('focus', () => { if (window._kioskTrapped){ _stopKioskAlarm(); _requestKioskFullscreen(); } });
+  // Re-acquire the screen wake lock (and fullscreen/alarm state) if the OS backgrounds the tab.
   document.addEventListener('visibilitychange', async () => {
-    if (!document.hidden && window._kioskTrapped && 'wakeLock' in navigator){
-      try { _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+    if (!window._kioskTrapped) return;
+    if (!document.hidden){
+      if ('wakeLock' in navigator){
+        try { _kioskWakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+      }
+      _stopKioskAlarm();
+      _requestKioskFullscreen();
+    } else {
+      _startKioskAlarm();
     }
   });
+  // Block the in-browser escape routes JS is actually allowed to intercept (DevTools,
+  // reload, closing/opening tabs, browser back/forward). Escape/fullscreen-exit and OS-level
+  // shortcuts (Alt-Tab, the Windows key) are outside what a browser lets a page block —
+  // that's handled by launching Chrome in native --kiosk mode instead.
+  document.addEventListener('keydown', (e) => {
+    if (!window._kioskTrapped) return;
+    const k = e.key;
+    const blocked =
+      k === 'F11' || k === 'F12' ||
+      ((e.ctrlKey || e.metaKey) && !e.altKey && ['r','R','w','W','n','N','t','T','p','P','s','S','u','U','j','J'].includes(k)) ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','I','j','J','c','C'].includes(k)) ||
+      (e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Tab'));
+    if (blocked) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  // The first tap anywhere satisfies the browser's "user gesture" requirement for
+  // fullscreen, so a cold boot with no prior interaction still locks down immediately.
+  document.addEventListener('pointerdown', () => { if (window._kioskTrapped) _requestKioskFullscreen(); }, { capture: true });
 
   const bootOverlay = document.getElementById('bootOverlay');
   const bootStatusEl = document.getElementById('bootStatus');
@@ -3281,6 +3374,10 @@
     bootRetryBtn.style.display = 'none';
     ['conn','config','input','lock'].forEach(s => setBootStep(s, '', '…'));
     document.getElementById('bootKiosk').textContent = KIOSK_CONFIG.label + ' · ' + KIOSK_CONFIG.room;
+
+    // Engage the trap FIRST, before any network/config waiting — fullscreen + the
+    // reload-block should be armed from the very first instant, not ~3+ seconds in.
+    engageTrap();
 
     // 1 — Connection to host (traps here, retrying, until the server is reachable)
     setBootStep('conn', 'active', 'TESTING');
@@ -3331,14 +3428,15 @@
     }
     await bootSleep(800);
 
-    // 4 — Engage the kiosk trap (verify it actually armed, retry once)
+    // 4 — Confirm the trap actually armed (it was requested at the top of this
+    // function already; retry once here in case the first attempt silently failed).
     setBootStep('lock', 'active', 'ARMING');
     bootStatusEl.textContent = 'Engaging kiosk lock…';
-    await engageTrap();
-    await bootSleep(1000);
-    if (!document.body.classList.contains('kiosk-trapped')){
-      await engageTrap();
-      await bootSleep(600);
+    if (!document.body.classList.contains('kiosk-trapped')) await engageTrap();
+    await bootSleep(600);
+    if (!document.fullscreenElement && !document.webkitFullscreenElement){
+      _requestKioskFullscreen();
+      await bootSleep(400);
     }
     setBootStep('lock', 'ok', 'ARMED');
     bootStatusEl.textContent = 'All systems secure. Kiosk ready.';
@@ -3375,14 +3473,44 @@
     evaluateKioskState();
   }
 
+  /* ================= PORTRAIT REQUIREMENT (this kiosk's floor map is portrait-only) ================= */
+  const orientationOverlay = document.getElementById('orientationOverlay');
+  function _isLandscape(){ return window.innerWidth > window.innerHeight; }
+  function _updateOrientationGate(){
+    if (!orientationOverlay) return;
+    orientationOverlay.classList.toggle('show', _isLandscape());
+  }
+  function _waitForPortrait(){
+    return new Promise(resolve => {
+      if (!_isLandscape()){ resolve(); return; }
+      const check = () => {
+        _updateOrientationGate();
+        if (!_isLandscape()){
+          window.removeEventListener('resize', check);
+          window.removeEventListener('orientationchange', check);
+          resolve();
+        }
+      };
+      window.addEventListener('resize', check);
+      window.addEventListener('orientationchange', check);
+    });
+  }
+  // Keeps blocking interaction (via the overlay) any time it flips back to landscape later, not just at boot.
+  window.addEventListener('resize', _updateOrientationGate);
+  window.addEventListener('orientationchange', _updateOrientationGate);
+  _updateOrientationGate();
+
   // Procedures run ONLY on a fresh open/start. A Nova reload / refresh is treated as stuck-recovery.
   let _armedSession = false;
   try { _armedSession = sessionStorage.getItem('kioskSessionArmed') === '1'; } catch(e){}
-  if (_armedSession){
-    resumeAfterReload();
-  } else {
-    runBootSequence();
-  }
+  (async () => {
+    await _waitForPortrait();          // won't boot/resume until the screen is in portrait
+    if (_armedSession){
+      resumeAfterReload();
+    } else {
+      runBootSequence();
+    }
+  })();
 </script>
 
 <div class="powered-by">Powered by <span>LionByte Services</span></div>
