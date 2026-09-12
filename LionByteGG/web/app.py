@@ -5751,7 +5751,38 @@ def _ggleap_shutdown_machine(machine_uuid):
     except _req.exceptions.RequestException as e:
         return False, str(e)
 
-# PC-lock reconcile state (per process). While the feature is on, an idle Island
+def _ggleap_enable_admin_mode(machine_uuid):
+    """Force a PC into GGLeap Admin Mode via the same execute-action endpoint
+    used for restart/shutdown. Ends any active student session and locks the
+    station for staff/admin use only, until it's restarted or powered off."""
+    global ggleap_jwt_token
+    import requests as _req
+    if not machine_uuid:
+        return False, "no machine"
+    if _ggleap_is_paused():
+        return False, "GGLeap paused"
+    if not ggleap_jwt_token:
+        get_ggleap_jwt()
+    if not ggleap_jwt_token:
+        return False, "GGLeap auth failed"
+    body = {"Action": "AdminMode", "MachineUuid": machine_uuid, "EndOfSession": True}
+    hdrs = {"Accept": "application/json", "Content-Type": "application/json",
+            "Authorization": f"Bearer {ggleap_jwt_token}"}
+    _ggleap_throttle_write()
+    try:
+        _ggleap_count("admin-mode")
+        r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 401:
+            get_ggleap_jwt()
+            hdrs["Authorization"] = f"Bearer {ggleap_jwt_token}"
+            _ggleap_throttle_write()
+            _ggleap_count("admin-mode")
+            r = _req.post(f"{GGLEAP_BASE_URL}{GGLEAP_EXECUTE_ACTION_PATH}", headers=hdrs, json=body, timeout=20)
+        if r.status_code == 204 or r.ok:
+            return True, None
+        return False, f"GGLeap {r.status_code}: {(r.text or '')[:150]}"
+    except _req.exceptions.RequestException as e:
+        return False, str(e)
 # PC that is unlocked gets locked with the check-in message. We remember which PCs
 # WE locked; if such a PC later shows up unlocked without having rebooted, a human
 # (a worker via GGLeap, or the kiosk check-in) unlocked it — so we leave it alone
@@ -6216,6 +6247,34 @@ def api_arena_session_power(uid):
     if not ok:
         return jsonify({"success": False, "error": (err or "GGLeap error") + f" Could not {action} the machine."}), 502
     return jsonify({"success": True, "action": action, "machine": name})
+
+
+@app.route('/api/arena/sessions/<uid>/admin-mode', methods=['POST'])
+@api_perm_required('arena.manage')
+def api_arena_session_admin_mode(uid):
+    """Put a station into GGLeap Admin Mode from PC Manager. Ends any active
+    student session and locks the station for staff/admin use only, until it's
+    restarted or powered off (the same recovery path as any other Admin Mode PC)."""
+    status = _fetch_ggleap_status()
+    machine = next((p for p in status.get("pcs", []) if p.get("uuid") == uid), None)
+    if not machine:
+        return jsonify({"success": False, "error": "That station is no longer listed."}), 404
+    if machine.get("state") == "AdminMode":
+        return jsonify({"success": False, "error": "That station is already in Admin Mode."}), 409
+    name = machine.get("name", "the station")
+    ok, err = _ggleap_enable_admin_mode(uid)
+    if ok:
+        _pc_session_ended[uid] = time.time()
+        _pc_clear_hold(uid)
+        _pc_we_locked.discard(uid)
+        _pc_kiosk_unlocked.discard(uid)
+        _pc_human_unlocked.discard(uid)
+        _arena_clear_occupant(uid)
+    log_activity("arena_session_admin_mode", "arena", f"{_arena_staff_name()} enabled Admin Mode on {name}")
+    if not ok:
+        return jsonify({"success": False, "error": (err or "GGLeap error") + " Could not enable Admin Mode."}), 502
+    return jsonify({"success": True, "machine": name})
+
 
 
 @app.route('/api/arena/sessions/<uid>/unlock', methods=['POST'])

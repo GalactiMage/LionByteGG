@@ -3200,6 +3200,7 @@ function renderSessionOccupied(s, m) {
             ${CAN_MANAGE ? `<div class="sd-actions">
                 <button class="ar-btn ${active ? 'ar-btn-danger' : 'ar-btn-warn'}" style="justify-content:center;width:100%;" onclick="cancelSession('${esc(s.uuid)}','${esc(s.machine)}',${active})"><i class="fas ${active ? 'fa-power-off' : 'fa-lock'}"></i> ${active ? 'Cancel &amp; Restart' : 'Cancel Session'}</button>
                 <button class="ar-btn ar-btn-unlock" style="justify-content:center;width:100%;" onclick="unlockSession('${esc(s.uuid)}','${esc(s.machine)}')"><i class="fas fa-lock-open"></i> Unlock Station</button>
+                <button class="ar-btn ar-btn-ghost sd-adminmode-btn" style="justify-content:center;width:100%;" onclick="enableAdminMode('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-user-gear"></i> Enable Admin Mode</button>
             </div>` : ''}
         </div>`;
 }
@@ -3230,6 +3231,7 @@ function renderSessionOpen(m) {
                 ${m.locked
                     ? `<button class="ar-btn ar-btn-unlock" style="justify-content:center;width:100%;" onclick="unlockSession('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-lock-open"></i> Unlock Station</button>`
                     : `<button class="ar-btn ar-btn-warn" style="justify-content:center;width:100%;" onclick="lockSession('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-lock"></i> Lock Station</button>`}
+                <button class="ar-btn ar-btn-ghost sd-adminmode-btn" style="justify-content:center;width:100%;" onclick="enableAdminMode('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-user-gear"></i> Enable Admin Mode</button>
                 <button class="ar-btn ar-btn-ghost sd-disable-btn" style="justify-content:center;width:100%;" onclick="disableSeat('${esc(m.uuid)}','${esc(m.machine)}')"><i class="fas fa-screwdriver-wrench"></i> Disable This PC</button>
             </div>` : '<div class="sd-hint" style="color:var(--text-muted);">You do not have permission to manage stations.</div>';
     }
@@ -3362,6 +3364,27 @@ async function enableSeat(uuid, machine) {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-power-off"></i> Re-enable This PC'; }
     }
 }
+async function enableAdminMode(uuid, machine) {
+    if (!confirm(`Put ${machine} into Admin Mode?\n\nThis ends any active session on it right now and locks the station for staff/admin use only, until it's restarted or powered off.`)) return;
+    const btn = document.querySelector('#sess-detail .sd-adminmode-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enabling Admin Mode…'; }
+    try {
+        const r = await fetch('/api/arena/sessions/' + encodeURIComponent(uuid) + '/admin-mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const d = await r.json();
+        if (d.success) {
+            toast(`${machine} is now in Admin Mode`, 'success');
+            _optimisticSeat(uuid, { seat_status: 'maint', admin_mode: true, state: 'AdminMode', locked: false, name: '', email: '' });
+            closeSessionDetail();
+            loadSessions();
+        } else {
+            toast(d.error || 'Could not enable Admin Mode', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-gear"></i> Enable Admin Mode'; }
+        }
+    } catch (e) {
+        toast('Network error', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-gear"></i> Enable Admin Mode'; }
+    }
+}
 function closeSessionDetail() {
     const b = document.getElementById('sess-detail-back');
     if (b) b.classList.remove('show');
@@ -3409,6 +3432,9 @@ function buildSeatContextItems(m, s) {
         items.push(ctxItem('Check In Student', 'fa-user-check', () => openCheckinForm(m.uuid), 'good'));
         if (m.locked) items.push(ctxItem('Unlock Station', 'fa-lock-open', () => unlockSession(m.uuid, m.machine)));
         else items.push(ctxItem('Lock Station', 'fa-lock', () => lockSession(m.uuid, m.machine), 'warn'));
+    }
+    if (!m.admin_mode) {
+        items.push(ctxItem('Enable Admin Mode', 'fa-user-gear', () => enableAdminMode(m.uuid, m.machine), 'warn'));
     }
     items.push({ sep: true });
     items.push(ctxItem('Disable This PC (Maintenance)', 'fa-screwdriver-wrench', () => disableSeat(m.uuid, m.machine), 'warn'));
