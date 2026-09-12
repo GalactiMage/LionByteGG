@@ -148,6 +148,11 @@ node_modules/
 **/plugins/*.jar
 
 # ========================
+# Kiosk browser profiles (created by Chrome --kiosk launchers)
+# ========================
+**/.kiosk-profile-*/
+
+# ========================
 # Windows shortcuts
 # ========================
 *.lnk
