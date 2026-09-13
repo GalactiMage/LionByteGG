@@ -282,7 +282,48 @@
     </div>
 </div>
 
-<!-- Game Titles Management -->
+{% if has_perm('settings.manage') %}
+<!-- GGLeap API Keys -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="fas fa-key"></i>
+            GGLeap API Keys
+        </h3>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info mb-3">
+            <i class="fas fa-info-circle"></i>
+            <span>These AuthTokens come from <a href="https://admin.ggleap.com/settings/api" target="_blank" rel="noopener">admin.ggleap.com/settings/api</a> and power PC status, locking, and the games catalog. Saved keys apply immediately — no server restart needed. For security, keys are never shown again after saving; leave a field blank to keep its current value.</span>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Status API Key <span id="ggkey-status-badge" style="font-size:11px;font-weight:700;color:var(--text-secondary);"></span></label>
+            <div style="display:flex;gap:8px;">
+                <input type="password" class="form-input" id="ggkey-status" placeholder="Paste a new Status key to replace it, or leave blank" autocomplete="new-password">
+                {% if has_perm('settings.manage') %}
+                <button class="btn btn-secondary" onclick="testGgleapKey('status')" title="Verify this key can authenticate right now"><i class="fas fa-plug"></i> Test</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="form-group mb-0">
+            <label class="form-label">Games API Key <span id="ggkey-games-badge" style="font-size:11px;font-weight:700;color:var(--text-secondary);"></span></label>
+            <div style="display:flex;gap:8px;">
+                <input type="password" class="form-input" id="ggkey-games" placeholder="Paste a new Games key to replace it, or leave blank" autocomplete="new-password">
+                {% if has_perm('settings.manage') %}
+                <button class="btn btn-secondary" onclick="testGgleapKey('games')" title="Verify this key can authenticate right now"><i class="fas fa-plug"></i> Test</button>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if has_perm('settings.manage') %}
+        <button class="btn btn-primary mt-3" onclick="saveGgleapKeys()"><i class="fas fa-save"></i> Save Keys</button>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div class="card mt-3">
     <div class="card-header">
         <h3 class="card-title">
@@ -1178,6 +1219,66 @@
         loadVCGenerators();
         await loadEsportsGames();
         loadTeamRoleMapping();
+        loadGgleapKeys();
     });
+
+    // ============ GGLeap API Keys ============
+    async function loadGgleapKeys() {
+        const statusBadge = document.getElementById('ggkey-status-badge');
+        const gamesBadge = document.getElementById('ggkey-games-badge');
+        if (!statusBadge) return;   // card not rendered (no settings.manage perm)
+        try {
+            const res = await fetch('/api/settings/ggleap-keys');
+            const data = await res.json();
+            const badge = (info) => info.set
+                ? `<i class="fas fa-circle-check" style="color:#22c55e;"></i> Set (…${info.last4})`
+                : `<i class="fas fa-triangle-exclamation" style="color:#ef4444;"></i> Not set`;
+            statusBadge.innerHTML = badge(data.status_token);
+            gamesBadge.innerHTML = badge(data.games_token);
+        } catch (e) {
+            console.error('Failed to load GGLeap key status:', e);
+        }
+    }
+
+    async function saveGgleapKeys() {
+        const statusToken = document.getElementById('ggkey-status').value.trim();
+        const gamesToken = document.getElementById('ggkey-games').value.trim();
+        if (!statusToken && !gamesToken) {
+            showToast('Enter at least one key to save', 'error');
+            return;
+        }
+        try {
+            const res = await fetch('/api/settings/ggleap-keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status_token: statusToken, games_token: gamesToken })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || 'GGLeap keys saved', 'success');
+                document.getElementById('ggkey-status').value = '';
+                document.getElementById('ggkey-games').value = '';
+                loadGgleapKeys();
+            } else {
+                showToast(data.error || 'Failed to save keys', 'error');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    async function testGgleapKey(which) {
+        try {
+            const res = await fetch('/api/settings/ggleap-keys/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ which })
+            });
+            const data = await res.json();
+            showToast(data.message || data.error, data.success ? 'success' : 'error');
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
 </script>
 {% endblock %}

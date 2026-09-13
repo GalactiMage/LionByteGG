@@ -114,6 +114,7 @@ def inject_user_perms():
 
 # Configuration
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 FLAGGED_WORDS_PATH = os.path.join(DATA_DIR, "flagged_words.json")
 BOT_STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
 MEMBERS_CACHE_FILE = os.path.join(DATA_DIR, "members_cache.json")
@@ -5069,6 +5070,12 @@ if not GGLEAP_AUTH_TOKEN or not GGLEAP_GAMES_AUTH_TOKEN:
 GGLEAP_BASE_URL = "https://api.ggleap.com/beta"
 ggleap_jwt_token = None
 ggleap_games_jwt_token = None
+# Lazy-refresh expiry tracking (GGLeap's recommended pattern): the JWT is valid
+# for 10 minutes; we treat it as due for renewal a couple minutes early so a
+# request never gets caught using an about-to-expire token.
+ggleap_jwt_expires_at = 0.0
+ggleap_games_jwt_expires_at = 0.0
+GGLEAP_JWT_TTL_SECONDS = 8 * 60
 
 # -- GGLeap daily API-usage meter --------------------------------------------
 # Counts every real request we make to GGLeap so staff can see how close we are
@@ -5121,7 +5128,7 @@ def _ggleap_is_paused():
 
 def get_ggleap_jwt():
     """Refresh JWT token for GGLeap status API"""
-    global ggleap_jwt_token
+    global ggleap_jwt_token, ggleap_jwt_expires_at
     try:
         import requests
         _ggleap_count("auth")
@@ -5133,6 +5140,7 @@ def get_ggleap_jwt():
         )
         r.raise_for_status()
         ggleap_jwt_token = r.json().get("Jwt")
+        ggleap_jwt_expires_at = time.time() + GGLEAP_JWT_TTL_SECONDS
         return ggleap_jwt_token
     except Exception as e:
         print(f"[GGLEAP] JWT error: {e}")
@@ -5140,7 +5148,7 @@ def get_ggleap_jwt():
 
 def get_ggleap_games_jwt():
     """Refresh JWT token for GGLeap games API"""
-    global ggleap_games_jwt_token
+    global ggleap_games_jwt_token, ggleap_games_jwt_expires_at
     try:
         import requests
         _ggleap_count("auth")
@@ -5152,45 +5160,107 @@ def get_ggleap_games_jwt():
         )
         r.raise_for_status()
         ggleap_games_jwt_token = r.json().get("Jwt")
+        ggleap_games_jwt_expires_at = time.time() + GGLEAP_JWT_TTL_SECONDS
         return ggleap_games_jwt_token
     except Exception as e:
         print(f"[GGLEAP_GAMES] JWT error: {e}")
         return None
 
-# -- Proactive JWT refresh (per GGLeap's recommended pattern) ---------------
-# The JWT exchanged from the AuthToken is only valid for 10 minutes. Every call
-# site already does a lazy refresh + retry-on-401 as a safety net, but GGLeap's
-# own guidance is to also refresh proactively in the background every 5 minutes
-# so a long-running dashboard session never even risks hitting a 401. Runs once
-# per process; failures are swallowed so a transient network blip can't kill it
-# (the existing lazy refresh still covers that call in the meantime).
-_GGLEAP_JWT_REFRESH_INTERVAL = 5 * 60
-_ggleap_jwt_refresh_thread_started = False
+# -- GGLeap API key management (from Nova, no more editing .env by hand) ----
+def _env_file_read_lines():
+    try:
+        with open(ENV_FILE_PATH, "r", encoding="utf-8") as f:
+            return f.readlines()
+    except FileNotFoundError:
+        return []
 
-def _ggleap_jwt_refresh_loop(stop_event):
-    while not stop_event.wait(_GGLEAP_JWT_REFRESH_INTERVAL):
-        try:
-            if GGLEAP_AUTH_TOKEN and not _ggleap_is_paused():
-                get_ggleap_jwt()
-        except Exception as e:
-            print(f"[GGLEAP] background JWT refresh failed, will retry next interval: {e}")
-        try:
-            if GGLEAP_GAMES_AUTH_TOKEN and not _ggleap_is_paused():
-                get_ggleap_games_jwt()
-        except Exception as e:
-            print(f"[GGLEAP_GAMES] background JWT refresh failed, will retry next interval: {e}")
+def _env_file_set(key, value):
+    """Update (or append) KEY=value in the .env file, preserving every other
+    line/comment untouched, then apply it to the live process immediately via
+    os.environ so the change takes effect with no server restart required."""
+    lines = _env_file_read_lines()
+    prefix = f"{key}="
+    found = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith(prefix) or line.split("=", 1)[0].strip() == key:
+            lines[i] = f"{key}={value}\n"
+            found = True
+            break
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines.append(f"{key}={value}\n")
+    with open(ENV_FILE_PATH, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    os.environ[key] = value
 
-def start_ggleap_jwt_refresh_thread():
-    """Call once at app startup. Safe to call more than once — only starts the thread the first time."""
-    global _ggleap_jwt_refresh_thread_started
-    if _ggleap_jwt_refresh_thread_started:
-        return
-    _ggleap_jwt_refresh_thread_started = True
-    stop_event = threading.Event()
-    t = threading.Thread(target=_ggleap_jwt_refresh_loop, args=(stop_event,), daemon=True, name="ggleap-jwt-refresh")
-    t.start()
+def _ggleap_apply_new_tokens(status_token=None, games_token=None):
+    """Push freshly-saved tokens into the live in-memory globals and clear any
+    cached JWT for that token, so the very next GGLeap call re-authenticates
+    with the new key right away — no restart needed."""
+    global GGLEAP_AUTH_TOKEN, GGLEAP_GAMES_AUTH_TOKEN
+    global ggleap_jwt_token, ggleap_jwt_expires_at, ggleap_games_jwt_token, ggleap_games_jwt_expires_at
+    if status_token is not None:
+        GGLEAP_AUTH_TOKEN = status_token
+        ggleap_jwt_token = None
+        ggleap_jwt_expires_at = 0.0
+    if games_token is not None:
+        GGLEAP_GAMES_AUTH_TOKEN = games_token
+        ggleap_games_jwt_token = None
+        ggleap_games_jwt_expires_at = 0.0
 
-start_ggleap_jwt_refresh_thread()
+@app.route('/api/settings/ggleap-keys', methods=['GET', 'POST'])
+@api_auth_required
+def api_settings_ggleap_keys():
+    """View (masked) / update the GGLeap AuthTokens from the Bot Settings page,
+    instead of hand-editing .env on the server. Never returns the full secret —
+    only whether it's set and its last 4 characters, for identification."""
+    if request.method == 'GET':
+        def _mask(tok):
+            return {"set": bool(tok), "last4": (tok[-4:] if tok and len(tok) >= 4 else "")}
+        return jsonify({
+            "status_token": _mask(GGLEAP_AUTH_TOKEN),
+            "games_token": _mask(GGLEAP_GAMES_AUTH_TOKEN),
+        })
+
+    if not has_perm('settings.manage'):
+        return jsonify({"success": False, "error": "Permission denied"}), 403
+    data = request.json or {}
+    status_token = (data.get("status_token") or "").strip()
+    games_token = (data.get("games_token") or "").strip()
+    if not status_token and not games_token:
+        return jsonify({"success": False, "error": "Enter at least one key to update."}), 400
+    try:
+        if status_token:
+            _env_file_set("GGLEAP_AUTH_TOKEN_STATUS", status_token)
+        if games_token:
+            _env_file_set("GGLEAP_AUTH_TOKEN_GAMES", games_token)
+        _ggleap_apply_new_tokens(
+            status_token=status_token or None,
+            games_token=games_token or None,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Could not save to .env: {e}"}), 500
+    log_activity("settings_ggleap_keys_updated", "settings",
+                  f"{get_moderator_name()} updated the GGLeap API key(s)")
+    return jsonify({"success": True, "message": "Saved. Applied immediately — no restart needed."})
+
+@app.route('/api/settings/ggleap-keys/test', methods=['POST'])
+@api_auth_required
+def api_settings_ggleap_keys_test():
+    """Live-verify the currently-configured key(s) actually authenticate against GGLeap."""
+    if not has_perm('settings.manage'):
+        return jsonify({"success": False, "error": "Permission denied"}), 403
+    which = (request.json or {}).get("which", "status")
+    if which == "games":
+        ok = bool(get_ggleap_games_jwt())
+        label = "Games"
+    else:
+        ok = bool(get_ggleap_jwt())
+        label = "Status"
+    if ok:
+        return jsonify({"success": True, "message": f"{label} key is valid — authenticated with GGLeap."})
+    return jsonify({"success": False, "error": f"{label} key failed to authenticate. Check the value and try again."})
 
 def format_pc_name(name):
     """Format PC name like 'Island1S2' to 'Island 1 S2' or 'Stage1' to 'Stage S1'"""
@@ -5409,7 +5479,7 @@ def _ggleap_get_machines(max_age=None, force=False):
     # same cadence instead of hammering every loop tick.
     if not force and (now - _ggleap_machines_cache["fetched_at"]) < max_age:
         return (cached or []), _ggleap_machines_cache["error"]
-    if not ggleap_jwt_token:
+    if not ggleap_jwt_token or _t.time() >= ggleap_jwt_expires_at:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
         _ggleap_machines_cache["fetched_at"] = now
@@ -5699,7 +5769,7 @@ def _ggleap_set_screen_lock(machine_uuid, lock, message=None):
         return False, "no machine"
     if _ggleap_is_paused():
         return False, "GGLeap paused"
-    if not ggleap_jwt_token:
+    if not ggleap_jwt_token or time.time() >= ggleap_jwt_expires_at:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
         return False, "GGLeap auth failed"
@@ -5735,7 +5805,7 @@ def _ggleap_reboot_machine(machine_uuid):
         return False, "no machine"
     if _ggleap_is_paused():
         return False, "GGLeap paused"
-    if not ggleap_jwt_token:
+    if not ggleap_jwt_token or time.time() >= ggleap_jwt_expires_at:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
         return False, "GGLeap auth failed"
@@ -5767,7 +5837,7 @@ def _ggleap_shutdown_machine(machine_uuid):
         return False, "no machine"
     if _ggleap_is_paused():
         return False, "GGLeap paused"
-    if not ggleap_jwt_token:
+    if not ggleap_jwt_token or time.time() >= ggleap_jwt_expires_at:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
         return False, "GGLeap auth failed"
@@ -5800,7 +5870,7 @@ def _ggleap_enable_admin_mode(machine_uuid):
         return False, "no machine"
     if _ggleap_is_paused():
         return False, "GGLeap paused"
-    if not ggleap_jwt_token:
+    if not ggleap_jwt_token or time.time() >= ggleap_jwt_expires_at:
         get_ggleap_jwt()
     if not ggleap_jwt_token:
         return False, "GGLeap auth failed"
@@ -6723,7 +6793,7 @@ def api_ggleap_games():
         return jsonify({"error": "GGLeap paused", "games": [], "apps": []})
 
     # Always try to get fresh JWT
-    if not ggleap_games_jwt_token:
+    if not ggleap_games_jwt_token or time.time() >= ggleap_games_jwt_expires_at:
         get_ggleap_games_jwt()
     
     if not ggleap_games_jwt_token:
