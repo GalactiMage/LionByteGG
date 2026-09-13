@@ -7,7 +7,9 @@ from discord import app_commands
 import re
 from utils.safe_json import safe_json_dump
 
-GGLEAP_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_GAMES", "P1Q+Z3jtqCb4Eiw6RGzhoavp50zzOAwc3gsiPZiKhcOaDE75A1mVCPadifqukz1er5pchN+I1WwkIcDG+XvKCubHKmUTESKqGLNNcAge7xUF9y4XQBkP8i3H7028mrHd")
+GGLEAP_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_GAMES", "")
+if not GGLEAP_AUTH_TOKEN:
+    print("[GGLEAP] WARNING: GGLEAP_AUTH_TOKEN_GAMES is not set in the environment/.env — GGLeap games calls will fail.")
 BASE_URL = "https://api.ggleap.com/beta"
 
 jwt_token = None

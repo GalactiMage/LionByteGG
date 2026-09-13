@@ -5059,9 +5059,13 @@ import os
 import re
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# GGLeap API configuration
-GGLEAP_AUTH_TOKEN = "DnRx4l0umS3vaw3bR/22yjvTFYtMC6QxTkvvI77g3Lrn3nX1BFwo4if37zZHJj83I4to+ruOnilshG3Mzhza3m+sonBs4YUx9v0EiC6738gAa0QAuwH+14Jso1197He/"
-GGLEAP_GAMES_AUTH_TOKEN = "P1Q+Z3jtqCb4Eiw6RGzhoavp50zzOAwc3gsiPZiKhcOaDE75A1mVCPadifqukz1er5pchN+I1WwkIcDG+XvKCubHKmUTESKqGLNNcAge7xUF9y4XQBkP8i3H7028mrHd"
+# GGLeap API configuration — the AuthToken is a long-lived secret from
+# admin.ggleap.com/settings/api and MUST live only in the gitignored .env file
+# (loaded automatically via the utils.constants import above), never hardcoded here.
+GGLEAP_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_STATUS", "")
+GGLEAP_GAMES_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_GAMES", "")
+if not GGLEAP_AUTH_TOKEN or not GGLEAP_GAMES_AUTH_TOKEN:
+    print("[GGLEAP] WARNING: GGLEAP_AUTH_TOKEN_STATUS / GGLEAP_AUTH_TOKEN_GAMES missing from .env — GGLeap calls will fail until set.")
 GGLEAP_BASE_URL = "https://api.ggleap.com/beta"
 ggleap_jwt_token = None
 ggleap_games_jwt_token = None
@@ -5152,6 +5156,41 @@ def get_ggleap_games_jwt():
     except Exception as e:
         print(f"[GGLEAP_GAMES] JWT error: {e}")
         return None
+
+# -- Proactive JWT refresh (per GGLeap's recommended pattern) ---------------
+# The JWT exchanged from the AuthToken is only valid for 10 minutes. Every call
+# site already does a lazy refresh + retry-on-401 as a safety net, but GGLeap's
+# own guidance is to also refresh proactively in the background every 5 minutes
+# so a long-running dashboard session never even risks hitting a 401. Runs once
+# per process; failures are swallowed so a transient network blip can't kill it
+# (the existing lazy refresh still covers that call in the meantime).
+_GGLEAP_JWT_REFRESH_INTERVAL = 5 * 60
+_ggleap_jwt_refresh_thread_started = False
+
+def _ggleap_jwt_refresh_loop(stop_event):
+    while not stop_event.wait(_GGLEAP_JWT_REFRESH_INTERVAL):
+        try:
+            if GGLEAP_AUTH_TOKEN and not _ggleap_is_paused():
+                get_ggleap_jwt()
+        except Exception as e:
+            print(f"[GGLEAP] background JWT refresh failed, will retry next interval: {e}")
+        try:
+            if GGLEAP_GAMES_AUTH_TOKEN and not _ggleap_is_paused():
+                get_ggleap_games_jwt()
+        except Exception as e:
+            print(f"[GGLEAP_GAMES] background JWT refresh failed, will retry next interval: {e}")
+
+def start_ggleap_jwt_refresh_thread():
+    """Call once at app startup. Safe to call more than once — only starts the thread the first time."""
+    global _ggleap_jwt_refresh_thread_started
+    if _ggleap_jwt_refresh_thread_started:
+        return
+    _ggleap_jwt_refresh_thread_started = True
+    stop_event = threading.Event()
+    t = threading.Thread(target=_ggleap_jwt_refresh_loop, args=(stop_event,), daemon=True, name="ggleap-jwt-refresh")
+    t.start()
+
+start_ggleap_jwt_refresh_thread()
 
 def format_pc_name(name):
     """Format PC name like 'Island1S2' to 'Island 1 S2' or 'Stage1' to 'Stage S1'"""

@@ -7,7 +7,9 @@ from discord import app_commands
 import re
 from utils.safe_json import safe_json_dump
 
-GGLEAP_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_STATUS", "DnRx4l0umS3vaw3bR/22yjvTFYtMC6QxTkvvI77g3Lrn3nX1BFwo4if37zZHJj83I4to+ruOnilshG3Mzhza3m+sonBs4YUx9v0EiC6738gAa0QAuwH+14Jso1197He/")
+GGLEAP_AUTH_TOKEN = os.environ.get("GGLEAP_AUTH_TOKEN_STATUS", "")
+if not GGLEAP_AUTH_TOKEN:
+    print("[GGLEAP] WARNING: GGLEAP_AUTH_TOKEN_STATUS is not set in the environment/.env — GGLeap status calls will fail.")
 BASE_URL = "https://api.ggleap.com/beta"  # Updated base URL
 PANEL_STORE_FILE = os.path.join("data", "ggleap_panels.json")
 
